@@ -6,4 +6,6 @@ export const contentPaths = {
   workspace: (workspaceId: string) => `/w/${workspaceId}`,
   project: (workspaceId: string, projectId: string) => `/w/${workspaceId}/p/${projectId}`,
   post: (workspaceId: string, postId: string) => `/w/${workspaceId}/posts/${postId}`,
+  /** Publish approval queue (page added in M4). */
+  approvals: (workspaceId: string) => `/w/${workspaceId}/approvals`,
 };
