@@ -9,6 +9,9 @@ import { z } from "zod";
  * here are counted the same way rather than with String#length (UTF-16 units).
  * Text is trimmed of all whitespace, which is at least as strict as `btrim`.
  *
+ * Input objects are strict: unknown keys (e.g. version, created_by, published_at)
+ * are rejected, never silently dropped, so tampered requests are visible.
+ *
  * Validation improves error messages; the database remains the authority.
  */
 
@@ -97,8 +100,8 @@ export const scheduledForSchema = z
 // Projects
 // ---------------------------------------------------------------------------
 
-/** Editable project fields (full state). Unknown keys are stripped. */
-export const projectInputSchema = z.object({
+/** Editable project fields (full state). Unknown keys are rejected. */
+export const projectInputSchema = z.strictObject({
   name: boundedText("Project name", { min: 1, max: CONTENT_LIMITS.projectNameMax, trim: true }),
   description: z
     .string()
@@ -118,7 +121,13 @@ export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
 export const projectUpdateSchema = projectInputSchema.extend({ projectId: uuidSchema });
 export type ProjectUpdateInput = z.infer<typeof projectUpdateSchema>;
 
-export const projectRefSchema = z.object({ projectId: uuidSchema });
+export const projectRefSchema = z.strictObject({ projectId: uuidSchema });
+
+export const projectListSchema = z.strictObject({
+  workspaceId: uuidSchema,
+  includeArchived: z.boolean().optional().default(false),
+});
+export type ProjectListInput = z.input<typeof projectListSchema>;
 
 // ---------------------------------------------------------------------------
 // Posts
@@ -127,9 +136,9 @@ export const projectRefSchema = z.object({ projectId: uuidSchema });
 /**
  * Editable post fields. Updates replace the whole state, so every field is
  * required (an omitted body is an error, never a silent wipe). Unknown keys such
- * as version, created_by or published_at are stripped.
+ * as version, created_by or published_at are rejected.
  */
-export const postInputSchema = z.object({
+export const postInputSchema = z.strictObject({
   title: boundedText("Title", { min: 1, max: CONTENT_LIMITS.postTitleMax, trim: true }),
   // The body is stored as written (no trimming): whitespace can be meaningful.
   body: boundedText("Body", { min: 0, max: CONTENT_LIMITS.postBodyMax, trim: false }),
@@ -152,8 +161,17 @@ export const postUpdateSchema = postInputSchema.extend({
 export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
 
 /** Archive / restore: identify the post and the version the user is looking at. */
-export const postVersionRefSchema = z.object({
+export const postVersionRefSchema = z.strictObject({
   postId: uuidSchema,
   expectedVersion: expectedVersionSchema,
 });
 export type PostVersionRef = z.infer<typeof postVersionRefSchema>;
+
+export const postRefSchema = z.strictObject({ postId: uuidSchema });
+
+export const postListSchema = z.strictObject({
+  projectId: uuidSchema,
+  status: editablePostStatusSchema.optional(),
+  includeArchived: z.boolean().optional().default(false),
+});
+export type PostListInput = z.input<typeof postListSchema>;

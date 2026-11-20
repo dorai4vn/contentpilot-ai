@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CONTENT_LIMITS,
+  postListSchema,
+  projectListSchema,
   codePointLength,
   expectedVersionSchema,
   postCreateSchema,
@@ -151,14 +153,10 @@ describe("projectInputSchema", () => {
     if (!result.success && message) expect(result.error.issues[0]?.message).toContain(message);
   });
 
-  it("strips fields the client must not set", () => {
-    const parsed = projectCreateSchema.parse({
-      name: "Blog",
-      workspaceId: ID,
-      created_by: ID2,
-      archived_at: "2026-01-01T00:00:00Z",
-    });
-    expect(parsed).toEqual({ name: "Blog", description: null, workspaceId: ID });
+  it.each(["created_by", "archived_at", "workspace_id", "id"])("rejects the forbidden field %s", (key) => {
+    const result = projectCreateSchema.safeParse({ name: "Blog", workspaceId: ID, [key]: "x" });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.code).toBe("unrecognized_keys");
   });
 
   it("requires a valid workspace id to create", () => {
@@ -207,15 +205,20 @@ describe("postInputSchema", () => {
     expect(postInputSchema.safeParse(input).success).toBe(false);
   });
 
-  it("strips server-managed fields", () => {
-    const parsed = postInputSchema.parse({
-      ...validPost,
-      version: 99,
-      created_by: ID2,
-      published_at: "2026-01-01T00:00:00Z",
-      archived_at: "2026-01-01T00:00:00Z",
-    });
-    expect(Object.keys(parsed).sort()).toEqual(["body", "scheduledFor", "status", "title"]);
+  it.each(["version", "created_by", "updated_by", "published_at", "archived_at", "last_change_source"])(
+    "rejects the server-managed field %s instead of dropping it",
+    (key) => {
+      const result = postInputSchema.safeParse({ ...validPost, [key]: key === "version" ? 99 : ID2 });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]).toMatchObject({ code: "unrecognized_keys", keys: [key] });
+      }
+    },
+  );
+
+  it("stays strict after extension (update schema)", () => {
+    const result = postUpdateSchema.safeParse({ ...validPost, postId: ID, expectedVersion: 1, version: 5 });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -240,5 +243,22 @@ describe("post create / update / archive schemas", () => {
     });
     expect(postVersionRefSchema.safeParse({ postId: ID }).success).toBe(false);
     expect(postVersionRefSchema.safeParse({ postId: "x", expectedVersion: 2 }).success).toBe(false);
+  });
+});
+
+describe("list schemas", () => {
+  it("default to hiding archived rows", () => {
+    expect(projectListSchema.parse({ workspaceId: ID })).toEqual({ workspaceId: ID, includeArchived: false });
+    expect(postListSchema.parse({ projectId: ID, status: "ready" })).toEqual({
+      projectId: ID,
+      status: "ready",
+      includeArchived: false,
+    });
+  });
+
+  it("reject a published filter, bad ids and unknown keys", () => {
+    expect(postListSchema.safeParse({ projectId: ID, status: "published" }).success).toBe(false);
+    expect(projectListSchema.safeParse({ workspaceId: "x" }).success).toBe(false);
+    expect(projectListSchema.safeParse({ workspaceId: ID, limit: 5 }).success).toBe(false);
   });
 });
