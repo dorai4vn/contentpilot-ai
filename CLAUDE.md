@@ -6,6 +6,16 @@ Academic "Agentic App": Next.js 16 App Router + Supabase (Postgres, Auth, RLS), 
 Final product must have: real login + Postgres backend, an AI agent doing real READ/CREATE/UPDATE on stored
 data (M3), and risky agent actions gated by human approval or restricted permissions (M4).
 
+## Language & Communication
+
+- Luôn giao tiếp và báo cáo kết quả bằng tiếng Việt.
+- Giải thích các bước thực hiện, lỗi phát sinh và hướng xử lý bằng tiếng Việt dễ hiểu.
+- Giữ nguyên tiếng Anh đối với source code, tên biến, tên hàm, tên file, câu lệnh Terminal và thuật ngữ
+  kỹ thuật cần thiết.
+- Khi hoàn thành công việc, báo cáo ngắn gọn bằng tiếng Việt gồm: việc đã làm, kết quả kiểm tra, lỗi còn
+  tồn tại và bước tiếp theo.
+- Không tự động chuyển sang tiếng Anh trừ khi người dùng yêu cầu.
+
 ## Working environment
 
 - Development happens in ephemeral Claude Code cloud sessions. Nothing on the local disk persists:
