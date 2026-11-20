@@ -175,3 +175,11 @@ export const postListSchema = z.strictObject({
   includeArchived: z.boolean().optional().default(false),
 });
 export type PostListInput = z.input<typeof postListSchema>;
+
+/** Draft <-> ready switch. The other fields are kept as they are in the database. */
+export const postStatusChangeSchema = z.strictObject({
+  postId: uuidSchema,
+  expectedVersion: expectedVersionSchema,
+  status: editablePostStatusSchema,
+});
+export type PostStatusChangeInput = z.infer<typeof postStatusChangeSchema>;
