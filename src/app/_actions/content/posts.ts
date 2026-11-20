@@ -3,14 +3,13 @@
 import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/lib/auth/dal";
-import { ContentError } from "@/lib/content/errors";
 import { contentPaths } from "@/lib/content/paths";
 import {
   archivePost,
   type ContentPost,
   createPost,
-  getPost,
   restorePost,
+  setPostStatus,
   updatePost,
 } from "@/lib/content/posts";
 import {
@@ -75,9 +74,9 @@ export async function updatePostAction(
 }
 
 /**
- * Switches a post between draft and ready, keeping its other fields. The caller's
- * expectedVersion is what the RPC checks, so an edit made meanwhile by someone
- * else is never overwritten with the stale title/body read here.
+ * Switches a post between draft and ready. Only the status changes: the data
+ * layer sends title, body and schedule back exactly as stored, and the database
+ * rejects the change (version_conflict) if the post moved past expectedVersion.
  * Fields: postId, expectedVersion, status
  */
 export async function setPostStatusAction(
@@ -87,22 +86,7 @@ export async function setPostStatusAction(
   await requireUser();
   const input = parseForm(postStatusChangeSchema, formData);
   if (!input.ok) return input.result;
-  const { postId, expectedVersion, status } = input.data;
-
-  return runAction(async () => {
-    const current = await getPost({ postId });
-    if (!current) throw new ContentError("not_found");
-    if (current.version !== expectedVersion) throw new ContentError("version_conflict");
-    if (current.status === status) return current;
-    return updatePost({
-      postId,
-      expectedVersion,
-      title: current.title,
-      body: current.body,
-      status,
-      scheduledFor: current.scheduledFor,
-    });
-  }, done);
+  return runAction(() => setPostStatus(input.data), done);
 }
 
 /** Fields: postId, expectedVersion */

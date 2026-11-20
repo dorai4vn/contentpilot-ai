@@ -4,6 +4,7 @@ import {
   postCreateSchema,
   postListSchema,
   postRefSchema,
+  postStatusChangeSchema,
   postUpdateSchema,
   postVersionRefSchema,
 } from "@/lib/validation/content";
@@ -200,6 +201,43 @@ export async function updatePost(input: unknown): Promise<ContentPost> {
     p_body: body,
     p_status: status,
     p_scheduled_for: scheduledFor,
+    p_change_source: CHANGE_SOURCE,
+  });
+  return rpcResult(data, error);
+}
+
+/**
+ * Switches a post between draft and ready WITHOUT touching anything else.
+ *
+ * The update RPC replaces title, body, status and scheduled_for together, so the
+ * other three are sent back exactly as the database returned them: raw strings,
+ * not re-validated or normalised (re-validating would trim the title and cut
+ * scheduled_for to milliseconds, silently changing the post). Safety still comes
+ * from the database: the RPC checks `expectedVersion` from the caller, so if the
+ * post changed after it was read here, the call fails with version_conflict
+ * instead of writing the stale values back. RLS and history behave as for any update.
+ */
+export async function setPostStatus(input: unknown): Promise<ContentPost> {
+  const { postId, expectedVersion, status } = parseContentInput(postStatusChangeSchema, input);
+  const { supabase } = await contentClient();
+
+  const { data: current, error: readError } = await supabase
+    .from("content_posts")
+    .select(POST_COLUMNS)
+    .eq("id", postId)
+    .maybeSingle();
+  if (readError) throw toContentError(readError);
+  if (!current) throw new ContentError("not_found");
+  if (current.version !== expectedVersion) throw new ContentError("version_conflict");
+  if (current.status === status) return toPost(current);
+
+  const { data, error } = await supabase.rpc("update_content_post", {
+    p_post_id: postId,
+    p_expected_version: expectedVersion,
+    p_title: current.title,
+    p_body: current.body,
+    p_status: status,
+    p_scheduled_for: current.scheduled_for,
     p_change_source: CHANGE_SOURCE,
   });
   return rpcResult(data, error);

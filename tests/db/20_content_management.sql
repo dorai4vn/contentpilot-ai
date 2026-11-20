@@ -517,4 +517,49 @@ select pg_temp.assert(
       and confrelid <> 'auth.users'::regclass),
   'all content foreign keys use ON DELETE RESTRICT');
 
+-- 12. Regression: a status-only change keeps title, body and schedule exactly --------
+-- The app's setPostStatus sends the stored values back unchanged (as JSON text,
+-- like PostgREST). Values that validation would normalise must survive intact.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e3');
+insert into public.content_posts (id, workspace_id, project_id, title, body, scheduled_for)
+values ('40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001',
+        '30000000-0000-0000-0000-000000000001', '  Spaced title  ', e'\n  indented body \n\n',
+        '2026-12-01 02:00:00.123456+00');
+select pg_temp.assert(
+  (select (to_json(scheduled_for) #>> '{}')::timestamptz = scheduled_for
+     from public.content_posts where id = '40000000-0000-0000-0000-000000000003'),
+  'scheduled_for survives a JSON round trip with microsecond precision');
+select pg_temp.assert(
+  (with cur as (
+     select title, body, to_json(scheduled_for) #>> '{}' as sched
+     from public.content_posts where id = '40000000-0000-0000-0000-000000000003')
+   select r.version = 2 and r.status = 'ready'
+          and r.title = '  Spaced title  '
+          and r.body = e'\n  indented body \n\n'
+          and r.scheduled_for = '2026-12-01 02:00:00.123456+00'::timestamptz
+     from cur,
+          public.update_content_post('40000000-0000-0000-0000-000000000003', 1,
+                                     cur.title, cur.body, 'ready', cur.sched::timestamptz) r),
+  'status-only change (draft -> ready) leaves title, body and schedule byte-identical');
+select pg_temp.assert(
+  (select title = '  Spaced title  ' and body = e'\n  indented body \n\n' and status = 'ready'
+          and scheduled_for = '2026-12-01 02:00:00.123456+00'::timestamptz
+     from public.content_post_versions
+    where post_id = '40000000-0000-0000-0000-000000000003' and version = 2),
+  'history of the status change records the unchanged title, body and schedule');
+select pg_temp.assert(
+  (with cur as (
+     select title, body, scheduled_for from public.content_posts
+     where id = '40000000-0000-0000-0000-000000000003')
+   select r.version = 3 and r.status = 'draft' and r.title = '  Spaced title  '
+     from cur,
+          public.update_content_post('40000000-0000-0000-0000-000000000003', 2,
+                                     cur.title, cur.body, 'draft', cur.scheduled_for) r),
+  'switching back ready -> draft also keeps the title');
+select pg_temp.assert_error(
+  $q$select public.update_content_post('40000000-0000-0000-0000-000000000003', 2,
+       '  Spaced title  ', e'\n  indented body \n\n', 'ready', '2026-12-01 02:00:00.123456+00')$q$,
+  'CP409', 'a status change based on a stale version is rejected');
+select pg_temp.reset_actor();
+
 \echo 'All content management tests passed.'

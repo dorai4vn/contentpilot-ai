@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createPost: vi.fn(),
   updatePost: vi.fn(),
   getPost: vi.fn(),
+  setPostStatus: vi.fn(),
   archivePost: vi.fn(),
   restorePost: vi.fn(),
 }));
@@ -16,6 +17,7 @@ vi.mock("@/lib/content/posts", () => ({
   createPost: mocks.createPost,
   updatePost: mocks.updatePost,
   getPost: mocks.getPost,
+  setPostStatus: mocks.setPostStatus,
   archivePost: mocks.archivePost,
   restorePost: mocks.restorePost,
 }));
@@ -61,7 +63,14 @@ function form(values: Record<string, string>) {
   return fd;
 }
 
-const dataFns = [mocks.createPost, mocks.updatePost, mocks.getPost, mocks.archivePost, mocks.restorePost];
+const dataFns = [
+  mocks.createPost,
+  mocks.updatePost,
+  mocks.getPost,
+  mocks.setPostStatus,
+  mocks.archivePost,
+  mocks.restorePost,
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -203,54 +212,43 @@ describe("updatePostAction", () => {
 });
 
 describe("setPostStatusAction", () => {
-  it("switches draft to ready keeping the other fields", async () => {
-    mocks.getPost.mockResolvedValue(post);
-    mocks.updatePost.mockResolvedValue({ ...post, status: "ready", version: 4 });
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "ready" }));
+  const statusForm = (status: string, extra: Record<string, string> = {}) =>
+    form({ postId: POST, expectedVersion: "3", status, ...extra });
 
-    expect(mocks.updatePost).toHaveBeenCalledWith({
-      postId: POST,
-      expectedVersion: 3,
-      title: "Hello",
-      body: "Body",
-      status: "ready",
-      scheduledFor: post.scheduledFor,
-    });
+  it("delegates to setPostStatus with only id, expected version and status", async () => {
+    mocks.setPostStatus.mockResolvedValue({ ...post, title: "  Hello  ", status: "ready", version: 4 });
+    const result = await actions.setPostStatusAction(null, statusForm("ready"));
+
+    expect(mocks.setPostStatus).toHaveBeenCalledWith({ postId: POST, expectedVersion: 3, status: "ready" });
+    // Regression: the action never re-sends title/body/schedule through updatePost.
+    expect(mocks.updatePost).not.toHaveBeenCalled();
+    expect(mocks.getPost).not.toHaveBeenCalled();
     expect(result).toMatchObject({ ok: true, data: { status: "ready", version: 4 } });
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(2);
   });
 
   it("refuses to publish", async () => {
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "published" }));
+    const result = await actions.setPostStatusAction(null, statusForm("published"));
     expect(result).toMatchObject({ ok: false, code: "invalid_input" });
-    expect(mocks.getPost).not.toHaveBeenCalled();
-    expect(mocks.updatePost).not.toHaveBeenCalled();
+    expect(mocks.setPostStatus).not.toHaveBeenCalled();
   });
 
-  it("detects a stale version before writing", async () => {
-    mocks.getPost.mockResolvedValue({ ...post, version: 5 });
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "ready" }));
+  it.each(["title", "body", "scheduledFor"])("rejects a smuggled %s field", async (key) => {
+    const result = await actions.setPostStatusAction(null, statusForm("ready", { [key]: "x" }));
+    expect(result).toMatchObject({ ok: false, fieldErrors: { [key]: "This field cannot be set." } });
+    expect(mocks.setPostStatus).not.toHaveBeenCalled();
+  });
+
+  it("reports a version conflict and does not revalidate", async () => {
+    mocks.setPostStatus.mockRejectedValue(new ContentError("version_conflict"));
+    const result = await actions.setPostStatusAction(null, statusForm("ready"));
     expect(result).toMatchObject({ ok: false, code: "version_conflict" });
-    expect(mocks.updatePost).not.toHaveBeenCalled();
-  });
-
-  it("still relies on the database check when someone edits in between", async () => {
-    mocks.getPost.mockResolvedValue(post);
-    mocks.updatePost.mockRejectedValue(new ContentError("version_conflict"));
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "ready" }));
-    expect(result).toMatchObject({ ok: false, code: "version_conflict" });
-  });
-
-  it("is a no-op when the status is already set", async () => {
-    mocks.getPost.mockResolvedValue(post);
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "draft" }));
-    expect(result).toMatchObject({ ok: true, data: { version: 3, status: "draft" } });
-    expect(mocks.updatePost).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("returns not_found for an invisible post", async () => {
-    mocks.getPost.mockResolvedValue(null);
-    const result = await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "ready" }));
-    expect(result).toMatchObject({ ok: false, code: "not_found" });
+    mocks.setPostStatus.mockRejectedValue(new ContentError("not_found"));
+    expect(await actions.setPostStatusAction(null, statusForm("ready"))).toMatchObject({ ok: false, code: "not_found" });
   });
 });
 

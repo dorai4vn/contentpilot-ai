@@ -67,6 +67,7 @@ describe("module surface", () => {
       "getPostHistory",
       "listPosts",
       "restorePost",
+      "setPostStatus",
       "updatePost",
     ]);
   });
@@ -270,5 +271,102 @@ describe("archivePost / restorePost", () => {
   it("reports restoring into an archived project as archived", async () => {
     setup([dbError("CP423")]);
     await expectContentError(posts.restorePost({ postId: POST, expectedVersion: 4 }), "archived");
+  });
+});
+
+describe("setPostStatus (regression: switching status must not change other fields)", () => {
+  // Values that validation would normalise: surrounding spaces in the title
+  // (trim), a tab-only title (rejected after trim, but valid in the database),
+  // whitespace around the body, and microsecond precision in scheduled_for.
+  const raw = {
+    ...postRow,
+    title: "  Hello world  ",
+    body: "\n  indented body\n\n",
+    scheduled_for: "2026-12-01T02:00:00.123456+00:00",
+    status: "draft",
+    version: 3,
+  };
+
+  it("sends title, body and scheduled_for back to the RPC byte for byte", async () => {
+    const fake = setup([ok(raw), ok({ ...raw, status: "ready", version: 4 })]);
+    const result = await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" });
+
+    expect(fake.queries[0]!.table).toBe("content_posts");
+    expect(fake.queries[0]!.calls).toContainEqual(["eq", ["id", POST]]);
+    expect(fake.rpcs).toEqual([
+      {
+        fn: "update_content_post",
+        args: {
+          p_post_id: POST,
+          p_expected_version: 3,
+          p_title: "  Hello world  ",
+          p_body: "\n  indented body\n\n",
+          p_status: "ready",
+          p_scheduled_for: "2026-12-01T02:00:00.123456+00:00",
+          p_change_source: "user",
+        },
+      },
+    ]);
+    expect(result).toMatchObject({
+      title: "  Hello world  ",
+      body: "\n  indented body\n\n",
+      scheduledFor: "2026-12-01T02:00:00.123456+00:00",
+      status: "ready",
+      version: 4,
+    });
+  });
+
+  it("works for a title that is valid in the database but would fail re-validation", async () => {
+    const fake = setup([ok({ ...raw, title: "\t" }), ok({ ...raw, title: "\t", status: "ready", version: 4 })]);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" });
+    expect(fake.rpcs[0]!.args.p_title).toBe("\t");
+  });
+
+  it("keeps a null schedule null and switches ready back to draft", async () => {
+    const fake = setup([
+      ok({ ...raw, status: "ready", scheduled_for: null }),
+      ok({ ...raw, status: "draft", scheduled_for: null, version: 4 }),
+    ]);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "draft" });
+    expect(fake.rpcs[0]!.args).toMatchObject({ p_status: "draft", p_scheduled_for: null });
+  });
+
+  it("does not call the RPC when the status is already set", async () => {
+    const fake = setup([ok(raw)]);
+    const result = await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "draft" });
+    expect(fake.rpcs).toHaveLength(0);
+    expect(result.version).toBe(3);
+  });
+
+  it("reports a stale expected version without writing", async () => {
+    const fake = setup([ok({ ...raw, version: 5 })]);
+    await expectContentError(posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }), "version_conflict");
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("relies on the RPC version check when the post changes between read and write", async () => {
+    setup([ok(raw), dbError("CP409")]);
+    await expectContentError(posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }), "version_conflict");
+  });
+
+  it("returns not_found for an invisible post", async () => {
+    const fake = setup([ok(null)]);
+    await expectContentError(posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }), "not_found");
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("maps an archived post to archived", async () => {
+    setup([ok(raw), dbError("CP423")]);
+    await expectContentError(posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }), "archived");
+  });
+
+  it.each([
+    ["published", { postId: POST, expectedVersion: 3, status: "published" }],
+    ["missing version", { postId: POST, status: "ready" }],
+    ["extra title field", { postId: POST, expectedVersion: 3, status: "ready", title: "x" }],
+    ["extra version field", { postId: POST, expectedVersion: 3, status: "ready", version: 9 }],
+  ])("rejects %s before touching the database", async (_label, input) => {
+    await expectContentError(posts.setPostStatus(input), "invalid_input");
+    expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
