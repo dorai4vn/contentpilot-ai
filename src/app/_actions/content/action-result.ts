@@ -9,6 +9,7 @@ import {
   contentFieldErrors,
   toContentError,
 } from "@/lib/content/errors";
+import { logSafeError, safeErrorInfo } from "@/lib/logging/safe-log";
 
 /**
  * Shared plumbing for the content Server Actions (not itself a "use server" file).
@@ -90,8 +91,9 @@ export async function runAction<R, T>(
     unstable_rethrow(error);
     const contentError = toContentError(error);
     if (contentError.code === "unknown") {
-      // Server log only; the client receives the generic message.
-      console.error("[content action] unexpected error", error);
+      // Server log: error class and code only. Never the error itself: database
+      // messages can contain post content. The client gets the generic message.
+      logSafeError("content action", { event: "unexpected_error", ...safeErrorInfo(error) });
     }
     return failure(contentError.code, contentError.fieldErrors);
   }

@@ -1,8 +1,11 @@
 import "server-only";
 
+import { z } from "zod";
+
 import {
   postCreateSchema,
   postListSchema,
+  postPatchSchema,
   postRefSchema,
   postStatusChangeSchema,
   postUpdateSchema,
@@ -17,11 +20,27 @@ import { ContentError, parseContentInput, toContentError } from "./errors";
  * Content posts. Reads and inserts go through RLS as the signed-in user. Every
  * change to an existing post goes through the database RPCs, which require the
  * version the user is looking at (optimistic locking) and record history in the
- * same transaction. There is no publish and no delete function in M2.
+ * same transaction. There is no publish and no delete function.
  */
 
-/** M2 has no agent: every change made through this module is a user change. */
-const CHANGE_SOURCE: ContentChangeSource = "user";
+/**
+ * Internal write options. They are a separate argument, never part of the
+ * user-supplied input (which is validated by strict schemas that reject an
+ * unknown `changeSource` key), so a form or request body cannot set them.
+ * Server Actions pass nothing: changes are recorded as "user". Only the M3 agent
+ * executor passes { changeSource: "agent" }.
+ */
+export type ContentWriteOptions = { changeSource?: ContentChangeSource };
+
+const changeSourceSchema = z.enum(["user", "agent"]);
+
+/** Resolves the change source; anything other than "user" / "agent" is rejected. */
+function changeSourceOf(options: ContentWriteOptions | undefined): ContentChangeSource {
+  const value = options?.changeSource === undefined ? "user" : options.changeSource;
+  const parsed = changeSourceSchema.safeParse(value);
+  if (!parsed.success) throw new ContentError("invalid_input");
+  return parsed.data;
+}
 
 const POST_SUMMARY_COLUMNS =
   "id, workspace_id, project_id, title, status, scheduled_for, version, last_change_source, archived_at, created_at, updated_at";
@@ -157,7 +176,8 @@ export async function getPostHistory(input: unknown): Promise<ContentPostVersion
 }
 
 /** Creates a post in an active project (any workspace member, enforced by RLS). */
-export async function createPost(input: unknown): Promise<ContentPost> {
+export async function createPost(input: unknown, options?: ContentWriteOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
   const { workspaceId, projectId, title, body, status, scheduledFor } = parseContentInput(postCreateSchema, input);
   const { supabase } = await contentClient();
 
@@ -171,7 +191,7 @@ export async function createPost(input: unknown): Promise<ContentPost> {
       body,
       status,
       scheduled_for: scheduledFor,
-      last_change_source: CHANGE_SOURCE,
+      last_change_source: changeSource,
     })
     .select(POST_COLUMNS)
     .single();
@@ -190,7 +210,8 @@ function rpcResult(data: ContentPostRow | null, error: unknown): ContentPost {
  * Replaces the editable fields of a post. Fails with "version_conflict" when the
  * post changed after the user loaded `expectedVersion`: nothing is overwritten.
  */
-export async function updatePost(input: unknown): Promise<ContentPost> {
+export async function updatePost(input: unknown, options?: ContentWriteOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
   const { postId, expectedVersion, title, body, status, scheduledFor } = parseContentInput(postUpdateSchema, input);
   const { supabase } = await contentClient();
 
@@ -201,7 +222,7 @@ export async function updatePost(input: unknown): Promise<ContentPost> {
     p_body: body,
     p_status: status,
     p_scheduled_for: scheduledFor,
-    p_change_source: CHANGE_SOURCE,
+    p_change_source: changeSource,
   });
   return rpcResult(data, error);
 }
@@ -217,7 +238,8 @@ export async function updatePost(input: unknown): Promise<ContentPost> {
  * post changed after it was read here, the call fails with version_conflict
  * instead of writing the stale values back. RLS and history behave as for any update.
  */
-export async function setPostStatus(input: unknown): Promise<ContentPost> {
+export async function setPostStatus(input: unknown, options?: ContentWriteOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
   const { postId, expectedVersion, status } = parseContentInput(postStatusChangeSchema, input);
   const { supabase } = await contentClient();
 
@@ -238,33 +260,85 @@ export async function setPostStatus(input: unknown): Promise<ContentPost> {
     p_body: current.body,
     p_status: status,
     p_scheduled_for: current.scheduled_for,
-    p_change_source: CHANGE_SOURCE,
+    p_change_source: changeSource,
+  });
+  return rpcResult(data, error);
+}
+
+/** Extra guards for patchPost, set by trusted server code (never by user input). */
+export type PatchPostOptions = ContentWriteOptions & {
+  /** The post must belong to this workspace (else not_found, nothing written). */
+  workspaceId?: string;
+  /** The post must currently have this status (else "not_allowed_status"). */
+  requireStatus?: ContentPostStatus;
+};
+
+/**
+ * Changes only the given fields of a post; every other field is sent back to
+ * the update RPC exactly as stored (raw title, body, status and scheduled_for,
+ * not re-validated), so nothing the caller did not ask to change can shift.
+ *
+ * Safety: the stored version must equal `expectedVersion` (checked here and
+ * again atomically by the RPC, which raises CP409 if the post changed in
+ * between); one write attempt only, never a retry. RLS and history as usual.
+ */
+export async function patchPost(input: unknown, options?: PatchPostOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
+  const patch = parseContentInput(postPatchSchema, input);
+  const { supabase } = await contentClient();
+
+  const { data: current, error: readError } = await supabase
+    .from("content_posts")
+    .select(POST_COLUMNS)
+    .eq("id", patch.postId)
+    .maybeSingle();
+  if (readError) throw toContentError(readError);
+  if (!current) throw new ContentError("not_found");
+  if (options?.workspaceId !== undefined && current.workspace_id !== options.workspaceId) {
+    throw new ContentError("not_found");
+  }
+  if (current.archived_at !== null) throw new ContentError("archived");
+  if (options?.requireStatus !== undefined && current.status !== options.requireStatus) {
+    throw new ContentError("not_allowed_status");
+  }
+  if (current.version !== patch.expectedVersion) throw new ContentError("version_conflict");
+
+  const { data, error } = await supabase.rpc("update_content_post", {
+    p_post_id: patch.postId,
+    p_expected_version: patch.expectedVersion,
+    p_title: patch.title ?? current.title,
+    p_body: patch.body ?? current.body,
+    p_status: current.status as "draft" | "ready",
+    p_scheduled_for: patch.scheduledFor === undefined ? current.scheduled_for : patch.scheduledFor,
+    p_change_source: changeSource,
   });
   return rpcResult(data, error);
 }
 
 /** Archives a post (any member). Requires the version the user is looking at. */
-export async function archivePost(input: unknown): Promise<ContentPost> {
+export async function archivePost(input: unknown, options?: ContentWriteOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
   const { postId, expectedVersion } = parseContentInput(postVersionRefSchema, input);
   const { supabase } = await contentClient();
 
   const { data, error } = await supabase.rpc("archive_content_post", {
     p_post_id: postId,
     p_expected_version: expectedVersion,
-    p_change_source: CHANGE_SOURCE,
+    p_change_source: changeSource,
   });
   return rpcResult(data, error);
 }
 
 /** Restores an archived post (any member; its project must be active). */
-export async function restorePost(input: unknown): Promise<ContentPost> {
+export async function restorePost(input: unknown, options?: ContentWriteOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
   const { postId, expectedVersion } = parseContentInput(postVersionRefSchema, input);
   const { supabase } = await contentClient();
 
   const { data, error } = await supabase.rpc("restore_content_post", {
     p_post_id: postId,
     p_expected_version: expectedVersion,
-    p_change_source: CHANGE_SOURCE,
+    p_change_source: changeSource,
   });
   return rpcResult(data, error);
 }

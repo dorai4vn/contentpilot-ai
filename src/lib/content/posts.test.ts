@@ -66,6 +66,7 @@ describe("module surface", () => {
       "getPost",
       "getPostHistory",
       "listPosts",
+      "patchPost",
       "restorePost",
       "setPostStatus",
       "updatePost",
@@ -367,6 +368,173 @@ describe("setPostStatus (regression: switching status must not change other fiel
     ["extra version field", { postId: POST, expectedVersion: 3, status: "ready", version: 9 }],
   ])("rejects %s before touching the database", async (_label, input) => {
     await expectContentError(posts.setPostStatus(input), "invalid_input");
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("changeSource (internal write option)", () => {
+  const createInput = { workspaceId: WS, projectId: PROJECT, ...edit };
+  const updateInput = { postId: POST, expectedVersion: 3, ...edit };
+
+  it("defaults to 'user' for every write", async () => {
+    const fake = setup([
+      ok(postRow),
+      ok(postRow),
+      ok({ ...postRow, status: "draft" }),
+      ok({ ...postRow, status: "ready" }),
+      ok(postRow),
+      ok(postRow),
+    ]);
+    await posts.createPost(createInput);
+    await posts.updatePost(updateInput);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" });
+    await posts.archivePost({ postId: POST, expectedVersion: 3 });
+    await posts.restorePost({ postId: POST, expectedVersion: 3 });
+
+    const [insert] = fake.queries[0]!.args("insert") as [Record<string, unknown>];
+    expect(insert.last_change_source).toBe("user");
+    expect(fake.rpcs.map((r) => r.args.p_change_source)).toEqual(["user", "user", "user", "user"]);
+  });
+
+  it("records 'agent' when the internal option says so", async () => {
+    const fake = setup([
+      ok(postRow),
+      ok(postRow),
+      ok({ ...postRow, status: "draft" }),
+      ok({ ...postRow, status: "ready" }),
+      ok(postRow),
+      ok(postRow),
+    ]);
+    const agent = { changeSource: "agent" } as const;
+    await posts.createPost(createInput, agent);
+    await posts.updatePost(updateInput, agent);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }, agent);
+    await posts.archivePost({ postId: POST, expectedVersion: 3 }, agent);
+    await posts.restorePost({ postId: POST, expectedVersion: 3 }, agent);
+
+    const [insert] = fake.queries[0]!.args("insert") as [Record<string, unknown>];
+    expect(insert.last_change_source).toBe("agent");
+    expect(fake.rpcs.map((r) => r.args.p_change_source)).toEqual(["agent", "agent", "agent", "agent"]);
+  });
+
+  it("explicit 'user' behaves like the default", async () => {
+    const fake = setup([ok(postRow)]);
+    await posts.updatePost(updateInput, { changeSource: "user" });
+    expect(fake.rpcs[0]!.args.p_change_source).toBe("user");
+  });
+
+  it.each(["admin", "system", "", "AGENT", 1, null])(
+    "rejects an unknown change source %j before touching the database",
+    async (value) => {
+      await expectContentError(
+        posts.createPost(createInput, { changeSource: value as never }),
+        "invalid_input",
+      );
+      await expectContentError(posts.updatePost(updateInput, { changeSource: value as never }), "invalid_input");
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it("cannot be smuggled through the input object", async () => {
+    for (const key of ["changeSource", "change_source", "last_change_source"]) {
+      await expectContentError(posts.createPost({ ...createInput, [key]: "agent" }), "invalid_input");
+      await expectContentError(posts.updatePost({ ...updateInput, [key]: "agent" }), "invalid_input");
+    }
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("patchPost (partial edit, used by the agent)", () => {
+  // Stored values that re-validation would normalise must survive untouched.
+  const stored = {
+    ...postRow,
+    title: "  Stored title  ",
+    body: "\n stored body \n",
+    scheduled_for: "2026-12-05T03:04:05.123456+00:00",
+    status: "draft",
+    version: 3,
+  };
+
+  it("changes only the requested field and sends the others back raw", async () => {
+    const fake = setup([ok(stored), ok({ ...stored, body: "New body", version: 4 })]);
+    await posts.patchPost({ postId: POST, expectedVersion: 3, body: "New body" }, { changeSource: "agent" });
+    expect(fake.rpcs).toEqual([
+      {
+        fn: "update_content_post",
+        args: {
+          p_post_id: POST,
+          p_expected_version: 3,
+          p_title: "  Stored title  ",
+          p_body: "New body",
+          p_status: "draft",
+          p_scheduled_for: "2026-12-05T03:04:05.123456+00:00",
+          p_change_source: "agent",
+        },
+      },
+    ]);
+  });
+
+  it("sets or clears the schedule only when asked", async () => {
+    const fake = setup([ok(stored), ok(stored), ok(stored), ok(stored)]);
+    await posts.patchPost({ postId: POST, expectedVersion: 3, scheduledFor: "2026-12-01T09:00:00+07:00" });
+    await posts.patchPost({ postId: POST, expectedVersion: 3, scheduledFor: null });
+    expect(fake.rpcs[0]!.args.p_scheduled_for).toBe("2026-12-01T02:00:00.000Z");
+    expect(fake.rpcs[1]!.args.p_scheduled_for).toBeNull();
+    expect(fake.rpcs[1]!.args.p_title).toBe("  Stored title  ");
+  });
+
+  it("defaults to change source 'user'", async () => {
+    const fake = setup([ok(stored), ok(stored)]);
+    await posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" });
+    expect(fake.rpcs[0]!.args.p_change_source).toBe("user");
+  });
+
+  it("rejects a stale version without writing (no retry)", async () => {
+    const fake = setup([ok({ ...stored, version: 5 })]);
+    await expectContentError(posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }), "version_conflict");
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("makes exactly one write attempt when the RPC reports a conflict", async () => {
+    const fake = setup([ok(stored), dbError("CP409")]);
+    await expectContentError(posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }), "version_conflict");
+    expect(fake.rpcs).toHaveLength(1);
+    expect(fake.remaining()).toBe(0);
+  });
+
+  it("enforces the required status", async () => {
+    const fake = setup([ok({ ...stored, status: "ready" })]);
+    await expectContentError(
+      posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }, { requireStatus: "draft" }),
+      "not_allowed_status",
+    );
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("treats a post of another workspace as not found", async () => {
+    const fake = setup([ok({ ...stored, workspace_id: "99999999-9999-4999-8999-999999999999" })]);
+    await expectContentError(
+      posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }, { workspaceId: WS }),
+      "not_found",
+    );
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("refuses archived and invisible posts", async () => {
+    setup([ok({ ...stored, archived_at: "2026-11-20T12:00:00Z" }), ok(null)]);
+    await expectContentError(posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }), "archived");
+    await expectContentError(posts.patchPost({ postId: POST, expectedVersion: 3, title: "T" }), "not_found");
+  });
+
+  it.each([
+    ["no change at all", { postId: POST, expectedVersion: 3 }],
+    ["missing expected version", { postId: POST, title: "T" }],
+    ["blank title", { postId: POST, expectedVersion: 3, title: "   " }],
+    ["status change", { postId: POST, expectedVersion: 3, status: "ready" }],
+    ["schedule without offset", { postId: POST, expectedVersion: 3, scheduledFor: "2026-12-01T09:00" }],
+    ["empty-string schedule", { postId: POST, expectedVersion: 3, scheduledFor: "" }],
+  ])("rejects %s before touching the database", async (_label, input) => {
+    await expectContentError(posts.patchPost(input), "invalid_input");
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,7 @@ export type ContentErrorCode =
   | "archived"
   | "forbidden"
   | "invalid_input"
+  | "not_allowed_status"
   | "unknown";
 
 export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
@@ -27,6 +28,7 @@ export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
   archived: "Mục này đang được lưu trữ. Hãy khôi phục trước khi chỉnh sửa.",
   forbidden: "Bạn không có quyền thực hiện thao tác này.",
   invalid_input: "Một số thông tin chưa hợp lệ. Vui lòng kiểm tra lại.",
+  not_allowed_status: "Thao tác này không áp dụng cho bài viết ở trạng thái hiện tại.",
   unknown: "Đã có lỗi xảy ra. Vui lòng thử lại.",
 };
 

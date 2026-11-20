@@ -1,0 +1,151 @@
+import Link from "next/link";
+
+import type { AgentApiAction } from "@/lib/agent/client";
+import { FIELD_LABELS, actionCodeLabel, toolLabel } from "@/lib/agent/labels";
+import { contentPaths } from "@/lib/content/paths";
+
+import { LocalDateTime } from "./client-ui";
+
+/**
+ * "Actions performed" list. Built ONLY from data the server reports (the
+ * actions of an API response, or rows of the agent_actions log), never from
+ * the assistant's text.
+ */
+
+export type ActionItemView = {
+  key: string;
+  label: string;
+  status: "success" | "error" | "skipped";
+  kind: "read" | "create" | "update" | "unknown";
+  reason?: string;
+  postHref?: string;
+  projectHref?: string;
+  versionBefore?: number | null;
+  versionAfter?: number | null;
+  fields?: string[] | null;
+  at?: string;
+  actor?: string;
+  logFailed?: boolean;
+};
+
+export function apiActionToView(workspaceId: string, action: AgentApiAction, index: number): ActionItemView {
+  const effect = action.effect;
+  return {
+    key: `${index}-${action.tool}`,
+    label: toolLabel(action.tool),
+    status: action.status,
+    kind: action.kind,
+    reason: action.status === "success" ? undefined : (actionCodeLabel(action.code) ?? action.message),
+    postHref: effect?.postId ? contentPaths.post(workspaceId, effect.postId) : undefined,
+    projectHref: !effect?.postId && effect?.projectId ? contentPaths.project(workspaceId, effect.projectId) : undefined,
+    versionBefore: effect?.versionBefore,
+    versionAfter: effect?.versionAfter,
+    fields: effect?.fields,
+    logFailed: action.log === "failed",
+  };
+}
+
+export type AgentLogEntryView = {
+  id: string;
+  userId: string | null;
+  tool: string;
+  kind: "read" | "create" | "update" | "unknown";
+  status: "success" | "error" | "skipped";
+  errorCode: string | null;
+  projectId: string | null;
+  postId: string | null;
+  versionBefore: number | null;
+  versionAfter: number | null;
+  fields: string[] | null;
+  createdAt: string;
+};
+
+export function logEntryToView(workspaceId: string, entry: AgentLogEntryView, currentUserId: string): ActionItemView {
+  return {
+    key: entry.id,
+    label: toolLabel(entry.tool),
+    status: entry.status,
+    kind: entry.kind,
+    reason: entry.status === "success" ? undefined : actionCodeLabel(entry.errorCode),
+    postHref: entry.postId ? contentPaths.post(workspaceId, entry.postId) : undefined,
+    projectHref: !entry.postId && entry.projectId ? contentPaths.project(workspaceId, entry.projectId) : undefined,
+    versionBefore: entry.versionBefore,
+    versionAfter: entry.versionAfter,
+    fields: entry.fields,
+    at: entry.createdAt,
+    actor: entry.userId === currentUserId ? "bạn" : entry.userId ? "thành viên khác" : "tài khoản đã xóa",
+  };
+}
+
+const STATUS_STYLE = {
+  success: { text: "Thành công", className: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900" },
+  error: { text: "Thất bại", className: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900" },
+  skipped: { text: "Bỏ qua", className: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900" },
+} as const;
+
+function versionText(item: ActionItemView): string | null {
+  if (item.status !== "success") return null;
+  if (item.kind === "update" && item.versionBefore && item.versionAfter) {
+    return `Phiên bản ${item.versionBefore} → ${item.versionAfter}`;
+  }
+  if (item.kind === "create" && item.versionAfter) return `Phiên bản ${item.versionAfter} (bản nháp mới)`;
+  if (item.kind === "read" && item.versionAfter) return `Đã đọc phiên bản ${item.versionAfter}`;
+  return null;
+}
+
+export function ActionList({ items, testId = "action-list" }: { items: ActionItemView[]; testId?: string }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="space-y-2" data-testid={testId}>
+      {items.map((item) => {
+        const status = STATUS_STYLE[item.status];
+        const version = versionText(item);
+        const fields = item.status === "success" && item.fields?.length
+          ? `Đã đổi: ${item.fields.map((f) => FIELD_LABELS[f] ?? f).join(", ")}`
+          : null;
+        return (
+          <li
+            key={item.key}
+            data-testid="action-item"
+            data-status={item.status}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{item.label}</span>
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${status.className}`}
+              >
+                {status.text}
+              </span>
+            </div>
+            {item.reason ? <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{item.reason}</p> : null}
+            {version || fields ? (
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400" data-testid="action-version">
+                {[version, fields].filter(Boolean).join(" · ")}
+              </p>
+            ) : null}
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              {item.postHref ? (
+                <Link href={item.postHref} className="font-medium text-indigo-600 hover:underline" data-testid="action-post-link">
+                  Mở bài viết
+                </Link>
+              ) : null}
+              {item.projectHref ? (
+                <Link href={item.projectHref} className="font-medium text-indigo-600 hover:underline">
+                  Mở dự án
+                </Link>
+              ) : null}
+              {item.at ? (
+                <span className="text-slate-500">
+                  <LocalDateTime iso={item.at} />
+                  {item.actor ? ` · ${item.actor}` : ""}
+                </span>
+              ) : null}
+              {item.logFailed ? <span className="text-amber-700 dark:text-amber-400">Chưa ghi được nhật ký</span> : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
