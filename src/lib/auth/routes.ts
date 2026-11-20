@@ -2,7 +2,7 @@
 
 export const DEFAULT_AFTER_LOGIN = "/dashboard";
 
-const PROTECTED_PREFIXES = ["/dashboard"];
+const PROTECTED_PREFIXES = ["/dashboard", "/w"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 function matchesPrefix(pathname: string, prefix: string) {

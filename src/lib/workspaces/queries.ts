@@ -49,3 +49,24 @@ export async function createWorkspace(name: string): Promise<{ id: string }> {
   }
   return { id };
 }
+
+/**
+ * The workspace with the caller's role, or null when the caller is not a member
+ * (RLS also hides it). Used by content pages to decide which actions to show;
+ * the database still enforces every permission on its own.
+ */
+export async function getMyWorkspace(user: CurrentUser, workspaceId: string): Promise<WorkspaceSummary | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("role, workspaces!inner(id, name, created_at)")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error("Could not load workspace");
+  }
+  if (!data) return null;
+  return { id: data.workspaces.id, name: data.workspaces.name, role: data.role, createdAt: data.workspaces.created_at };
+}
