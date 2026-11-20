@@ -5,7 +5,7 @@ import { listProjects } from "@/lib/content/projects";
 import { ROLE_LABELS } from "@/lib/workspaces/labels";
 
 import { CreateProjectForm, ProjectCard } from "../_components/project-forms";
-import { Badge, Breadcrumbs, Card, EmptyState, Notice } from "../_components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, Notice, buttonClass } from "../_components/ui";
 import { loadWorkspace } from "../_lib/load";
 
 export const metadata: Metadata = { title: "Không gian làm việc" };
@@ -31,11 +31,16 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
     <div className="space-y-6">
       <div>
         <Breadcrumbs items={[{ label: "Bảng điều khiển", href: "/dashboard" }, { label: workspace.name }]} />
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="workspace-title">
-            {workspace.name}
-          </h1>
-          <Badge tone="indigo">{ROLE_LABELS[workspace.role]}</Badge>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight" data-testid="workspace-title">
+              {workspace.name}
+            </h1>
+            <Badge tone="indigo">{ROLE_LABELS[workspace.role]}</Badge>
+          </div>
+          <Link href={`/w/${workspace.id}/agent`} className={buttonClass.secondary} data-testid="open-agent">
+            ✦ Trợ lý AI
+          </Link>
         </div>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Các dự án nội dung trong không gian làm việc này.</p>
       </div>

@@ -8,7 +8,7 @@ import { getProject } from "@/lib/content/projects";
 
 import { LocalDateTime } from "../../../_components/client-ui";
 import { CreatePostForm } from "../../../_components/post-forms";
-import { Badge, Breadcrumbs, Card, EmptyState, Notice, StatusBadge } from "../../../_components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, Notice, StatusBadge, buttonClass } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
 export const metadata: Metadata = { title: "Dự án" };
@@ -53,11 +53,20 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
             { label: project.name },
           ]}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="project-title">
-            {project.name}
-          </h1>
-          {projectArchived ? <Badge tone="amber">Đã lưu trữ</Badge> : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight" data-testid="project-title">
+              {project.name}
+            </h1>
+            {projectArchived ? <Badge tone="amber">Đã lưu trữ</Badge> : null}
+          </div>
+          <Link
+            href={`/w/${workspace.id}/agent?project=${project.id}`}
+            className={buttonClass.secondary}
+            data-testid="open-agent"
+          >
+            ✦ Trợ lý AI
+          </Link>
         </div>
         {project.description ? (
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{project.description}</p>

@@ -13,7 +13,8 @@
     "test:db": "bash scripts/test-db.sh",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "test:e2e": "node tests/e2e/smoke.cjs",
-    "test:e2e:content": "node tests/e2e/content.cjs"
+    "test:e2e:content": "node tests/e2e/content.cjs",
+    "test:e2e:agent": "node tests/e2e/agent-ui.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
