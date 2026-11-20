@@ -31,3 +31,38 @@ export const agentChatHistorySchema = z
   .min(1, { message: "Thiếu tin nhắn." })
   .max(AGENT_CHAT_LIMITS.maxMessages, { message: "Cuộc trò chuyện quá dài, hãy bắt đầu lại." })
   .refine((messages) => messages.at(-1)?.role === "user", { message: "Tin nhắn cuối phải là của người dùng." });
+
+/** IANA time zone sent by the browser (Intl.DateTimeFormat().resolvedOptions().timeZone). */
+export const timeZoneSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(/^(UTC|[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){1,2})$/, { message: "Múi giờ không hợp lệ." })
+  .refine(
+    (zone) => {
+      try {
+        new Intl.DateTimeFormat("en-GB", { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "Múi giờ không hợp lệ." },
+  );
+
+/**
+ * Body of POST /api/agent. Strict: the client cannot send a user id, a role or
+ * any other field; identity and permissions come from the session only.
+ */
+export const agentRequestSchema = z.strictObject({
+  workspaceId: z.string().trim().pipe(z.uuid({ message: "Mã không gian làm việc không hợp lệ." })),
+  projectId: z
+    .string()
+    .trim()
+    .pipe(z.uuid({ message: "Mã dự án không hợp lệ." }))
+    .nullish(),
+  messages: agentChatHistorySchema,
+  timeZone: timeZoneSchema.optional(),
+});
+
+export type AgentRequest = z.infer<typeof agentRequestSchema>;
