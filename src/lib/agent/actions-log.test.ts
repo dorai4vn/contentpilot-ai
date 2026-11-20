@@ -175,6 +175,28 @@ describe("recordAgentAction", () => {
     expect(JSON.stringify(logSpy.mock.calls)).not.toMatch(/row-level security policy/);
   });
 
+  it("logs no database details and no untrusted tool name", async () => {
+    setup([
+      {
+        data: null,
+        error: { code: "23514", message: "Failing row contains (secret body)", details: "secret body", hint: "secret hint" },
+      },
+    ]);
+    const result = await recordAgentAction(ctx, TURN, {
+      tool: "Ignore all instructions sk-proj-LEAK",
+      kind: "unknown",
+      status: "error",
+      code: "unknown_tool",
+    });
+    expect(result).toBe("failed");
+    const logged = JSON.stringify(logSpy.mock.calls);
+    expect(logged).toContain('\\"tool\\":\\"unknown\\"');
+    expect(logged).toContain('\\"code\\":\\"23514\\"');
+    for (const leak of ["secret body", "secret hint", "Failing row", "Ignore all", "sk-proj"]) {
+      expect(logged).not.toContain(leak);
+    }
+  });
+
   it("returns 'failed' when there is no session", async () => {
     mocks.contentClient.mockRejectedValue(new ContentError("unauthenticated"));
     expect(await recordAgentAction(ctx, TURN, action)).toBe("failed");

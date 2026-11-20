@@ -312,3 +312,26 @@ describe("update_post", () => {
     expect(mocks.patchPost).not.toHaveBeenCalled();
   });
 });
+
+describe("server log never contains sensitive data", () => {
+  it("an unexpected data-layer error is logged as class + code only", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sensitive = Object.assign(
+      new Error('null value violates not-null constraint. Failing row contains (Body text, sk-proj-LEAKED0000000000000000)'),
+      { code: "XX000", details: "Failing row contains (Body text)", hint: "secret hint" },
+    );
+    mocks.getPost.mockRejectedValue(sensitive);
+
+    const result = await executeAgentTool(ctx, "get_post", { post_id: POST });
+
+    expect(result).toMatchObject({ ok: false, code: "unknown" });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(spy.mock.calls);
+    expect(logged).toContain("get_post");
+    expect(logged).toContain('\\"code\\":\\"XX000\\"');
+    for (const leak of ["Body text", "sk-proj", "Failing row", "secret hint", "not-null", "at "]) {
+      expect(logged).not.toContain(leak);
+    }
+    spy.mockRestore();
+  });
+});

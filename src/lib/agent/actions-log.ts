@@ -8,6 +8,7 @@ import { uuidSchema } from "@/lib/validation/content";
 import type { AgentActionField, AgentActionKind, AgentActionStatus, Database } from "@/types/database";
 
 import type { AgentToolContext, AgentToolEffect } from "./executor";
+import { logAgentError, safeErrorInfo, safeLabel } from "./safe-log";
 import { AGENT_TOOL_NAMES } from "./tools";
 
 /**
@@ -91,12 +92,17 @@ export async function recordAgentAction(
     if (user.id !== ctx.userId) return "failed";
     const { error } = await supabase.from("agent_actions").insert(toAgentActionRow(ctx, turnId, action));
     if (error) {
-      console.error("[agent log] could not record action", action.tool, toContentError(error).code, error.code);
+      logAgentError("agent log", {
+        event: "record_failed",
+        tool: safeLabel(action.tool),
+        reason: toContentError(error).code,
+        ...safeErrorInfo(error),
+      });
       return "failed";
     }
     return "recorded";
   } catch (error) {
-    console.error("[agent log] could not record action", action.tool, error instanceof Error ? error.name : typeof error);
+    logAgentError("agent log", { event: "record_failed", tool: safeLabel(action.tool), ...safeErrorInfo(error) });
     return "failed";
   }
 }

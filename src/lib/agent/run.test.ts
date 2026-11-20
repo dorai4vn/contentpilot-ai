@@ -362,6 +362,25 @@ describe("errors are handled safely", () => {
     expect(result.reply).toContain(AGENT_REPLIES.partial);
   });
 
+  it("logs only the error class and code when OpenAI fails", async () => {
+    const { model } = scriptedModel([
+      () => {
+        throw Object.assign(new Error("401 Incorrect API key provided: sk-proj-****LEAK. Body text"), {
+          name: "AuthenticationError",
+          code: "invalid_api_key",
+          stack: "AuthenticationError: ...\n    at /srv/app/llm.ts:42:7",
+        });
+      },
+    ]);
+    await runAgent({ ctx, model, messages: userAsks("Xin chào") });
+    const logged = JSON.stringify(logSpy.mock.calls);
+    expect(logged).toContain("AuthenticationError");
+    expect(logged).toContain("invalid_api_key");
+    for (const leak of ["sk-proj", "LEAK", "Incorrect API key", "Body text", "llm.ts"]) {
+      expect(logged).not.toContain(leak);
+    }
+  });
+
   it("SDK timeout", async () => {
     const { model } = scriptedModel([
       () => {

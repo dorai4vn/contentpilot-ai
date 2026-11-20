@@ -13,6 +13,7 @@ import {
 } from "./executor";
 import { type AgentLogResult, recordAgentAction } from "./actions-log";
 import { AGENT_LIMITS } from "./limits";
+import { logAgentError, safeErrorInfo } from "./safe-log";
 import type { AgentInputItem, AgentModel, AgentToolCall } from "./llm";
 import { buildSystemPrompt, leaksSystemPrompt } from "./prompt";
 import { type AgentToolKind, agentToolDefinition, openAIFunctionTools } from "./tools";
@@ -245,8 +246,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
         response = await model.respond({ instructions, input, tools, signal: controller.signal });
       } catch (error) {
         const timeout = isTimeout(error) || controller.signal.aborted;
-        // Server log only: the error class name, never the message or the key.
-        console.error("[agent] model call failed", error instanceof Error ? error.name : typeof error);
+        // Server log only: error class and code, never the message (it can contain part of the key).
+        logAgentError("agent", { event: "model_call_failed", ...safeErrorInfo(error) });
         return finish(timeout ? "timeout" : "model_error", timeout ? AGENT_REPLIES.timeout : AGENT_REPLIES.modelError);
       }
 
