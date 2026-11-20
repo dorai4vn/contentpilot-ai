@@ -175,7 +175,12 @@ function postRow(id) {
     );
     check((await text(owner.page, '[data-testid="status-badge"]')) === "Sẵn sàng", "status badge shows Sẵn sàng");
     check((await owner.page.locator('[data-testid="version-item"]').first().textContent()).includes("trạng thái → Sẵn sàng"), "history shows the status change");
-    check((await owner.page.locator('button:has-text("Publish"), button:has-text("Xuất bản")').count()) === 0, "no publish button");
+    // M4: publishing only happens through a human-approved request. The post page may
+    // offer "Gửi yêu cầu xuất bản" but never a button that publishes directly.
+    check(
+      (await owner.page.locator('button:text-is("Publish"), button:text-is("Xuất bản"), [data-testid="approve-start"], [data-testid="approve-confirm-submit"]').count()) === 0,
+      "no direct publish or approve button on the post page",
+    );
     check((await owner.page.locator('button:has-text("Delete"), button:has-text("Xóa")').count()) === 0, "no delete button");
     check((await owner.page.locator("html").getAttribute("lang")) === "vi", "page language is Vietnamese (lang=vi)");
 

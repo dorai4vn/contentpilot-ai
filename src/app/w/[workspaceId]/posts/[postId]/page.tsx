@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { contentPaths } from "@/lib/content/paths";
+import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getProject } from "@/lib/content/projects";
+import { listPublishRequests } from "@/lib/content/publish-requests";
 
 import { LocalDateTime } from "../../../_components/client-ui";
 import { ArchivePostButton, type EditablePost, PostEditor, StatusSwitch } from "../../../_components/post-forms";
+import { CancelRequestForm, RequestPublishForm } from "../../../_components/publish-forms";
+import { CANCEL_REASON_LABELS, PublishStatusBadge } from "../../../_components/publish-ui";
 import { Badge, Breadcrumbs, Card, Notice, STATUS_LABELS, StatusBadge } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
@@ -19,12 +24,24 @@ export default async function PostEditorPage({ params }: PageProps<"/w/[workspac
   const postId = routeId(postParam);
   const [post, history] = await Promise.all([getPost({ postId }), getPostHistory({ postId })]);
   if (!post || post.workspaceId !== workspace.id) notFound();
-  const project = await getProject({ projectId: post.projectId });
+  const [project, requests] = await Promise.all([
+    getProject({ projectId: post.projectId }),
+    listPublishRequests({ workspaceId: workspace.id, postId: post.id, limit: 10 }),
+  ]);
   if (!project) notFound();
 
   const projectArchived = project.archivedAt !== null;
   const postArchived = post.archivedAt !== null;
-  const readOnly = postArchived || projectArchived;
+  const published = post.status === "published";
+  // A published post is read-only (the database rejects any change: CP422).
+  const readOnly = postArchived || projectArchived || published;
+
+  const can = publishPermissions(workspace.role);
+  const latest = requests[0] ?? null;
+  const open = requests.find((r) => r.status === "pending") ?? null;
+  const openValid = open !== null && open.displayStatus === "pending" && open.postVersion === post.version;
+  const approval = published ? (requests.find((r) => r.status === "approved") ?? null) : null;
+  const reviewPath = (id: string) => `${contentPaths.approvals(workspace.id)}/${id}`;
 
   const editable: EditablePost = {
     id: post.id,
@@ -61,6 +78,24 @@ export default async function PostEditorPage({ params }: PageProps<"/w/[workspac
         </div>
       </div>
 
+      {published ? (
+        <Notice tone="success" testId="post-published-notice">
+          Bài viết đã được xuất bản
+          {approval?.decidedAt ? (
+            <>
+              {" "}
+              lúc <LocalDateTime iso={approval.decidedAt} />
+            </>
+          ) : null}{" "}
+          và chỉ có thể xem. Không thể sửa, lưu trữ hay gửi yêu cầu xuất bản lại.
+        </Notice>
+      ) : openValid ? (
+        <Notice tone="info" testId="post-pending-notice">
+          Phiên bản {open.postVersion} đang chờ duyệt xuất bản. Nếu bạn lưu thay đổi, yêu cầu này sẽ tự động bị hủy và cần
+          gửi lại.
+        </Notice>
+      ) : null}
+
       {postArchived ? (
         <Notice tone="warning" testId="post-archived-notice">
           Bài viết này đã được lưu trữ và chỉ có thể xem. Hãy khôi phục để chỉnh sửa.
@@ -80,20 +115,83 @@ export default async function PostEditorPage({ params }: PageProps<"/w/[workspac
           <Card>
             <h2 className="mb-1 font-semibold">Trạng thái</h2>
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
-              {post.status === "ready"
-                ? "Sẵn sàng để duyệt. Chức năng xuất bản sẽ có ở giai đoạn sau, kèm bước phê duyệt của con người."
-                : "Bản nháp: bài viết vẫn đang được soạn."}
+              {published
+                ? "Đã xuất bản: bài viết chỉ có thể xem."
+                : post.status === "ready"
+                  ? "Sẵn sàng: bài viết đã soạn xong và có thể gửi yêu cầu xuất bản."
+                  : "Bản nháp: bài viết vẫn đang được soạn."}
             </p>
             {readOnly ? null : <StatusSwitch key={`status-${post.version}`} post={editable} />}
           </Card>
 
-          <Card>
-            <h2 className="mb-1 font-semibold">Lưu trữ</h2>
-            <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
-              Bài viết được lưu trữ vẫn giữ nguyên lịch sử và có thể khôi phục. Không có dữ liệu nào bị xóa.
-            </p>
-            <ArchivePostButton key={`archive-${post.version}`} post={editable} projectArchived={projectArchived} />
+          <Card data-testid="publish-card">
+            <h2 className="mb-1 font-semibold">Xuất bản</h2>
+            {published ? (
+              <p className="text-sm text-slate-600 dark:text-slate-400" data-testid="publish-card-published">
+                Bài viết đã được xuất bản sau khi được phê duyệt.
+                {approval ? (
+                  <>
+                    {" "}
+                    <Link href={reviewPath(approval.id)} className="text-indigo-600 hover:underline">
+                      Xem yêu cầu đã duyệt
+                    </Link>
+                  </>
+                ) : null}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Bài viết chỉ được xuất bản sau khi chủ sở hữu hoặc quản trị viên phê duyệt đúng phiên bản bạn gửi.
+                </p>
+                {openValid ? (
+                  <div className="space-y-2" data-testid="publish-card-pending">
+                    <div className="flex items-center gap-2 text-sm">
+                      <PublishStatusBadge status="pending" /> Phiên bản {open.postVersion}
+                    </div>
+                    <Link href={reviewPath(open.id)} className="text-sm font-medium text-indigo-600 hover:underline" data-testid="open-review">
+                      {can.decidePublish ? "Xem và duyệt →" : "Xem yêu cầu →"}
+                    </Link>
+                    {open.requestedBy === user.id || can.cancelAnyRequest ? (
+                      <CancelRequestForm workspaceId={workspace.id} requestId={open.id} />
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    {latest && latest.status !== "approved" ? (
+                      <p className="text-xs text-slate-500" data-testid="publish-card-last">
+                        Yêu cầu gần nhất (phiên bản {latest.postVersion}): <PublishStatusBadge status={latest.displayStatus} />
+                        {latest.cancelReason ? <> — {CANCEL_REASON_LABELS[latest.cancelReason]}</> : null}
+                        {latest.status === "rejected" && latest.decisionNote ? <> — lý do: “{latest.decisionNote}”</> : null}{" "}
+                        <Link href={reviewPath(latest.id)} className="text-indigo-600 hover:underline">
+                          Chi tiết
+                        </Link>
+                      </p>
+                    ) : null}
+                    {readOnly ? (
+                      <p className="text-xs text-slate-500">Không thể gửi yêu cầu khi bài viết hoặc dự án đang được lưu trữ.</p>
+                    ) : (
+                      <RequestPublishForm
+                        key={`publish-${post.version}`}
+                        workspaceId={workspace.id}
+                        postId={post.id}
+                        version={post.version}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </Card>
+
+          {published ? null : (
+            <Card>
+              <h2 className="mb-1 font-semibold">Lưu trữ</h2>
+              <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
+                Bài viết được lưu trữ vẫn giữ nguyên lịch sử và có thể khôi phục. Không có dữ liệu nào bị xóa.
+              </p>
+              <ArchivePostButton key={`archive-${post.version}`} post={editable} projectArchived={projectArchived} />
+            </Card>
+          )}
 
           <Card>
             <h2 className="mb-3 font-semibold">Lịch sử phiên bản</h2>

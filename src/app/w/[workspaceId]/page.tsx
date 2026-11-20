@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { contentPaths } from "@/lib/content/paths";
 import { listProjects } from "@/lib/content/projects";
+import { listPublishRequests } from "@/lib/content/publish-requests";
 import { ROLE_LABELS } from "@/lib/workspaces/labels";
 
 import { CreateProjectForm, ProjectCard } from "../_components/project-forms";
@@ -16,7 +18,11 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
   const showArchived = view === "archived";
 
   const { workspace, permissions } = await loadWorkspace(workspaceId, `/w/${workspaceId}`);
-  const all = await listProjects({ workspaceId: workspace.id, includeArchived: true });
+  const [all, pendingRequests] = await Promise.all([
+    listProjects({ workspaceId: workspace.id, includeArchived: true }),
+    listPublishRequests({ workspaceId: workspace.id, status: "pending", limit: 100 }),
+  ]);
+  const pendingCount = pendingRequests.filter((r) => r.displayStatus === "pending").length;
   const projects = all.filter((p) => (p.archivedAt !== null) === showArchived);
   const archivedCount = all.filter((p) => p.archivedAt !== null).length;
 
@@ -38,9 +44,22 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
             </h1>
             <Badge tone="indigo">{ROLE_LABELS[workspace.role]}</Badge>
           </div>
-          <Link href={`/w/${workspace.id}/agent`} className={buttonClass.secondary} data-testid="open-agent">
-            ✦ Trợ lý AI
-          </Link>
+          <nav className="flex flex-wrap gap-2" aria-label="Điều hướng không gian làm việc">
+            <Link href={contentPaths.approvals(workspace.id)} className={buttonClass.secondary} data-testid="open-approvals">
+              Phê duyệt
+              {pendingCount ? (
+                <span
+                  className="ml-1 rounded-full bg-amber-100 px-1.5 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                  data-testid="approvals-pending-count"
+                >
+                  {pendingCount}
+                </span>
+              ) : null}
+            </Link>
+            <Link href={`/w/${workspace.id}/agent`} className={buttonClass.secondary} data-testid="open-agent">
+              ✦ Trợ lý AI
+            </Link>
+          </nav>
         </div>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Các dự án nội dung trong không gian làm việc này.</p>
       </div>

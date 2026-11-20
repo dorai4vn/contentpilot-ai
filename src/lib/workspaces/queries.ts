@@ -70,3 +70,23 @@ export async function getMyWorkspace(user: CurrentUser, workspaceId: string): Pr
   if (!data) return null;
   return { id: data.workspaces.id, name: data.workspaces.name, role: data.role, createdAt: data.workspaces.created_at };
 }
+
+export type WorkspaceMemberRole = { userId: string; role: WorkspaceRole };
+
+/**
+ * Members of a workspace with their roles (RLS: visible to fellow members only).
+ * Used to label who requested / decided a publish request. Emails are not
+ * readable by other members, so the UI shows "Bạn" or the member's role.
+ */
+export async function listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMemberRole[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("user_id, role")
+    .eq("workspace_id", workspaceId)
+    .limit(500);
+  if (error) {
+    throw new Error("Could not load workspace members");
+  }
+  return (data ?? []).map((row) => ({ userId: row.user_id, role: row.role }));
+}

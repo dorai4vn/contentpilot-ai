@@ -16,6 +16,7 @@ const BUILDER_METHODS = [
   "upsert",
   "eq",
   "is",
+  "in",
   "order",
   "limit",
   "single",

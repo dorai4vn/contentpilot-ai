@@ -15,3 +15,13 @@ export function contentPermissions(role: WorkspaceRole) {
 }
 
 export type ContentPermissions = ReturnType<typeof contentPermissions>;
+
+/**
+ * Publish approval (M4). Mirrors the database: any member may ask for a post to
+ * be published; only owners/admins approve or reject. The requester or an
+ * owner/admin may cancel. UI hints only — the RPCs enforce every rule.
+ */
+export function publishPermissions(role: WorkspaceRole) {
+  const manager = role === "owner" || role === "admin";
+  return { requestPublish: true, decidePublish: manager, cancelAnyRequest: manager };
+}

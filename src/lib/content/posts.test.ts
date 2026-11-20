@@ -65,6 +65,7 @@ describe("module surface", () => {
       "createPost",
       "getPost",
       "getPostHistory",
+      "listPostSummariesByIds",
       "listPosts",
       "patchPost",
       "restorePost",
@@ -536,5 +537,26 @@ describe("patchPost (partial edit, used by the agent)", () => {
   ])("rejects %s before touching the database", async (_label, input) => {
     await expectContentError(posts.patchPost(input), "invalid_input");
     expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("listPostSummariesByIds", () => {
+  it("reads the given posts of one workspace (no bodies), keyed by id", async () => {
+    const summaryRow = Object.fromEntries(Object.entries(postRow).filter(([key]) => key !== "body"));
+    const fake = setup([ok([summaryRow])]);
+    const result = await posts.listPostSummariesByIds({ workspaceId: WS, postIds: [POST, POST] });
+    const query = fake.queries[0]!;
+    expect(query.table).toBe("content_posts");
+    expect(query.args("select")?.[0]).not.toMatch(/\bbody\b/);
+    expect(query.calls).toContainEqual(["eq", ["workspace_id", WS]]);
+    expect(query.calls).toContainEqual(["in", ["id", [POST]]]);
+    expect(result.get(POST)?.title).toBe("Hello");
+  });
+
+  it("makes no query for an empty list and rejects invalid ids", async () => {
+    const fake = setup([]);
+    expect((await posts.listPostSummariesByIds({ workspaceId: WS, postIds: [] })).size).toBe(0);
+    await expectContentError(posts.listPostSummariesByIds({ workspaceId: WS, postIds: ["nope"] }), "invalid_input");
+    expect(fake.queries).toHaveLength(0);
   });
 });

@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import {
+  uuidSchema,
   postCreateSchema,
   postListSchema,
   postPatchSchema,
@@ -146,6 +147,31 @@ export async function listPosts(input: unknown): Promise<ContentPostSummary[]> {
 
   if (error) throw toContentError(error);
   return (data ?? []).map(toSummary);
+}
+
+const postIdsSchema = z.strictObject({
+  workspaceId: uuidSchema,
+  postIds: z.array(uuidSchema).max(200),
+});
+
+/**
+ * Summaries (no bodies) of the given posts of one workspace, keyed by id; posts
+ * that are not visible are simply missing. Used by the approval queue.
+ */
+export async function listPostSummariesByIds(input: unknown): Promise<Map<string, ContentPostSummary>> {
+  const { workspaceId, postIds } = parseContentInput(postIdsSchema, input);
+  const unique = [...new Set(postIds)];
+  if (unique.length === 0) return new Map();
+  const { supabase } = await contentClient();
+
+  const { data, error } = await supabase
+    .from("content_posts")
+    .select(POST_SUMMARY_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .in("id", unique);
+
+  if (error) throw toContentError(error);
+  return new Map((data ?? []).map((row) => [row.id, toSummary(row)]));
 }
 
 /** One post with its body, or null when it does not exist or is not visible. */
