@@ -57,15 +57,16 @@ export function ScheduleField({
             onClick={() => setEdited({ local: "" })}
             data-testid="schedule-clear"
           >
-            Clear
+            Bỏ lịch
           </button>
         ) : null}
       </div>
       <input type="hidden" name="scheduledFor" value={invalid ? "invalid" : hiddenValue} data-testid="schedule-iso" />
       <p id={`${id}-help`} className="mt-1 text-xs text-slate-500">
-        Your local time. Saved as UTC{hiddenValue && !invalid ? ` (${hiddenValue})` : ""}. Leave empty if not scheduled.
+        Theo giờ trên máy của bạn, được lưu dưới dạng UTC{hiddenValue && !invalid ? ` (${hiddenValue})` : ""}. Để trống nếu
+        chưa lên lịch.
       </p>
-      <FieldError message={invalid ? "Enter a valid date and time." : error} />
+      <FieldError message={invalid ? "Vui lòng nhập ngày giờ hợp lệ." : error} />
     </div>
   );
 }

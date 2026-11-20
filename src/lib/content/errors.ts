@@ -20,14 +20,14 @@ export type ContentErrorCode =
   | "unknown";
 
 export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
-  unauthenticated: "Please sign in again.",
-  not_found: "This item does not exist or you do not have access to it.",
+  unauthenticated: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+  not_found: "Không tìm thấy nội dung này hoặc bạn không có quyền truy cập.",
   version_conflict:
-    "Someone else changed this post after you opened it. Reload to see the latest version, then reapply your changes.",
-  archived: "This item is archived. Restore it before editing.",
-  forbidden: "You do not have permission to do this.",
-  invalid_input: "Some fields are invalid. Please check them and try again.",
-  unknown: "Something went wrong. Please try again.",
+    "Bài viết đã được người khác cập nhật sau khi bạn mở. Hãy tải phiên bản mới nhất rồi áp dụng lại thay đổi của bạn.",
+  archived: "Mục này đang được lưu trữ. Hãy khôi phục trước khi chỉnh sửa.",
+  forbidden: "Bạn không có quyền thực hiện thao tác này.",
+  invalid_input: "Một số thông tin chưa hợp lệ. Vui lòng kiểm tra lại.",
+  unknown: "Đã có lỗi xảy ra. Vui lòng thử lại.",
 };
 
 export class ContentError extends Error {
@@ -68,12 +68,15 @@ export function toContentError(error: unknown): ContentError {
   return new ContentError((code && SQLSTATE_TO_CODE[code]) || "unknown");
 }
 
+/** Message for a field the client is not allowed to send (version, created_by…). */
+export const FORBIDDEN_FIELD_MESSAGE = "Không được phép gửi trường này.";
+
 /** Flattens zod issues into one message per field; rejected extra keys are named. */
 export function contentFieldErrors(error: z.ZodError): Partial<Record<string, string>> {
   const result: Partial<Record<string, string>> = {};
   for (const issue of error.issues) {
     if (issue.code === "unrecognized_keys") {
-      for (const key of issue.keys) result[key] ??= "This field cannot be set.";
+      for (const key of issue.keys) result[key] ??= FORBIDDEN_FIELD_MESSAGE;
       continue;
     }
     const key = String(issue.path[0] ?? "form");

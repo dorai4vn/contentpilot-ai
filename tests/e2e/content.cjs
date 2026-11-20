@@ -72,7 +72,7 @@ async function text(page, selector) {
 
 async function waitForVersion(page, version) {
   await page.waitForFunction(
-    (v) => document.querySelector('[data-testid="post-version"]')?.textContent?.trim() === `Version ${v}`,
+    (v) => document.querySelector('[data-testid="post-version"]')?.textContent?.trim() === `Phiên bản ${v}`,
     version,
     { timeout: 15000 },
   );
@@ -99,7 +99,7 @@ function postRow(id) {
     // Owner creates a workspace on the dashboard and opens it.
     const wsName = `E2E Workspace ${stamp}`;
     await owner.page.fill('input[name="name"]', wsName);
-    await owner.page.click('button:has-text("Create workspace")');
+    await owner.page.click('button:has-text("Tạo không gian làm việc")');
     const wsLink = owner.page.locator(`[data-testid="workspace-link"]:has-text("${wsName}")`);
     await wsLink.waitFor({ timeout: 15000 });
     const wsHref = await wsLink.getAttribute("href");
@@ -173,10 +173,11 @@ function postRow(id) {
       after.title === before.title && after.body === before.body && after.scheduled_for === before.scheduled_for,
       "draft -> ready kept title, body and scheduled_for identical",
     );
-    check((await text(owner.page, '[data-testid="status-badge"]')) === "Ready", "status badge shows Ready");
-    check((await owner.page.locator('[data-testid="version-item"]').first().textContent()).includes("status → ready"), "history shows the status change");
-    check((await owner.page.locator('button:has-text("Publish")').count()) === 0, "no publish button");
-    check((await owner.page.locator('button:has-text("Delete")').count()) === 0, "no delete button");
+    check((await text(owner.page, '[data-testid="status-badge"]')) === "Sẵn sàng", "status badge shows Sẵn sàng");
+    check((await owner.page.locator('[data-testid="version-item"]').first().textContent()).includes("trạng thái → Sẵn sàng"), "history shows the status change");
+    check((await owner.page.locator('button:has-text("Publish"), button:has-text("Xuất bản")').count()) === 0, "no publish button");
+    check((await owner.page.locator('button:has-text("Delete"), button:has-text("Xóa")').count()) === 0, "no delete button");
+    check((await owner.page.locator("html").getAttribute("lang")) === "vi", "page language is Vietnamese (lang=vi)");
 
     // 5b. Regression: values that validation would normalise survive a status switch.
     const spacedId = sql(
@@ -223,7 +224,7 @@ function postRow(id) {
     const schedule = await owner.page
       .locator('[data-testid="post-item"]:has-text("Launch announcement") [data-testid="post-schedule"]')
       .textContent();
-    check(schedule.includes("1 Dec 2026, 09:00"), `list shows the planned date in local time (${schedule.trim()})`);
+    check(schedule.includes("01/12/2026 09:00"), `list shows the planned date in Vietnamese local format (${schedule.trim()})`);
 
     // 7. Version conflict between two editors --------------------------------------------
     await owner.page.goto(postUrl);
@@ -292,6 +293,7 @@ function postRow(id) {
     // 11. Outsider cannot open the workspace ------------------------------------------------------
     const response = await outsider.page.goto(`${BASE_URL}/w/${workspaceId}`);
     check(response.status() === 404, `outsider gets 404 for the workspace (status ${response.status()})`);
+    check((await outsider.page.locator("body").textContent()).includes("Không tìm thấy"), "404 page is in Vietnamese");
     const postResponse = await outsider.page.goto(postUrl);
     check(postResponse.status() === 404, "outsider gets 404 for the post");
     // Expected 404 responses for the outsider are logged by the browser as failed loads.

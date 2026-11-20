@@ -16,18 +16,18 @@ type Props = {
 
 const copy: Record<Mode, { submit: string; pending: string; switchText: string; switchHref: string; switchLabel: string }> = {
   login: {
-    submit: "Sign in",
-    pending: "Signing in…",
-    switchText: "No account yet?",
+    submit: "Đăng nhập",
+    pending: "Đang đăng nhập…",
+    switchText: "Chưa có tài khoản?",
     switchHref: "/signup",
-    switchLabel: "Create one",
+    switchLabel: "Đăng ký ngay",
   },
   signup: {
-    submit: "Create account",
-    pending: "Creating account…",
-    switchText: "Already have an account?",
+    submit: "Tạo tài khoản",
+    pending: "Đang tạo tài khoản…",
+    switchText: "Đã có tài khoản?",
     switchHref: "/login",
-    switchLabel: "Sign in",
+    switchLabel: "Đăng nhập",
   },
 };
 
@@ -60,7 +60,7 @@ export function AuthForm({ mode, action, next, notice }: Props) {
       </label>
 
       <label className="flex flex-col gap-1 text-sm font-medium">
-        Password
+        Mật khẩu
         <input
           name="password"
           type="password"

@@ -18,7 +18,7 @@ import type { ContentPostStatus } from "@/types/database";
 
 import { ActionFeedback, SubmitButton } from "./client-ui";
 import { ScheduleField } from "./schedule-field";
-import { FieldError, FieldLabel, Notice, buttonClass, inputClass } from "./ui";
+import { FieldError, FieldLabel, Notice, STATUS_LABELS, buttonClass, inputClass } from "./ui";
 
 type State = ActionState<PostActionData>;
 
@@ -38,8 +38,8 @@ export type EditablePost = {
 function StatusSelect({ id, defaultValue }: { id: string; defaultValue: "draft" | "ready" }) {
   return (
     <select id={id} name="status" defaultValue={defaultValue} className={inputClass} data-testid="status-select">
-      <option value="draft">Draft</option>
-      <option value="ready">Ready</option>
+      <option value="draft">{STATUS_LABELS.draft}</option>
+      <option value="ready">{STATUS_LABELS.ready}</option>
     </select>
   );
 }
@@ -59,37 +59,37 @@ export function CreatePostForm({ workspaceId, projectId }: { workspaceId: string
       <input type="hidden" name="workspaceId" value={workspaceId} />
       <input type="hidden" name="projectId" value={projectId} />
       <div>
-        <FieldLabel htmlFor="new-post-title">Title</FieldLabel>
+        <FieldLabel htmlFor="new-post-title">Tiêu đề</FieldLabel>
         <input
           id="new-post-title"
           name="title"
           required
           maxLength={CONTENT_LIMITS.postTitleMax}
-          placeholder="Post title"
+          placeholder="Tiêu đề bài viết"
           className={inputClass}
         />
         <FieldError message={errors?.title} />
       </div>
       <div>
-        <FieldLabel htmlFor="new-post-body">Content</FieldLabel>
+        <FieldLabel htmlFor="new-post-body">Nội dung</FieldLabel>
         <textarea id="new-post-body" name="body" rows={4} maxLength={CONTENT_LIMITS.postBodyMax} className={inputClass} />
         <FieldError message={errors?.body} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <FieldLabel htmlFor="new-post-status">Status</FieldLabel>
+          <FieldLabel htmlFor="new-post-status">Trạng thái</FieldLabel>
           <StatusSelect id="new-post-status" defaultValue="draft" />
         </div>
         <div>
-          <FieldLabel htmlFor="new-post-schedule">Planned publication</FieldLabel>
+          <FieldLabel htmlFor="new-post-schedule">Lịch đăng dự kiến</FieldLabel>
           <ScheduleField id="new-post-schedule" initialIso={null} error={errors?.scheduledFor} />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingLabel="Creating…" testId="create-post-submit">
-          Create post
+        <SubmitButton pendingLabel="Đang tạo…" testId="create-post-submit">
+          Tạo bài viết
         </SubmitButton>
-        <ActionFeedback state={state} success="Post created. Opening the editor…" testId="create-post" />
+        <ActionFeedback state={state} success="Đã tạo bài viết. Đang mở trình soạn thảo…" testId="create-post" />
       </div>
     </form>
   );
@@ -130,7 +130,7 @@ function EditForm({
       <input type="hidden" name="expectedVersion" value={post.version} data-testid="expected-version" />
       <input type="hidden" name="status" value={post.status} />
       <div>
-        <FieldLabel htmlFor="post-title">Title</FieldLabel>
+        <FieldLabel htmlFor="post-title">Tiêu đề</FieldLabel>
         <input
           id="post-title"
           name="title"
@@ -143,7 +143,7 @@ function EditForm({
         <FieldError message={errors?.title} />
       </div>
       <div>
-        <FieldLabel htmlFor="post-body">Content</FieldLabel>
+        <FieldLabel htmlFor="post-body">Nội dung</FieldLabel>
         <textarea
           id="post-body"
           name="body"
@@ -156,13 +156,13 @@ function EditForm({
         <FieldError message={errors?.body} />
       </div>
       <div className="max-w-md">
-        <FieldLabel htmlFor="post-schedule">Planned publication</FieldLabel>
+        <FieldLabel htmlFor="post-schedule">Lịch đăng dự kiến</FieldLabel>
         <ScheduleField id="post-schedule" initialIso={post.scheduledFor} disabled={readOnly} error={errors?.scheduledFor} />
       </div>
       {readOnly ? null : (
         <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton pendingLabel="Saving…" testId="save-post">
-            Save changes
+          <SubmitButton pendingLabel="Đang lưu…" testId="save-post">
+            Lưu thay đổi
           </SubmitButton>
           {/* Success is shown by PostEditor: this form re-mounts after a save. */}
           <ActionFeedback state={state && !state.ok && state.code !== "version_conflict" ? state : null} testId="save-post" />
@@ -185,7 +185,7 @@ export function PostEditor({ post, readOnly }: { post: EditablePost; readOnly: b
     <div className="space-y-4">
       {savedVersion !== null && savedVersion === post.version && !conflict ? (
         <Notice tone="success" testId="save-post-success">
-          Saved as version {savedVersion}.
+          Đã lưu thành phiên bản {savedVersion}.
         </Notice>
       ) : null}
       {conflict ? (
@@ -194,13 +194,13 @@ export function PostEditor({ post, readOnly }: { post: EditablePost; readOnly: b
           data-testid="version-conflict"
           className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
         >
-          <p className="font-medium">Someone else changed this post after you opened it.</p>
+          <p className="font-medium">Bài viết đã được người khác cập nhật sau khi bạn mở.</p>
           <p>
-            Your changes were <strong>not saved</strong>, and nothing was overwritten. Load the latest version, then
-            reapply your changes. Your unsaved text is below so you can copy it.
+            Thay đổi của bạn <strong>chưa được lưu</strong> và không có dữ liệu nào bị ghi đè. Hãy tải phiên bản mới
+            nhất rồi áp dụng lại thay đổi. Nội dung bạn vừa soạn được giữ bên dưới để bạn sao chép.
           </p>
           <details>
-            <summary className="cursor-pointer font-medium">Your unsaved text</summary>
+            <summary className="cursor-pointer font-medium">Nội dung chưa lưu của bạn</summary>
             <p className="mt-2 font-medium">{conflict.title}</p>
             <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-2 font-mono text-xs dark:bg-black/30">
               {conflict.body}
@@ -208,10 +208,10 @@ export function PostEditor({ post, readOnly }: { post: EditablePost; readOnly: b
           </details>
           <div className="flex gap-2">
             <button type="button" className={buttonClass.primary} onClick={() => router.refresh()} data-testid="load-latest">
-              Load latest version
+              Tải phiên bản mới nhất
             </button>
             <button type="button" className={buttonClass.ghost} onClick={() => setConflict(null)}>
-              Dismiss
+              Đóng
             </button>
           </div>
         </div>
@@ -235,7 +235,7 @@ export function PostEditor({ post, readOnly }: { post: EditablePost; readOnly: b
 
 function versionHint(state: ActionResult<PostActionData> | null) {
   return state && !state.ok && state.code === "version_conflict"
-    ? " Reload the page to get the latest version."
+    ? " Hãy tải lại trang để xem phiên bản mới nhất."
     : "";
 }
 
@@ -250,10 +250,10 @@ export function StatusSwitch({ post }: { post: EditablePost }) {
       <input type="hidden" name="status" value={target} />
       <SubmitButton
         variant={target === "ready" ? "primary" : "secondary"}
-        pendingLabel="Updating…"
+        pendingLabel="Đang cập nhật…"
         testId={target === "ready" ? "mark-ready" : "back-to-draft"}
       >
-        {target === "ready" ? "Mark as ready" : "Move back to draft"}
+        {target === "ready" ? "Chuyển sang Sẵn sàng" : "Chuyển về Bản nháp"}
       </SubmitButton>
       {state && !state.ok ? (
         <Notice tone={state.code === "version_conflict" ? "warning" : "error"} testId="status-switch-error">
@@ -275,14 +275,14 @@ export function ArchivePostButton({ post, projectArchived }: { post: EditablePos
       <input type="hidden" name="expectedVersion" value={post.version} />
       <SubmitButton
         variant={archived ? "secondary" : "warning"}
-        pendingLabel={archived ? "Restoring…" : "Archiving…"}
+        pendingLabel={archived ? "Đang khôi phục…" : "Đang lưu trữ…"}
         disabled={archived && projectArchived}
         testId={archived ? "restore-post" : "archive-post"}
       >
-        {archived ? "Restore post" : "Archive post"}
+        {archived ? "Khôi phục bài viết" : "Lưu trữ bài viết"}
       </SubmitButton>
       {archived && projectArchived ? (
-        <p className="text-xs text-slate-500">Restore the project first to restore this post.</p>
+        <p className="text-xs text-slate-500">Hãy khôi phục dự án trước khi khôi phục bài viết này.</p>
       ) : null}
       {state && !state.ok ? (
         <Notice tone={state.code === "version_conflict" ? "warning" : "error"} testId="archive-post-error">

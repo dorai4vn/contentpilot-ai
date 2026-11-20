@@ -50,9 +50,9 @@ export function formFields(
   for (const [key, value] of formData.entries()) {
     if (key.startsWith("$ACTION")) continue;
     if (typeof value !== "string") {
-      fieldErrors[key] = "Files are not accepted here.";
+      fieldErrors[key] = "Không chấp nhận tệp ở trường này.";
     } else if (Object.hasOwn(data, key)) {
-      fieldErrors[key] = "This field was sent more than once.";
+      fieldErrors[key] = "Trường này bị gửi nhiều lần.";
     } else {
       data[key] = value;
     }

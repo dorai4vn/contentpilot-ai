@@ -14,12 +14,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: { default: "ContentPilot AI", template: "%s · ContentPilot AI" },
-  description: "Agentic content workspace with human-approved AI actions.",
+  description: "Không gian quản lý nội dung với trợ lý AI, mọi thao tác rủi ro đều cần con người phê duyệt.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="vi" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );

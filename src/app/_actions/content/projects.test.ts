@@ -88,7 +88,7 @@ describe("createProjectAction", () => {
     expect(result).toMatchObject({ ok: false, code: "invalid_input" });
     if (!result.ok) {
       expect(result.fieldErrors?.workspaceId).toBeDefined();
-      expect(result.fieldErrors?.name).toMatch(/required/);
+      expect(result.fieldErrors?.name).toMatch(/Vui lòng nhập/);
     }
     expect(mocks.createProject).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
@@ -96,7 +96,7 @@ describe("createProjectAction", () => {
 
   it.each(["created_by", "archived_at", "id"])("rejects the tampered field %s", async (key) => {
     const result = await createProjectAction(null, form({ workspaceId: WS, name: "Blog", [key]: "x" }));
-    expect(result).toMatchObject({ ok: false, code: "invalid_input", fieldErrors: { [key]: "This field cannot be set." } });
+    expect(result).toMatchObject({ ok: false, code: "invalid_input", fieldErrors: { [key]: "Không được phép gửi trường này." } });
     expect(mocks.createProject).not.toHaveBeenCalled();
   });
 
@@ -114,7 +114,7 @@ describe("createProjectAction", () => {
   it("returns a safe forbidden error for a plain member", async () => {
     mocks.createProject.mockRejectedValue(new ContentError("forbidden"));
     const result = await createProjectAction(null, form({ workspaceId: WS, name: "Blog" }));
-    expect(result).toEqual({ ok: false, code: "forbidden", error: "You do not have permission to do this." });
+    expect(result).toEqual({ ok: false, code: "forbidden", error: "Bạn không có quyền thực hiện thao tác này." });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -122,7 +122,7 @@ describe("createProjectAction", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.createProject.mockRejectedValue(new Error('relation "secret_table" does not exist'));
     const result = await createProjectAction(null, form({ workspaceId: WS, name: "Blog" }));
-    expect(result).toEqual({ ok: false, code: "unknown", error: "Something went wrong. Please try again." });
+    expect(result).toEqual({ ok: false, code: "unknown", error: "Đã có lỗi xảy ra. Vui lòng thử lại." });
     expect(JSON.stringify(result)).not.toMatch(/secret/);
     expect(log).toHaveBeenCalled();
     log.mockRestore();

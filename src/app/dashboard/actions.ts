@@ -17,13 +17,13 @@ export async function createWorkspaceAction(
 
   const parsed = workspaceNameSchema.safeParse(formData.get("name") ?? "");
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid name." };
+    return { error: parsed.error.issues[0]?.message ?? "Tên không hợp lệ." };
   }
 
   try {
     await createWorkspace(parsed.data);
   } catch {
-    return { error: "Could not create the workspace. Please try again." };
+    return { error: "Không thể tạo không gian làm việc. Vui lòng thử lại." };
   }
 
   revalidatePath("/dashboard");

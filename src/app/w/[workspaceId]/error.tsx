@@ -8,14 +8,14 @@ import { buttonClass } from "../_components/ui";
 export default function ContentError({ retry }: { error: unknown; retry: () => void }) {
   return (
     <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 dark:border-red-900 dark:bg-red-950">
-      <h2 className="font-semibold text-red-800 dark:text-red-200">Something went wrong</h2>
-      <p className="mt-1 text-sm text-red-700 dark:text-red-300">We could not load this page. Please try again.</p>
+      <h2 className="font-semibold text-red-800 dark:text-red-200">Đã có lỗi xảy ra</h2>
+      <p className="mt-1 text-sm text-red-700 dark:text-red-300">Không thể tải trang này. Vui lòng thử lại.</p>
       <div className="mt-4 flex gap-2">
         <button type="button" onClick={() => retry()} className={buttonClass.primary}>
-          Try again
+          Thử lại
         </button>
         <Link href="/dashboard" className={buttonClass.secondary}>
-          Back to dashboard
+          Về bảng điều khiển
         </Link>
       </div>
     </div>

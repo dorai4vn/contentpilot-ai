@@ -8,7 +8,7 @@ import { getSiteOrigin } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { fieldErrorsFrom, parseCredentials, type FormState } from "@/lib/validation/auth";
 
-const NOT_CONFIGURED = "Authentication is not configured on this deployment yet.";
+const NOT_CONFIGURED = "Chức năng đăng nhập chưa được cấu hình trên bản triển khai này.";
 
 async function getClientOrNull() {
   try {
@@ -33,8 +33,8 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
   if (error) {
     const message =
       error.code === "email_not_confirmed"
-        ? "Please confirm your email address first. Check your inbox for the confirmation link."
-        : "Invalid email or password.";
+        ? "Vui lòng xác nhận địa chỉ email trước. Hãy mở liên kết xác nhận trong hộp thư của bạn."
+        : "Email hoặc mật khẩu không đúng.";
     return { error: message, values: { email } };
   }
 
@@ -60,10 +60,10 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
   if (error) {
     const message =
       error.code === "weak_password"
-        ? "That password is too weak. Use a longer, less common password."
+        ? "Mật khẩu quá yếu. Hãy dùng mật khẩu dài hơn và khó đoán hơn."
         : error.code === "over_email_send_rate_limit"
-          ? "Too many sign-up attempts. Please wait a few minutes and try again."
-          : "Could not create the account. Please try again.";
+          ? "Bạn đã thử đăng ký quá nhiều lần. Vui lòng đợi vài phút rồi thử lại."
+          : "Không thể tạo tài khoản. Vui lòng thử lại.";
     return { error: message, values: { email } };
   }
 
@@ -74,7 +74,7 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
 
   // Same response whether or not the email already exists (no account enumeration).
   return {
-    message: "Check your email for a confirmation link, then sign in.",
+    message: "Hãy mở email để nhấn vào liên kết xác nhận, sau đó đăng nhập.",
     values: { email },
   };
 }
