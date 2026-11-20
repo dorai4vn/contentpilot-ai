@@ -88,18 +88,16 @@ export const editablePostStatusSchema = z.enum(EDITABLE_POST_STATUSES, {
  * offset (e.g. 2026-12-01T09:00:00+07:00 or Date#toISOString()): a bare local time would be ambiguous
  * on the server. Empty / missing means "not scheduled". Output: UTC ISO string or null.
  */
+/** A present schedule: ISO 8601 with seconds and an offset, normalised to UTC. */
+export const scheduledAtSchema = z.iso
+  .datetime({ offset: true, message: "Vui lòng nhập ngày giờ hợp lệ." })
+  .transform((v) => new Date(v).toISOString());
+
 export const scheduledForSchema = z
   .string()
   .nullish()
   .transform((v) => (v ?? "").trim())
-  .pipe(
-    z.union([
-      z.literal("").transform(() => null),
-      z.iso
-        .datetime({ offset: true, message: "Vui lòng nhập ngày giờ hợp lệ." })
-        .transform((v) => new Date(v).toISOString()),
-    ]),
-  );
+  .pipe(z.union([z.literal("").transform(() => null), scheduledAtSchema]));
 
 // ---------------------------------------------------------------------------
 // Projects
@@ -143,10 +141,13 @@ export type ProjectListInput = z.input<typeof projectListSchema>;
  * required (an omitted body is an error, never a silent wipe). Unknown keys such
  * as version, created_by or published_at are rejected.
  */
+export const postTitleSchema = boundedText("Tiêu đề", { min: 1, max: CONTENT_LIMITS.postTitleMax, trim: true });
+// The body is stored as written (no trimming): whitespace can be meaningful.
+export const postBodySchema = boundedText("Nội dung", { min: 0, max: CONTENT_LIMITS.postBodyMax, trim: false });
+
 export const postInputSchema = z.strictObject({
-  title: boundedText("Tiêu đề", { min: 1, max: CONTENT_LIMITS.postTitleMax, trim: true }),
-  // The body is stored as written (no trimming): whitespace can be meaningful.
-  body: boundedText("Nội dung", { min: 0, max: CONTENT_LIMITS.postBodyMax, trim: false }),
+  title: postTitleSchema,
+  body: postBodySchema,
   status: editablePostStatusSchema,
   scheduledFor: scheduledForSchema,
 });
@@ -188,3 +189,22 @@ export const postStatusChangeSchema = z.strictObject({
   status: editablePostStatusSchema,
 });
 export type PostStatusChangeInput = z.infer<typeof postStatusChangeSchema>;
+
+/**
+ * Partial edit of a post (used by the M3 agent): only the fields present are
+ * changed; absent fields keep their stored value exactly. `scheduledFor: null`
+ * clears the schedule; absent leaves it untouched. Status is not editable here.
+ */
+export const postPatchSchema = z
+  .strictObject({
+    postId: uuidSchema,
+    expectedVersion: expectedVersionSchema,
+    title: postTitleSchema.optional(),
+    body: postBodySchema.optional(),
+    scheduledFor: z.union([z.null(), scheduledAtSchema]).optional(),
+  })
+  .refine((v) => v.title !== undefined || v.body !== undefined || v.scheduledFor !== undefined, {
+    message: "Cần ít nhất một thay đổi (tiêu đề, nội dung hoặc lịch đăng).",
+    path: ["form"],
+  });
+export type PostPatchInput = z.infer<typeof postPatchSchema>;

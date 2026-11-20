@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   postCreateSchema,
   postListSchema,
+  postPatchSchema,
   postRefSchema,
   postStatusChangeSchema,
   postUpdateSchema,
@@ -259,6 +260,56 @@ export async function setPostStatus(input: unknown, options?: ContentWriteOption
     p_body: current.body,
     p_status: status,
     p_scheduled_for: current.scheduled_for,
+    p_change_source: changeSource,
+  });
+  return rpcResult(data, error);
+}
+
+/** Extra guards for patchPost, set by trusted server code (never by user input). */
+export type PatchPostOptions = ContentWriteOptions & {
+  /** The post must belong to this workspace (else not_found, nothing written). */
+  workspaceId?: string;
+  /** The post must currently have this status (else "not_allowed_status"). */
+  requireStatus?: ContentPostStatus;
+};
+
+/**
+ * Changes only the given fields of a post; every other field is sent back to
+ * the update RPC exactly as stored (raw title, body, status and scheduled_for,
+ * not re-validated), so nothing the caller did not ask to change can shift.
+ *
+ * Safety: the stored version must equal `expectedVersion` (checked here and
+ * again atomically by the RPC, which raises CP409 if the post changed in
+ * between); one write attempt only, never a retry. RLS and history as usual.
+ */
+export async function patchPost(input: unknown, options?: PatchPostOptions): Promise<ContentPost> {
+  const changeSource = changeSourceOf(options);
+  const patch = parseContentInput(postPatchSchema, input);
+  const { supabase } = await contentClient();
+
+  const { data: current, error: readError } = await supabase
+    .from("content_posts")
+    .select(POST_COLUMNS)
+    .eq("id", patch.postId)
+    .maybeSingle();
+  if (readError) throw toContentError(readError);
+  if (!current) throw new ContentError("not_found");
+  if (options?.workspaceId !== undefined && current.workspace_id !== options.workspaceId) {
+    throw new ContentError("not_found");
+  }
+  if (current.archived_at !== null) throw new ContentError("archived");
+  if (options?.requireStatus !== undefined && current.status !== options.requireStatus) {
+    throw new ContentError("not_allowed_status");
+  }
+  if (current.version !== patch.expectedVersion) throw new ContentError("version_conflict");
+
+  const { data, error } = await supabase.rpc("update_content_post", {
+    p_post_id: patch.postId,
+    p_expected_version: patch.expectedVersion,
+    p_title: patch.title ?? current.title,
+    p_body: patch.body ?? current.body,
+    p_status: current.status as "draft" | "ready",
+    p_scheduled_for: patch.scheduledFor === undefined ? current.scheduled_for : patch.scheduledFor,
     p_change_source: changeSource,
   });
   return rpcResult(data, error);
