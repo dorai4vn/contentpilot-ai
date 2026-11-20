@@ -8,6 +8,10 @@ import { z } from "zod";
  *
  * SQLSTATEs raised by supabase/migrations/20261120120000_content_management.sql:
  *   CP404 not found or no access · CP409 version conflict · CP423 archived.
+ * and by supabase/migrations/20261120200000_publish_approval.sql (M4):
+ *   CP410 publish request no longer pending (decided, cancelled or expired)
+ *   CP412 the post already has a pending publish request
+ *   CP422 the post is published (read-only)
  */
 
 export type ContentErrorCode =
@@ -18,6 +22,10 @@ export type ContentErrorCode =
   | "forbidden"
   | "invalid_input"
   | "not_allowed_status"
+  | "request_closed"
+  | "request_expired"
+  | "request_pending_exists"
+  | "post_published"
   | "unknown";
 
 export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
@@ -29,6 +37,12 @@ export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
   forbidden: "Bạn không có quyền thực hiện thao tác này.",
   invalid_input: "Một số thông tin chưa hợp lệ. Vui lòng kiểm tra lại.",
   not_allowed_status: "Thao tác này không áp dụng cho bài viết ở trạng thái hiện tại.",
+  request_closed:
+    "Yêu cầu xuất bản này đã được xử lý, đã bị hủy hoặc đã hết hạn. Hãy tải lại trang để xem trạng thái mới nhất.",
+  request_expired:
+    "Yêu cầu xuất bản đã hết hạn sau 7 ngày nên không thể phê duyệt. Hãy gửi yêu cầu mới nếu bài viết vẫn cần xuất bản.",
+  request_pending_exists: "Bài viết này đã có một yêu cầu xuất bản đang chờ duyệt.",
+  post_published: "Bài viết đã được xuất bản nên không thể chỉnh sửa hoặc gửi yêu cầu xuất bản lại.",
   unknown: "Đã có lỗi xảy ra. Vui lòng thử lại.",
 };
 
@@ -49,6 +63,9 @@ const SQLSTATE_TO_CODE: Record<string, ContentErrorCode> = {
   CP404: "not_found",
   CP409: "version_conflict",
   CP423: "archived",
+  CP410: "request_closed",
+  CP412: "request_pending_exists",
+  CP422: "post_published",
   "42501": "forbidden", // insufficient_privilege, RLS violation, publishing disabled
   "23514": "invalid_input", // check_violation
   "23502": "invalid_input", // not_null_violation
