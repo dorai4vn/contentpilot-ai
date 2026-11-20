@@ -288,3 +288,34 @@ describe("archivePostAction / restorePostAction", () => {
     });
   });
 });
+
+describe("Server Actions always write as the user", () => {
+  it("never pass a change source to the data layer", async () => {
+    mocks.createPost.mockResolvedValue({ ...post, version: 1 });
+    mocks.updatePost.mockResolvedValue({ ...post, version: 4 });
+    mocks.setPostStatus.mockResolvedValue({ ...post, status: "ready", version: 4 });
+    mocks.archivePost.mockResolvedValue({ ...post, version: 4, archivedAt: "2026-11-20T12:00:00Z" });
+    mocks.restorePost.mockResolvedValue({ ...post, version: 5 });
+
+    await actions.createPostAction(
+      null,
+      form({ workspaceId: WS, projectId: PROJECT, title: "Hello", body: "", status: "draft" }),
+    );
+    await actions.updatePostAction(null, form(editFields));
+    await actions.setPostStatusAction(null, form({ postId: POST, expectedVersion: "3", status: "ready" }));
+    await actions.archivePostAction(null, form({ postId: POST, expectedVersion: "3" }));
+    await actions.restorePostAction(null, form({ postId: POST, expectedVersion: "4" }));
+
+    // One argument only: no options object, so the data layer records "user".
+    for (const fn of [mocks.createPost, mocks.updatePost, mocks.setPostStatus, mocks.archivePost, mocks.restorePost]) {
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(fn.mock.calls[0]).toHaveLength(1);
+    }
+  });
+
+  it.each(["changeSource", "change_source"])("rejects a %s form field", async (key) => {
+    const result = await actions.updatePostAction(null, form({ ...editFields, [key]: "agent" }));
+    expect(result).toMatchObject({ ok: false, code: "invalid_input" });
+    expect(mocks.updatePost).not.toHaveBeenCalled();
+  });
+});

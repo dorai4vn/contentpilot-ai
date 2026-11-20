@@ -370,3 +370,75 @@ describe("setPostStatus (regression: switching status must not change other fiel
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
+
+describe("changeSource (internal write option)", () => {
+  const createInput = { workspaceId: WS, projectId: PROJECT, ...edit };
+  const updateInput = { postId: POST, expectedVersion: 3, ...edit };
+
+  it("defaults to 'user' for every write", async () => {
+    const fake = setup([
+      ok(postRow),
+      ok(postRow),
+      ok({ ...postRow, status: "draft" }),
+      ok({ ...postRow, status: "ready" }),
+      ok(postRow),
+      ok(postRow),
+    ]);
+    await posts.createPost(createInput);
+    await posts.updatePost(updateInput);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" });
+    await posts.archivePost({ postId: POST, expectedVersion: 3 });
+    await posts.restorePost({ postId: POST, expectedVersion: 3 });
+
+    const [insert] = fake.queries[0]!.args("insert") as [Record<string, unknown>];
+    expect(insert.last_change_source).toBe("user");
+    expect(fake.rpcs.map((r) => r.args.p_change_source)).toEqual(["user", "user", "user", "user"]);
+  });
+
+  it("records 'agent' when the internal option says so", async () => {
+    const fake = setup([
+      ok(postRow),
+      ok(postRow),
+      ok({ ...postRow, status: "draft" }),
+      ok({ ...postRow, status: "ready" }),
+      ok(postRow),
+      ok(postRow),
+    ]);
+    const agent = { changeSource: "agent" } as const;
+    await posts.createPost(createInput, agent);
+    await posts.updatePost(updateInput, agent);
+    await posts.setPostStatus({ postId: POST, expectedVersion: 3, status: "ready" }, agent);
+    await posts.archivePost({ postId: POST, expectedVersion: 3 }, agent);
+    await posts.restorePost({ postId: POST, expectedVersion: 3 }, agent);
+
+    const [insert] = fake.queries[0]!.args("insert") as [Record<string, unknown>];
+    expect(insert.last_change_source).toBe("agent");
+    expect(fake.rpcs.map((r) => r.args.p_change_source)).toEqual(["agent", "agent", "agent", "agent"]);
+  });
+
+  it("explicit 'user' behaves like the default", async () => {
+    const fake = setup([ok(postRow)]);
+    await posts.updatePost(updateInput, { changeSource: "user" });
+    expect(fake.rpcs[0]!.args.p_change_source).toBe("user");
+  });
+
+  it.each(["admin", "system", "", "AGENT", 1, null])(
+    "rejects an unknown change source %j before touching the database",
+    async (value) => {
+      await expectContentError(
+        posts.createPost(createInput, { changeSource: value as never }),
+        "invalid_input",
+      );
+      await expectContentError(posts.updatePost(updateInput, { changeSource: value as never }), "invalid_input");
+      expect(mocks.createClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it("cannot be smuggled through the input object", async () => {
+    for (const key of ["changeSource", "change_source", "last_change_source"]) {
+      await expectContentError(posts.createPost({ ...createInput, [key]: "agent" }), "invalid_input");
+      await expectContentError(posts.updatePost({ ...updateInput, [key]: "agent" }), "invalid_input");
+    }
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
