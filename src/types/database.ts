@@ -11,6 +11,10 @@ export type ContentPostStatus = "draft" | "ready" | "published";
 
 export type ContentChangeSource = "user" | "agent";
 
+export type AgentActionKind = "read" | "create" | "update" | "unknown";
+export type AgentActionStatus = "success" | "error" | "skipped";
+export type AgentActionField = "title" | "body" | "scheduled_for";
+
 export type ContentPostRow = {
   id: string;
   workspace_id: string;
@@ -164,6 +168,49 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "content_posts";
             referencedColumns: ["workspace_id", "id"];
+          },
+        ];
+      };
+      agent_actions: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          user_id: string | null;
+          turn_id: string;
+          tool: string;
+          kind: AgentActionKind;
+          status: AgentActionStatus;
+          error_code: string | null;
+          project_id: string | null;
+          post_id: string | null;
+          version_before: number | null;
+          version_after: number | null;
+          fields: AgentActionField[] | null;
+          created_at: string;
+        };
+        // Only these columns are granted for INSERT; user_id and created_at are set by the database.
+        Insert: {
+          workspace_id: string;
+          turn_id: string;
+          tool: string;
+          kind: AgentActionKind;
+          status: AgentActionStatus;
+          error_code?: string | null;
+          project_id?: string | null;
+          post_id?: string | null;
+          version_before?: number | null;
+          version_after?: number | null;
+          fields?: AgentActionField[] | null;
+        };
+        // Append-only.
+        Update: { [_ in never]: never };
+        Relationships: [
+          {
+            foreignKeyName: "agent_actions_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
           },
         ];
       };

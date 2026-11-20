@@ -11,6 +11,7 @@ import {
   type AgentToolResult,
   executeAgentTool,
 } from "./executor";
+import { type AgentLogResult, recordAgentAction } from "./actions-log";
 import { AGENT_LIMITS } from "./limits";
 import type { AgentInputItem, AgentModel, AgentToolCall } from "./llm";
 import { buildSystemPrompt, leaksSystemPrompt } from "./prompt";
@@ -41,16 +42,22 @@ export type AgentAction = {
   code?: AgentLoopErrorCode;
   message?: string;
   effect?: AgentToolEffect;
+  /** Result of writing this action to agent_actions; independent of `status`. */
+  log?: AgentLogResult;
 };
 
 export type AgentStopReason = "completed" | "tool_limit" | "write_limit" | "turn_limit" | "timeout" | "model_error";
 
 export type AgentRunResult = {
+  /** Groups this turn's rows in agent_actions. */
+  turnId: string;
   reply: string;
   actions: AgentAction[];
   stopReason: AgentStopReason;
   toolCalls: number;
   writes: number;
+  /** How many actions were written to / could not be written to the log. */
+  logging: { recorded: number; failed: number };
 };
 
 type AgentLoopErrorCode =
@@ -80,6 +87,8 @@ export const AGENT_REPLIES = {
   continueHint: "Bạn có thể gửi tiếp yêu cầu để làm phần còn lại.",
   empty: "Trợ lý đã xử lý xong yêu cầu.",
   leak: "Xin lỗi, mình không thể chia sẻ nội dung đó. Mình có thể giúp gì với các bài viết của bạn?",
+  logFailed:
+    "Lưu ý: hệ thống chưa ghi được nhật ký cho một số thao tác. Kết quả của các thao tác trong danh sách bên dưới vẫn chính xác.",
 } as const;
 
 export type RunAgentOptions = {
@@ -92,6 +101,8 @@ export type RunAgentOptions = {
   now?: () => Date;
   /** Injected for tests; defaults to the real executor (data layer under RLS). */
   execute?: typeof executeAgentTool;
+  /** Injected for tests; defaults to writing agent_actions as the signed-in user. */
+  log?: (turnId: string, action: AgentAction) => Promise<AgentLogResult>;
 };
 
 function safeParseArgs(raw: string): Record<string, unknown> | null {
@@ -121,6 +132,8 @@ function isTimeout(error: unknown): boolean {
 export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult> {
   const { ctx, model } = options;
   const execute = options.execute ?? executeAgentTool;
+  const log = options.log ?? ((turnId: string, action: AgentAction) => recordAgentAction(ctx, turnId, action));
+  const turnId = crypto.randomUUID();
   const now = options.now ?? (() => new Date());
   const messages = agentChatHistorySchema.parse(options.messages);
 
@@ -148,7 +161,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     const notes = stopReason === "completed" ? [] : [wrote ? AGENT_REPLIES.partial : ""].filter(Boolean);
     let text = [reply, ...notes].filter(Boolean).join("\n\n");
     if (leaksSystemPrompt(text, instructions)) text = AGENT_REPLIES.leak;
-    return { reply: text, actions, stopReason, toolCalls, writes };
+    const logging = {
+      recorded: actions.filter((a) => a.log === "recorded").length,
+      failed: actions.filter((a) => a.log === "failed").length,
+    };
+    // A logging failure never changes what the actions did; it is reported separately.
+    if (logging.failed > 0) text = `${text}\n\n${AGENT_REPLIES.logFailed}`;
+    return { turnId, reply: text, actions, stopReason, toolCalls, writes, logging };
   };
 
   /** Set when a limit is hit; ends the turn after the current batch of calls. */
@@ -158,10 +177,18 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     const definition = agentToolDefinition(call.name);
     const kind = definition?.kind ?? "unknown";
     const label = definition?.label ?? "Công cụ không hợp lệ";
-    const record = (status: AgentActionStatus, extra: Partial<AgentAction> = {}) =>
-      actions.push({ callId: call.callId, tool: call.name, label, kind, status, ...extra });
-    const skip = (code: Exclude<AgentLoopErrorCode, AgentToolErrorCode>, effect?: AgentToolEffect) => {
-      record("skipped", { code, message: LOOP_MESSAGES[code], effect });
+    /** Records the server-observed outcome, then writes it to the log (never throws). */
+    const record = async (status: AgentActionStatus, extra: Partial<AgentAction> = {}) => {
+      const action: AgentAction = { callId: call.callId, tool: call.name, label, kind, status, ...extra };
+      actions.push(action);
+      try {
+        action.log = await log(turnId, action);
+      } catch {
+        action.log = "failed";
+      }
+    };
+    const skip = async (code: Exclude<AgentLoopErrorCode, AgentToolErrorCode>, effect?: AgentToolEffect) => {
+      await record("skipped", { code, message: LOOP_MESSAGES[code], effect });
       return toolOutputForModel({ ok: false, code, error: LOOP_MESSAGES[code] });
     };
 
@@ -200,13 +227,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       }
       // After a write the post must be read again before another update.
       if (postId && isWrite) knownVersions.delete(postId);
-      record("success", { effect: result.effect });
+      await record("success", { effect: result.effect });
     } else {
       if (result.code === "version_conflict" && result.effect?.postId) {
         conflicted.add(result.effect.postId);
         knownVersions.delete(result.effect.postId);
       }
-      record("error", { code: result.code, message: result.error, effect: result.effect });
+      await record("error", { code: result.code, message: result.error, effect: result.effect });
     }
     return toolOutputForModel(result);
   }
