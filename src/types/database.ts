@@ -6,7 +6,7 @@
 
 export type WorkspaceRole = "owner" | "admin" | "member";
 
-/** `published` exists in the enum but is rejected by the database until M4. */
+/** `published` is set only by approve_publish_request() (M4 human approval). */
 export type ContentPostStatus = "draft" | "ready" | "published";
 
 export type ContentChangeSource = "user" | "agent";
@@ -14,6 +14,28 @@ export type ContentChangeSource = "user" | "agent";
 export type AgentActionKind = "read" | "create" | "update" | "unknown";
 export type AgentActionStatus = "success" | "error" | "skipped";
 export type AgentActionField = "title" | "body" | "scheduled_for";
+
+export type PublishRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type PublishRequestCancelReason = "withdrawn" | "post_changed" | "expired";
+export type PublishRequestEvent = "requested" | "approved" | "rejected" | "cancelled" | "published";
+
+export type ContentPublishRequestRow = {
+  id: string;
+  workspace_id: string;
+  post_id: string;
+  post_version: number;
+  status: PublishRequestStatus;
+  request_source: ContentChangeSource;
+  agent_turn_id: string | null;
+  reason: string | null;
+  requested_by: string | null;
+  requested_at: string;
+  expires_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  cancel_reason: PublishRequestCancelReason | null;
+};
 
 export type ContentPostRow = {
   id: string;
@@ -214,6 +236,54 @@ export type Database = {
           },
         ];
       };
+      content_publish_requests: {
+        Row: ContentPublishRequestRow;
+        // Written only by the publish RPCs.
+        Insert: { [_ in never]: never };
+        Update: { [_ in never]: never };
+        Relationships: [
+          {
+            foreignKeyName: "content_publish_requests_post_fkey";
+            columns: ["workspace_id", "post_id"];
+            isOneToOne: false;
+            referencedRelation: "content_posts";
+            referencedColumns: ["workspace_id", "id"];
+          },
+        ];
+      };
+      content_publish_request_events: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          request_id: string;
+          post_id: string;
+          post_version: number;
+          event: PublishRequestEvent;
+          cancel_reason: PublishRequestCancelReason | null;
+          actor_id: string | null;
+          actor_source: ContentChangeSource | null;
+          created_at: string;
+        };
+        // Append-only, written by database triggers and approve_publish_request().
+        Insert: { [_ in never]: never };
+        Update: { [_ in never]: never };
+        Relationships: [
+          {
+            foreignKeyName: "content_publish_request_events_request_fkey";
+            columns: ["workspace_id", "request_id"];
+            isOneToOne: false;
+            referencedRelation: "content_publish_requests";
+            referencedColumns: ["workspace_id", "id"];
+          },
+          {
+            foreignKeyName: "content_publish_request_events_post_fkey";
+            columns: ["workspace_id", "post_id"];
+            isOneToOne: false;
+            referencedRelation: "content_posts";
+            referencedColumns: ["workspace_id", "id"];
+          },
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -249,11 +319,36 @@ export type Database = {
         Args: { p_post_id: string; p_expected_version: number; p_change_source?: ContentChangeSource };
         Returns: ContentPostRow;
       };
+      request_post_publish: {
+        Args: {
+          p_post_id: string;
+          p_expected_version: number;
+          p_source?: ContentChangeSource;
+          p_agent_turn_id?: string | null;
+          p_reason?: string | null;
+        };
+        Returns: ContentPublishRequestRow;
+      };
+      approve_publish_request: {
+        Args: { p_request_id: string; p_expected_post_version: number };
+        Returns: ContentPostRow;
+      };
+      reject_publish_request: {
+        Args: { p_request_id: string; p_note?: string | null };
+        Returns: ContentPublishRequestRow;
+      };
+      cancel_publish_request: {
+        Args: { p_request_id: string };
+        Returns: ContentPublishRequestRow;
+      };
     };
     Enums: {
       workspace_role: WorkspaceRole;
       content_post_status: ContentPostStatus;
       content_change_source: ContentChangeSource;
+      publish_request_status: PublishRequestStatus;
+      publish_request_cancel_reason: PublishRequestCancelReason;
+      publish_request_event: PublishRequestEvent;
     };
     CompositeTypes: { [_ in never]: never };
   };

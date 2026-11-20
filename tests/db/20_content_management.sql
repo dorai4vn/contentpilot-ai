@@ -171,7 +171,7 @@ select pg_temp.assert(true, 'member creates a post directly in ready status');
 select pg_temp.assert_error(
   $q$insert into public.content_posts (workspace_id, project_id, title, status)
      values ('20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'Pub', 'published')$q$,
-  '23514', 'creating a post as published is rejected');
+  '42501', 'creating a post as published is rejected (M4: publish guard trigger)');
 select pg_temp.assert_error(
   $q$insert into public.content_posts (workspace_id, project_id, title, version)
      values ('20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'V', 7)$q$,
@@ -371,14 +371,14 @@ select pg_temp.assert(
   'owner restores the project');
 select pg_temp.reset_actor();
 
--- 5. Publishing is impossible for every writer ------------------------------------------
--- Even the database superuser (bypasses RLS and grants) hits the CHECK constraint.
+-- 5. Publishing without an approved request is impossible for every writer -------------
+-- Even the database superuser (bypasses RLS and grants) hits the M4 publish guard trigger.
 select pg_temp.assert_error(
   $q$update public.content_posts set status = 'published' where id = '40000000-0000-0000-0000-000000000001'$q$,
-  '23514', 'superuser cannot set a post to published (CHECK constraint)');
+  '42501', 'superuser cannot set a post to published without an approved request (publish guard)');
 select pg_temp.assert_error(
   $q$update public.content_posts set published_at = now() where id = '40000000-0000-0000-0000-000000000001'$q$,
-  '23514', 'superuser cannot set published_at');
+  '23514', 'superuser cannot set published_at (published_at consistency CHECK)');
 select pg_temp.assert((select count(*) from public.content_posts where status = 'published') = 0,
   'no post is published');
 
@@ -501,14 +501,14 @@ select pg_temp.assert(
      from pg_proc p
     where p.pronamespace = 'public'::regnamespace and p.prosecdef
       and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
-  = array['archive_content_post', 'has_workspace_role', 'is_workspace_member',
-          'restore_content_post', 'update_content_post'],
+  = array['approve_publish_request', 'archive_content_post', 'cancel_publish_request', 'has_workspace_role',
+          'is_workspace_member', 'reject_publish_request', 'request_post_publish', 'restore_content_post',
+          'update_content_post'],
   'authenticated can execute exactly the intended SECURITY DEFINER functions');
 select pg_temp.assert(
-  (select count(*) = 3 from pg_constraint
-    where conname in ('content_posts_publishing_disabled', 'content_post_versions_publishing_disabled',
-                      'content_posts_project_fkey')),
-  'publishing-disabled and same-workspace constraints exist');
+  (select count(*) = 2 from pg_constraint
+    where conname in ('content_posts_published_at_consistency', 'content_posts_project_fkey')),
+  'published_at consistency (M4) and same-workspace constraints exist');
 select pg_temp.assert(
   (select bool_and(confdeltype = 'r') from pg_constraint
     where contype = 'f'
