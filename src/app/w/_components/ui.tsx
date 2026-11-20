@@ -9,7 +9,7 @@ export const inputClass =
   "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60";
 
 export const buttonClass = {
   primary: `${buttonBase} bg-indigo-600 text-white hover:bg-indigo-500`,
@@ -50,7 +50,12 @@ const statusStyle: Record<ContentPostStatus, string> = {
   published: "bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:ring-indigo-900",
 };
 
-const statusText: Record<ContentPostStatus, string> = { draft: "Draft", ready: "Ready", published: "Published" };
+/** Vietnamese status names, shared by badges, filters and history. */
+export const STATUS_LABELS: Record<ContentPostStatus, string> = {
+  draft: "Bản nháp",
+  ready: "Sẵn sàng",
+  published: "Đã xuất bản",
+};
 
 export function StatusBadge({ status }: { status: ContentPostStatus }) {
   return (
@@ -58,7 +63,7 @@ export function StatusBadge({ status }: { status: ContentPostStatus }) {
       data-testid="status-badge"
       className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyle[status]}`}
     >
-      {statusText[status]}
+      {STATUS_LABELS[status]}
     </span>
   );
 }
@@ -118,7 +123,7 @@ export type Crumb = { label: string; href?: string };
 
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
   return (
-    <nav aria-label="Breadcrumb" className="mb-4 text-sm text-slate-500">
+    <nav aria-label="Đường dẫn" className="mb-4 text-sm text-slate-500">
       <ol className="flex flex-wrap items-center gap-1.5">
         {items.map((item, index) => (
           <li key={`${item.label}-${index}`} className="flex min-w-0 items-center gap-1.5">

@@ -43,34 +43,34 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
       <input type="hidden" name="workspaceId" value={workspaceId} />
       <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
         <div>
-          <FieldLabel htmlFor="new-project-name">Name</FieldLabel>
+          <FieldLabel htmlFor="new-project-name">Tên dự án</FieldLabel>
           <input
             id="new-project-name"
             name="name"
             required
             maxLength={CONTENT_LIMITS.projectNameMax}
-            placeholder="e.g. Company blog"
+            placeholder="Ví dụ: Blog công ty"
             className={inputClass}
           />
           <FieldError message={errors?.name} />
         </div>
         <div>
-          <FieldLabel htmlFor="new-project-description">Description (optional)</FieldLabel>
+          <FieldLabel htmlFor="new-project-description">Mô tả (không bắt buộc)</FieldLabel>
           <input
             id="new-project-description"
             name="description"
             maxLength={CONTENT_LIMITS.projectDescriptionMax}
-            placeholder="What is this project for?"
+            placeholder="Dự án này dùng để làm gì?"
             className={inputClass}
           />
           <FieldError message={errors?.description} />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingLabel="Creating…" testId="create-project-submit">
-          Create project
+        <SubmitButton pendingLabel="Đang tạo…" testId="create-project-submit">
+          Tạo dự án
         </SubmitButton>
-        <ActionFeedback state={state} success="Project created." testId="create-project" />
+        <ActionFeedback state={state} success="Đã tạo dự án." testId="create-project" />
       </div>
     </form>
   );
@@ -87,10 +87,10 @@ function ArchiveToggle({ project }: { project: ProjectView }) {
       <input type="hidden" name="projectId" value={project.id} />
       <SubmitButton
         variant={archived ? "secondary" : "ghost"}
-        pendingLabel={archived ? "Restoring…" : "Archiving…"}
+        pendingLabel={archived ? "Đang khôi phục…" : "Đang lưu trữ…"}
         testId={archived ? "restore-project" : "archive-project"}
       >
-        {archived ? "Restore" : "Archive"}
+        {archived ? "Khôi phục" : "Lưu trữ"}
       </SubmitButton>
       {state && !state.ok ? <ActionFeedback state={state} testId="archive-project" /> : null}
     </form>
@@ -109,7 +109,7 @@ function EditProjectForm({ project, onDone }: { project: ProjectView; onDone: ()
     <form action={action} className="space-y-3" data-testid="edit-project-form">
       <input type="hidden" name="projectId" value={project.id} />
       <div>
-        <FieldLabel htmlFor={`name-${project.id}`}>Name</FieldLabel>
+        <FieldLabel htmlFor={`name-${project.id}`}>Tên dự án</FieldLabel>
         <input
           id={`name-${project.id}`}
           name="name"
@@ -121,7 +121,7 @@ function EditProjectForm({ project, onDone }: { project: ProjectView; onDone: ()
         <FieldError message={errors?.name} />
       </div>
       <div>
-        <FieldLabel htmlFor={`description-${project.id}`}>Description</FieldLabel>
+        <FieldLabel htmlFor={`description-${project.id}`}>Mô tả</FieldLabel>
         <textarea
           id={`description-${project.id}`}
           name="description"
@@ -133,11 +133,11 @@ function EditProjectForm({ project, onDone }: { project: ProjectView; onDone: ()
         <FieldError message={errors?.description} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <SubmitButton pendingLabel="Saving…" testId="save-project">
-          Save
+        <SubmitButton pendingLabel="Đang lưu…" testId="save-project">
+          Lưu
         </SubmitButton>
         <button type="button" className={buttonClass.ghost} onClick={onDone}>
-          Cancel
+          Hủy
         </button>
         <ActionFeedback state={state} testId="edit-project" />
       </div>
@@ -162,22 +162,22 @@ export function ProjectCard({ project, canManage }: { project: ProjectView; canM
               <Link href={href} className="truncate font-medium hover:text-indigo-600 hover:underline" data-testid="project-link">
                 {project.name}
               </Link>
-              {archived ? <Badge tone="amber">Archived</Badge> : null}
+              {archived ? <Badge tone="amber">Đã lưu trữ</Badge> : null}
             </div>
             {project.description ? (
               <p className="mt-0.5 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{project.description}</p>
             ) : null}
             <p className="mt-0.5 text-xs text-slate-500">
-              Updated <LocalDateTime iso={project.updatedAt} />
+              Cập nhật lúc <LocalDateTime iso={project.updatedAt} />
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Link href={href} className={buttonClass.secondary}>
-              Open
+              Mở
             </Link>
             {canManage && !archived ? (
               <button type="button" className={buttonClass.ghost} onClick={() => setEditing(true)} data-testid="edit-project">
-                Edit
+                Sửa
               </button>
             ) : null}
             {canManage ? <ArchiveToggle key={project.archivedAt ?? "active"} project={project} /> : null}

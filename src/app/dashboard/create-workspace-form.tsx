@@ -15,12 +15,12 @@ export function CreateWorkspaceForm() {
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-2 sm:flex-row sm:items-start">
       <label className="flex-1">
-        <span className="sr-only">Workspace name</span>
+        <span className="sr-only">Tên không gian làm việc</span>
         <input
           name="name"
           required
           maxLength={100}
-          placeholder="New workspace name"
+          placeholder="Tên không gian làm việc mới"
           className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         />
         {state.error ? (
@@ -34,7 +34,7 @@ export function CreateWorkspaceForm() {
         disabled={pending}
         className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
       >
-        {pending ? "Creating…" : "Create workspace"}
+        {pending ? "Đang tạo…" : "Tạo không gian làm việc"}
       </button>
     </form>
   );

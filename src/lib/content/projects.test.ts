@@ -79,7 +79,7 @@ describe("authentication and validation happen before any database call", () => 
       projects.createProject({ workspaceId: WS, name: "Blog", [key]: USER }),
       "invalid_input",
     );
-    expect(error.fieldErrors?.[key]).toBe("This field cannot be set.");
+    expect(error.fieldErrors?.[key]).toBe("Không được phép gửi trường này.");
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { postInputSchema } from "@/lib/validation/content";
 
-import { formatDateTime, isoToLocalInput, localInputToIso } from "./datetime";
+import { formatDate, formatDateTime, isoToLocalInput, localInputToIso } from "./datetime";
 
 // Run the conversions in a non-UTC zone (UTC+7, no DST) to prove they really
 // convert between local time and UTC.
@@ -55,16 +55,23 @@ describe("isoToLocalInput", () => {
   });
 });
 
-describe("formatDateTime", () => {
-  it("formats deterministically in UTC", () => {
-    expect(formatDateTime("2026-12-01T02:00:00Z", { timeZone: "UTC" })).toBe("1 Dec 2026, 02:00");
+describe("formatDateTime / formatDate (Vietnamese format)", () => {
+  it("formats deterministically in UTC as dd/MM/yyyy HH:mm", () => {
+    expect(formatDateTime("2026-12-01T02:05:00Z", { timeZone: "UTC" })).toBe("01/12/2026 02:05");
   });
 
-  it("formats in local time by default", () => {
-    expect(formatDateTime("2026-12-01T02:00:00Z")).toBe("1 Dec 2026, 09:00");
+  it("formats in local time by default, 24-hour clock", () => {
+    expect(formatDateTime("2026-12-01T02:05:00Z")).toBe("01/12/2026 09:05");
+    expect(formatDateTime("2026-12-01T10:30:00Z")).toBe("01/12/2026 17:30");
+  });
+
+  it("shows the local calendar day", () => {
+    expect(formatDate("2026-11-30T20:00:00Z")).toBe("01/12/2026");
+    expect(formatDate("2026-11-30T20:00:00Z", { timeZone: "UTC" })).toBe("30/11/2026");
   });
 
   it("returns an empty string for invalid input", () => {
     expect(formatDateTime("nope")).toBe("");
+    expect(formatDate("nope")).toBe("");
   });
 });

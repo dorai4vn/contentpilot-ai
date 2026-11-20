@@ -20,7 +20,7 @@ describe("parseCredentials", () => {
     if (!result.success) {
       const errors = fieldErrorsFrom(result.error);
       expect(errors.email).toBeDefined();
-      expect(errors.password).toMatch(/8 characters/);
+      expect(errors.password).toMatch(/8 ký tự/);
     }
   });
 

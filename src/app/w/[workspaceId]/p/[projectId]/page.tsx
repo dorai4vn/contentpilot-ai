@@ -11,13 +11,13 @@ import { CreatePostForm } from "../../../_components/post-forms";
 import { Badge, Breadcrumbs, Card, EmptyState, Notice, StatusBadge } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
-export const metadata: Metadata = { title: "Project" };
+export const metadata: Metadata = { title: "Dự án" };
 
 const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "draft", label: "Draft" },
-  { key: "ready", label: "Ready" },
-  { key: "archived", label: "Archived" },
+  { key: "all", label: "Tất cả" },
+  { key: "draft", label: "Bản nháp" },
+  { key: "ready", label: "Sẵn sàng" },
+  { key: "archived", label: "Đã lưu trữ" },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]["key"];
 
@@ -48,7 +48,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
       <div>
         <Breadcrumbs
           items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Bảng điều khiển", href: "/dashboard" },
             { label: workspace.name, href: contentPaths.workspace(workspace.id) },
             { label: project.name },
           ]}
@@ -57,7 +57,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           <h1 className="text-2xl font-semibold tracking-tight" data-testid="project-title">
             {project.name}
           </h1>
-          {projectArchived ? <Badge tone="amber">Archived</Badge> : null}
+          {projectArchived ? <Badge tone="amber">Đã lưu trữ</Badge> : null}
         </div>
         {project.description ? (
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{project.description}</p>
@@ -66,7 +66,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
 
       {projectArchived ? (
         <Notice tone="warning" testId="project-archived-notice">
-          This project is archived: its posts are read-only and no new posts can be added.
+          Dự án này đã được lưu trữ: các bài viết chỉ có thể xem và không thể thêm bài mới.
         </Notice>
       ) : (
         <Card>
@@ -76,7 +76,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                 <span className="text-indigo-600 group-open:rotate-45 transition-transform" aria-hidden>
                   +
                 </span>
-                New post
+                Bài viết mới
               </span>
             </summary>
             <div className="mt-4">
@@ -88,15 +88,15 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
 
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Posts</h2>
-          <nav className="flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-900" aria-label="Post filter">
+          <h2 className="font-semibold">Bài viết</h2>
+          <nav className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1 dark:bg-slate-900" aria-label="Lọc bài viết">
             {FILTERS.map((f) => (
               <Link
                 key={f.key}
                 href={f.key === "all" ? base : `${base}?filter=${f.key}`}
                 aria-current={filter === f.key ? "page" : undefined}
                 data-testid={`filter-${f.key}`}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                className={`whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${
                   filter === f.key
                     ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
                     : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
@@ -109,8 +109,8 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
         </div>
 
         {visible.length === 0 ? (
-          <EmptyState title={filter === "all" ? "No posts yet" : "No posts match this filter"}>
-            {filter === "all" && !projectArchived ? "Use “New post” above to write the first one." : null}
+          <EmptyState title={filter === "all" ? "Chưa có bài viết nào" : "Không có bài viết nào phù hợp với bộ lọc"}>
+            {filter === "all" && !projectArchived ? "Dùng “Bài viết mới” ở trên để viết bài đầu tiên." : null}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-slate-200 dark:divide-slate-800" data-testid="post-list">
@@ -125,20 +125,20 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                       {post.title}
                     </p>
                     <p className="text-xs text-slate-500">
-                      v{post.version} · updated <LocalDateTime iso={post.updatedAt} />
+                      Phiên bản {post.version} · cập nhật lúc <LocalDateTime iso={post.updatedAt} />
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3 text-sm">
                     <span className="text-slate-600 dark:text-slate-400" data-testid="post-schedule">
                       {post.scheduledFor ? (
                         <>
-                          Planned <LocalDateTime iso={post.scheduledFor} />
+                          Dự kiến đăng <LocalDateTime iso={post.scheduledFor} />
                         </>
                       ) : (
-                        <span className="text-slate-400">Not scheduled</span>
+                        <span className="text-slate-400">Chưa lên lịch</span>
                       )}
                     </span>
-                    {post.archivedAt ? <Badge tone="amber">Archived</Badge> : null}
+                    {post.archivedAt ? <Badge tone="amber">Đã lưu trữ</Badge> : null}
                     <StatusBadge status={post.status} />
                   </div>
                 </Link>
@@ -147,7 +147,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           </ul>
         )}
         {visible.length >= 200 ? (
-          <p className="mt-3 text-xs text-slate-500">Showing the 200 most recently updated posts.</p>
+          <p className="mt-3 text-xs text-slate-500">Đang hiển thị 200 bài viết được cập nhật gần nhất.</p>
         ) : null}
       </Card>
     </div>

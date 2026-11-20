@@ -85,12 +85,13 @@ describe("ProjectCard permissions", () => {
     const html = renderToStaticMarkup(<ProjectCard project={{ ...project, archivedAt: "2026-11-20T11:00:00Z" }} canManage />);
     expect(html).toContain('data-testid="restore-project"');
     expect(html).not.toContain('data-testid="edit-project"');
-    expect(html).toContain("Archived");
+    expect(html).toContain("Đã lưu trữ");
   });
 
   it("nothing offers deletion", () => {
     const html = renderToStaticMarkup(<ProjectCard project={project} canManage />);
     expect(html.toLowerCase()).not.toContain("delete");
+    expect(html.toLowerCase()).not.toContain("xóa");
   });
 });
 
@@ -138,6 +139,8 @@ describe("PostEditor", () => {
     const html = renderToStaticMarkup(<PostEditor post={post} readOnly={false} />).toLowerCase();
     expect(html).not.toContain("publish");
     expect(html).not.toContain("delete");
+    expect(html).not.toContain("xuất bản");
+    expect(html).not.toContain("xóa");
   });
 });
 
@@ -145,13 +148,13 @@ describe("StatusSwitch (regression: only the status is sent)", () => {
   it("draft -> ready sends postId, expectedVersion and status only", () => {
     const html = renderToStaticMarkup(<StatusSwitch post={post} />);
     expect(fields(html)).toEqual({ postId: POST, expectedVersion: "7", status: "ready" });
-    expect(html).toContain("Mark as ready");
+    expect(html).toContain("Chuyển sang Sẵn sàng");
   });
 
   it("ready -> draft sends the draft status", () => {
     const html = renderToStaticMarkup(<StatusSwitch post={{ ...post, status: "ready" }} />);
     expect(fields(html)).toEqual({ postId: POST, expectedVersion: "7", status: "draft" });
-    expect(html).toContain("Move back to draft");
+    expect(html).toContain("Chuyển về Bản nháp");
   });
 });
 
@@ -168,7 +171,7 @@ describe("ArchivePostButton", () => {
     );
     expect(html).toMatch(/data-testid="restore-post"/);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="restore-post"/);
-    expect(html).toContain("Restore the project first");
+    expect(html).toContain("Hãy khôi phục dự án trước");
   });
 });
 
@@ -188,8 +191,8 @@ describe("ScheduleField", () => {
 
 describe("StatusBadge", () => {
   it.each([
-    ["draft", "Draft"],
-    ["ready", "Ready"],
+    ["draft", "Bản nháp"],
+    ["ready", "Sẵn sàng"],
   ] as const)("labels %s", (status, label) => {
     expect(renderToStaticMarkup(<StatusBadge status={status} />)).toContain(`>${label}<`);
   });

@@ -5,11 +5,11 @@ import { safeRedirectPath } from "@/lib/auth/routes";
 import { signIn } from "../actions";
 import { AuthForm } from "../auth-form";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = { title: "Đăng nhập" };
 
 const notices: Record<string, string> = {
-  signed_out: "You have been signed out.",
-  confirm_failed: "That confirmation link is invalid or has expired. Please sign in or sign up again.",
+  signed_out: "Bạn đã đăng xuất.",
+  confirm_failed: "Liên kết xác nhận không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập hoặc đăng ký lại.",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
@@ -19,8 +19,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <>
-      <h1 className="mb-1 text-lg font-semibold">Sign in</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Use your email and password.</p>
+      <h1 className="mb-1 text-lg font-semibold">Đăng nhập</h1>
+      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Dùng email và mật khẩu của bạn.</p>
       <AuthForm mode="login" action={signIn} next={next} notice={notice} />
     </>
   );

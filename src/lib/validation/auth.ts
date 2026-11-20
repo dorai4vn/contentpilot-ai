@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const credentialsSchema = z.object({
-  email: z.string().trim().toLowerCase().pipe(z.email({ message: "Enter a valid email address." })),
+  email: z.string().trim().toLowerCase().pipe(z.email({ message: "Vui lòng nhập địa chỉ email hợp lệ." })),
   password: z
     .string()
-    .min(8, { message: "Password must be at least 8 characters." })
-    .max(72, { message: "Password must be at most 72 characters." }),
+    .min(8, { message: "Mật khẩu phải có ít nhất 8 ký tự." })
+    .max(72, { message: "Mật khẩu tối đa 72 ký tự." }),
 });
 
 export type Credentials = z.infer<typeof credentialsSchema>;
@@ -13,8 +13,8 @@ export type Credentials = z.infer<typeof credentialsSchema>;
 export const workspaceNameSchema = z
   .string()
   .trim()
-  .min(1, { message: "Workspace name is required." })
-  .max(100, { message: "Workspace name must be at most 100 characters." });
+  .min(1, { message: "Vui lòng nhập tên không gian làm việc." })
+  .max(100, { message: "Tên không gian làm việc tối đa 100 ký tự." });
 
 export type FormState = {
   error?: string;

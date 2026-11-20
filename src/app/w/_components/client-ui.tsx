@@ -4,7 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import type { ActionState } from "@/app/_actions/content/action-result";
-import { formatDateTime } from "@/lib/content/datetime";
+import { formatDate, formatDateTime } from "@/lib/content/datetime";
 
 import { Notice, buttonClass } from "./ui";
 
@@ -20,14 +20,17 @@ export function useMounted(): boolean {
 }
 
 /**
- * Shows a date-time in the viewer's local time zone. The server (and the first
- * client render) shows UTC so hydration matches; the local time replaces it once mounted.
+ * Shows a date-time ("01/12/2026 09:00") in the viewer's local time zone. The
+ * server (and the first client render) shows UTC so hydration matches; the local
+ * time replaces it once mounted. Only the display changes: values stay UTC.
  */
-export function LocalDateTime({ iso, className }: { iso: string; className?: string }) {
+export function LocalDateTime({ iso, className, dateOnly }: { iso: string; className?: string; dateOnly?: boolean }) {
   const mounted = useMounted();
+  const format = dateOnly ? formatDate : formatDateTime;
+  const utc = `${format(iso, { timeZone: "UTC" })} (UTC)`;
   return (
-    <time dateTime={iso} className={className} title={formatDateTime(iso, { timeZone: "UTC" }) + " UTC"}>
-      {mounted ? formatDateTime(iso) : `${formatDateTime(iso, { timeZone: "UTC" })} UTC`}
+    <time dateTime={iso} className={className} title={`${formatDateTime(iso, { timeZone: "UTC" })} (UTC)`}>
+      {mounted ? format(iso) : utc}
     </time>
   );
 }

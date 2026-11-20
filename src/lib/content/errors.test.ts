@@ -59,7 +59,7 @@ describe("toContentError", () => {
   });
 
   it("explains a version conflict without technical words", () => {
-    expect(toContentError({ code: "CP409" }).message).toMatch(/someone else changed this post/i);
+    expect(toContentError({ code: "CP409" }).message).toMatch(/người khác cập nhật/i);
   });
 });
 
@@ -81,8 +81,8 @@ describe("parseContentInput", () => {
       expect(error).toBeInstanceOf(ContentError);
       const contentError = error as ContentError;
       expect(contentError.code).toBe("invalid_input");
-      expect(contentError.fieldErrors?.title).toMatch(/required/);
-      expect(contentError.fieldErrors?.status).toMatch(/draft or ready/);
+      expect(contentError.fieldErrors?.title).toMatch(/Vui lòng nhập/);
+      expect(contentError.fieldErrors?.status).toMatch(/Bản nháp hoặc Sẵn sàng/);
     }
   });
 
@@ -97,8 +97,8 @@ describe("parseContentInput", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(contentFieldErrors(result.error)).toEqual({
-        version: "This field cannot be set.",
-        published_at: "This field cannot be set.",
+        version: "Không được phép gửi trường này.",
+        published_at: "Không được phép gửi trường này.",
       });
     }
   });

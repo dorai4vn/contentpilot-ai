@@ -19,7 +19,7 @@ export function AppHeader({ email }: { email: string | null }) {
               type="submit"
               className="rounded-md border border-slate-300 px-3 py-1.5 font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
             >
-              Sign out
+              Đăng xuất
             </button>
           </form>
         </div>

@@ -141,11 +141,11 @@ describe("projectInputSchema", () => {
   });
 
   it.each([
-    [{ name: "" }, "required"],
-    [{ name: "   " }, "required"],
-    [{ name: "n".repeat(CONTENT_LIMITS.projectNameMax + 1) }, "at most 100"],
-    [{ name: "Blog", description: "d".repeat(CONTENT_LIMITS.projectDescriptionMax + 1) }, "at most 1,000"],
-    [{ name: "Bad\u0000name" }, "invalid character"],
+    [{ name: "" }, "Vui lòng nhập tên dự án."],
+    [{ name: "   " }, "Vui lòng nhập tên dự án."],
+    [{ name: "n".repeat(CONTENT_LIMITS.projectNameMax + 1) }, "Tên dự án tối đa 100 ký tự."],
+    [{ name: "Blog", description: "d".repeat(CONTENT_LIMITS.projectDescriptionMax + 1) }, "Mô tả tối đa 1.000 ký tự."],
+    [{ name: "Bad\u0000name" }, "Tên dự án chứa ký tự không hợp lệ."],
     [{}, ""],
   ])("rejects %j", (input, message) => {
     const result = projectInputSchema.safeParse(input);

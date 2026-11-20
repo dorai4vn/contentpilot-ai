@@ -161,7 +161,7 @@ describe("createPost", () => {
         posts.createPost({ workspaceId: WS, projectId: PROJECT, ...edit, [key]: key === "version" ? 1 : "agent" }),
         "invalid_input",
       );
-      expect(error.fieldErrors?.[key]).toBe("This field cannot be set.");
+      expect(error.fieldErrors?.[key]).toBe("Không được phép gửi trường này.");
       expect(mocks.createClient).not.toHaveBeenCalled();
     },
   );

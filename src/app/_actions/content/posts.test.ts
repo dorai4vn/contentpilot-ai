@@ -156,7 +156,7 @@ describe("createPostAction", () => {
         null,
         form({ workspaceId: WS, projectId: PROJECT, title: "Hello", body: "", status: "draft", [key]: "1" }),
       );
-      expect(result).toMatchObject({ ok: false, fieldErrors: { [key]: "This field cannot be set." } });
+      expect(result).toMatchObject({ ok: false, fieldErrors: { [key]: "Không được phép gửi trường này." } });
       expect(mocks.createPost).not.toHaveBeenCalled();
     },
   );
@@ -167,7 +167,7 @@ describe("createPostAction", () => {
       null,
       form({ workspaceId: WS, projectId: PROJECT, title: "Hello", body: "", status: "draft" }),
     );
-    expect(result).toEqual({ ok: false, code: "forbidden", error: "You do not have permission to do this." });
+    expect(result).toEqual({ ok: false, code: "forbidden", error: "Bạn không có quyền thực hiện thao tác này." });
   });
 });
 
@@ -201,7 +201,7 @@ describe("updatePostAction", () => {
     mocks.updatePost.mockRejectedValue(new ContentError("version_conflict"));
     const result = await actions.updatePostAction(null, form(editFields));
     expect(result).toMatchObject({ ok: false, code: "version_conflict" });
-    if (!result.ok) expect(result.error).toMatch(/someone else changed this post/i);
+    if (!result.ok) expect(result.error).toMatch(/người khác cập nhật/i);
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -235,7 +235,7 @@ describe("setPostStatusAction", () => {
 
   it.each(["title", "body", "scheduledFor"])("rejects a smuggled %s field", async (key) => {
     const result = await actions.setPostStatusAction(null, statusForm("ready", { [key]: "x" }));
-    expect(result).toMatchObject({ ok: false, fieldErrors: { [key]: "This field cannot be set." } });
+    expect(result).toMatchObject({ ok: false, fieldErrors: { [key]: "Không được phép gửi trường này." } });
     expect(mocks.setPostStatus).not.toHaveBeenCalled();
   });
 

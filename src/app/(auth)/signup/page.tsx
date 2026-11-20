@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import { signUp } from "../actions";
 import { AuthForm } from "../auth-form";
 
-export const metadata: Metadata = { title: "Create account" };
+export const metadata: Metadata = { title: "Tạo tài khoản" };
 
 export default function SignupPage() {
   return (
     <>
-      <h1 className="mb-1 text-lg font-semibold">Create your account</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Password must be at least 8 characters.</p>
+      <h1 className="mb-1 text-lg font-semibold">Tạo tài khoản</h1>
+      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Mật khẩu cần có ít nhất 8 ký tự.</p>
       <AuthForm mode="signup" action={signUp} />
     </>
   );

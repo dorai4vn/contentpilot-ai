@@ -33,13 +33,34 @@ export function isoToLocalInput(iso: string | null | undefined): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** Human-readable date-time. Pass timeZone "UTC" for output that is identical on server and client. */
-export function formatDateTime(iso: string, options: { timeZone?: string; locale?: string } = {}): string {
+function dateParts(iso: string, timeZone?: string) {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(options.locale ?? "en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: options.timeZone,
-  }).format(date);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return { day: get("day"), month: get("month"), year: get("year"), hour: get("hour"), minute: get("minute") };
+}
+
+/**
+ * Date and time as Vietnamese users write it: "01/12/2026 09:00" (dd/MM/yyyy, 24h).
+ * Uses the runtime's local time zone unless one is given; pass "UTC" for output
+ * that is identical on server and client. Display only: stored values stay UTC.
+ */
+export function formatDateTime(iso: string, options: { timeZone?: string } = {}): string {
+  const p = dateParts(iso, options.timeZone);
+  return p ? `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}` : "";
+}
+
+/** Date only, "01/12/2026". */
+export function formatDate(iso: string, options: { timeZone?: string } = {}): string {
+  const p = dateParts(iso, options.timeZone);
+  return p ? `${p.day}/${p.month}/${p.year}` : "";
 }

@@ -36,15 +36,20 @@ export function codePointLength(value: string): number {
 // Postgres `text` cannot store NUL characters; reject them with a clear message.
 const noNul = (value: string) => !value.includes("\u0000");
 
+/** "1000" -> "1.000" (Vietnamese thousands separator), independent of the runtime locale. */
+const viNumber = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+/** `label` is the field name as it starts a sentence, e.g. "Tên dự án". */
 function boundedText(label: string, { min, max, trim }: { min: number; max: number; trim: boolean }) {
+  const lower = label.charAt(0).toLocaleLowerCase("vi") + label.slice(1);
   const base = trim ? z.string().trim() : z.string();
   return base
-    .refine(noNul, { message: `${label} contains an invalid character.` })
+    .refine(noNul, { message: `${label} chứa ký tự không hợp lệ.` })
     .refine((v) => codePointLength(v) >= min, {
-      message: min === 1 ? `${label} is required.` : `${label} must be at least ${min} characters.`,
+      message: min === 1 ? `Vui lòng nhập ${lower}.` : `${label} phải có ít nhất ${min} ký tự.`,
     })
     .refine((v) => codePointLength(v) <= max, {
-      message: `${label} must be at most ${max.toLocaleString("en-US")} characters.`,
+      message: `${label} tối đa ${viNumber(max)} ký tự.`,
     });
 }
 
@@ -56,7 +61,7 @@ function boundedText(label: string, { min, max, trim }: { min: number; max: numb
 export const uuidSchema = z
   .string()
   .trim()
-  .pipe(z.uuid({ message: "Invalid identifier." }))
+  .pipe(z.uuid({ message: "Mã định danh không hợp lệ." }))
   .transform((v) => v.toLowerCase());
 
 /**
@@ -64,18 +69,18 @@ export const uuidSchema = z
  * or its plain decimal string form (FormData); rejects "", "1.5", "1e3", "+1", "01".
  */
 export const expectedVersionSchema = z
-  .union([z.number(), z.string().trim().regex(/^[1-9]\d*$/, { message: "Invalid version." })])
+  .union([z.number(), z.string().trim().regex(/^[1-9]\d*$/, { message: "Phiên bản không hợp lệ." })])
   .transform((v) => (typeof v === "string" ? Number(v) : v))
   .pipe(
     z
-      .number({ message: "Invalid version." })
-      .int({ message: "Invalid version." })
-      .min(1, { message: "Invalid version." })
-      .max(CONTENT_LIMITS.versionMax, { message: "Invalid version." }),
+      .number({ message: "Phiên bản không hợp lệ." })
+      .int({ message: "Phiên bản không hợp lệ." })
+      .min(1, { message: "Phiên bản không hợp lệ." })
+      .max(CONTENT_LIMITS.versionMax, { message: "Phiên bản không hợp lệ." }),
   );
 
 export const editablePostStatusSchema = z.enum(EDITABLE_POST_STATUSES, {
-  message: "Status must be draft or ready.",
+  message: "Trạng thái chỉ có thể là Bản nháp hoặc Sẵn sàng.",
 });
 
 /**
@@ -91,7 +96,7 @@ export const scheduledForSchema = z
     z.union([
       z.literal("").transform(() => null),
       z.iso
-        .datetime({ offset: true, message: "Enter a valid date and time." })
+        .datetime({ offset: true, message: "Vui lòng nhập ngày giờ hợp lệ." })
         .transform((v) => new Date(v).toISOString()),
     ]),
   );
@@ -102,13 +107,13 @@ export const scheduledForSchema = z
 
 /** Editable project fields (full state). Unknown keys are rejected. */
 export const projectInputSchema = z.strictObject({
-  name: boundedText("Project name", { min: 1, max: CONTENT_LIMITS.projectNameMax, trim: true }),
+  name: boundedText("Tên dự án", { min: 1, max: CONTENT_LIMITS.projectNameMax, trim: true }),
   description: z
     .string()
     .nullish()
     .transform((v) => (v ?? "").trim())
     .pipe(
-      boundedText("Description", { min: 0, max: CONTENT_LIMITS.projectDescriptionMax, trim: false }),
+      boundedText("Mô tả", { min: 0, max: CONTENT_LIMITS.projectDescriptionMax, trim: false }),
     )
     .transform((v) => (v === "" ? null : v)),
 });
@@ -139,9 +144,9 @@ export type ProjectListInput = z.input<typeof projectListSchema>;
  * as version, created_by or published_at are rejected.
  */
 export const postInputSchema = z.strictObject({
-  title: boundedText("Title", { min: 1, max: CONTENT_LIMITS.postTitleMax, trim: true }),
+  title: boundedText("Tiêu đề", { min: 1, max: CONTENT_LIMITS.postTitleMax, trim: true }),
   // The body is stored as written (no trimming): whitespace can be meaningful.
-  body: boundedText("Body", { min: 0, max: CONTENT_LIMITS.postBodyMax, trim: false }),
+  body: boundedText("Nội dung", { min: 0, max: CONTENT_LIMITS.postBodyMax, trim: false }),
   status: editablePostStatusSchema,
   scheduledFor: scheduledForSchema,
 });

@@ -44,7 +44,7 @@ async function signUpOrIn(page, email, password, existing) {
 }
 
 async function signOut(page) {
-  await page.click('button:has-text("Sign out")');
+  await page.click('button:has-text("Đăng xuất")');
   await page.waitForURL(/\/login/, { timeout: 15000 });
 }
 
@@ -82,7 +82,7 @@ async function signOut(page) {
     await page.fill('input[name="password"]', "definitely-wrong-password");
     await page.click('button[type="submit"]');
     const alert = await page.locator('form [role="alert"]').textContent({ timeout: 10000 }).catch(() => "");
-    check(/invalid email or password/i.test(alert || ""), "invalid credentials show an error");
+    check(/email hoặc mật khẩu không đúng/i.test(alert || ""), "invalid credentials show an error");
     check(/\/login/.test(page.url()), "invalid credentials stay on /login");
 
     // 4. Sign up / sign in lands on the dashboard showing the user.
@@ -93,10 +93,10 @@ async function signOut(page) {
     // 5. Create a workspace (real INSERT through RLS) and read it back.
     const wsName = `Smoke workspace ${stamp}`;
     await page.fill('input[name="name"]', wsName);
-    await page.click('button:has-text("Create workspace")');
+    await page.click('button:has-text("Tạo không gian làm việc")');
     const item = page.locator('[data-testid="workspace-list"] li', { hasText: wsName });
     await item.waitFor({ timeout: 15000 });
-    check((await item.textContent()).includes("Owner"), "new workspace is listed with the Owner role");
+    check((await item.textContent()).includes("Chủ sở hữu"), "new workspace is listed with the owner role (Chủ sở hữu)");
 
     // 6. Session survives reload; sign-out clears it.
     await page.reload();
