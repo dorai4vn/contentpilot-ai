@@ -2,7 +2,7 @@ import { isAgentConfigured } from "@/lib/agent/config";
 import { createAgentToolContext } from "@/lib/agent/executor";
 import { createOpenAIModel } from "@/lib/agent/llm";
 import { agentRateLimiter } from "@/lib/agent/rate-limit";
-import { logAgentError, safeErrorInfo } from "@/lib/agent/safe-log";
+import { logSafeError, safeErrorInfo } from "@/lib/logging/safe-log";
 import { type AgentAction, runAgent } from "@/lib/agent/run";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { ContentError, contentFieldErrors } from "@/lib/content/errors";
@@ -181,7 +181,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof MissingConfigurationError) return errorResponse("agent_not_configured");
     // Server log: error class and code only (no message: it could contain user data).
-    logAgentError("api/agent", { event: "unexpected_error", ...safeErrorInfo(error) });
+    logSafeError("api/agent", { event: "unexpected_error", ...safeErrorInfo(error) });
     return errorResponse("internal_error");
   }
 }

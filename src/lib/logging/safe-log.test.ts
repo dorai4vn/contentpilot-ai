@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { logAgentError, safeErrorInfo, safeLabel } from "./safe-log";
+vi.mock("server-only", () => ({}));
+
+import { logSafeError, safeErrorInfo, safeLabel } from "./safe-log";
 
 const SECRET_BODY = "Nội dung bài viết bí mật";
 const KEY = "sk-proj-SECRETKEY0123456789abcdefABCDEF";
@@ -53,10 +55,10 @@ describe("safeLabel", () => {
   });
 });
 
-describe("logAgentError", () => {
+describe("logSafeError", () => {
   it("writes one JSON line with only the given safe fields", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    logAgentError("agent tool", { event: "unexpected_error", tool: "get_post", type: "Error", code: undefined });
+    logSafeError("agent tool", { event: "unexpected_error", tool: "get_post", type: "Error", code: undefined });
     expect(spy).toHaveBeenCalledWith("[agent tool]", '{"event":"unexpected_error","tool":"get_post","type":"Error"}');
   });
 });

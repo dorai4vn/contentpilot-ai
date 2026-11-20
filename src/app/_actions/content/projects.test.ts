@@ -127,6 +127,36 @@ describe("createProjectAction", () => {
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
+
+  it("logs only the error class and code, never the message, details, stack or content", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const dbError = Object.assign(
+      new Error("null value violates not-null constraint. Failing row contains (Bí mật nội dung, sk-proj-LEAK0000)"),
+      { code: "XX000", details: "Failing row contains (Bí mật nội dung)", hint: "secret hint" },
+    );
+    mocks.createProject.mockRejectedValue(dbError);
+
+    const result = await createProjectAction(null, form({ workspaceId: WS, name: "Blog" }));
+
+    // Unchanged behaviour for the user.
+    expect(result).toEqual({ ok: false, code: "unknown", error: "Đã có lỗi xảy ra. Vui lòng thử lại." });
+    // Safe log line.
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith("[content action]", '{"event":"unexpected_error","type":"Error","code":"XX000"}');
+    const logged = JSON.stringify(log.mock.calls);
+    for (const leak of ["Bí mật", "sk-proj", "Failing row", "secret hint", "not-null", " at "]) {
+      expect(logged).not.toContain(leak);
+    }
+    log.mockRestore();
+  });
+
+  it("expected (mapped) errors are not logged at all", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createProject.mockRejectedValue(new ContentError("forbidden"));
+    await createProjectAction(null, form({ workspaceId: WS, name: "Blog" }));
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
 });
 
 describe("updateProjectAction", () => {

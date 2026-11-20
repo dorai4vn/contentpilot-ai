@@ -1,10 +1,12 @@
+import "server-only";
+
 /**
- * Safe server logging for the AI agent.
+ * Safe server logging (AI agent, Server Actions, route handlers).
  *
  * Errors can carry sensitive data: database messages and details (PostgREST
  * "Failing row contains (...)" includes post content), OpenAI error messages
  * (may include part of the API key), stack traces with paths, request bodies.
- * Agent code therefore never logs an Error object or its message: only an
+ * Server code therefore never logs an Error object or its message: only an
  * error class name and an error code, both restricted to short identifiers.
  */
 
@@ -29,8 +31,8 @@ export function safeLabel(value: unknown): string {
   return typeof value === "string" && /^[a-z][a-z_]{0,39}$/.test(value) ? value : "unknown";
 }
 
-/** The only way agent code writes errors to the server log. */
-export function logAgentError(scope: string, fields: Record<string, string | undefined> & { error?: never }): void {
+/** The way server code writes unexpected errors to the log: safe fields only. */
+export function logSafeError(scope: string, fields: Record<string, string | undefined> & { error?: never }): void {
   const safe = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
   console.error(`[${scope}]`, JSON.stringify(safe));
 }

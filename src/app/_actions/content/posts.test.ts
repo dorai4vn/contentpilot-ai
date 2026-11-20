@@ -171,6 +171,25 @@ describe("createPostAction", () => {
   });
 });
 
+describe("unexpected errors in post actions", () => {
+  it("are logged without message, stack or post content, and the user gets the generic error", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = Object.assign(new Error("Failing row contains (New body, Hello v2)"), { code: "PGRST000" });
+    error.stack = "Error: Failing row contains (New body)\n    at /srv/app/posts.ts:10:5";
+    mocks.updatePost.mockRejectedValue(error);
+
+    const result = await actions.updatePostAction(null, form(editFields));
+
+    expect(result).toEqual({ ok: false, code: "unknown", error: "Đã có lỗi xảy ra. Vui lòng thử lại." });
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).toContain("PGRST000");
+    for (const leak of ["New body", "Hello v2", "Failing row", "posts.ts"]) {
+      expect(logged).not.toContain(leak);
+    }
+    log.mockRestore();
+  });
+});
+
 describe("updatePostAction", () => {
   it("updates with the expected version and returns the new version", async () => {
     mocks.updatePost.mockResolvedValue({ ...post, version: 4, status: "ready", title: "Hello v2" });

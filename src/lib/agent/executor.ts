@@ -14,7 +14,7 @@ import { uuidSchema } from "@/lib/validation/content";
 import { getMyWorkspace } from "@/lib/workspaces/queries";
 import type { WorkspaceRole } from "@/types/database";
 
-import { logAgentError, safeErrorInfo } from "./safe-log";
+import { logSafeError, safeErrorInfo } from "@/lib/logging/safe-log";
 import {
   type AgentToolArgs,
   type AgentToolKind,
@@ -277,7 +277,7 @@ export async function executeAgentTool(
     const contentError = toContentError(error);
     if (contentError.code === "unknown") {
       // Never the error itself: database messages can contain post content.
-      logAgentError("agent tool", { event: "unexpected_error", tool, ...safeErrorInfo(error) });
+      logSafeError("agent tool", { event: "unexpected_error", tool, ...safeErrorInfo(error) });
     }
     const code: AgentToolErrorCode = contentError.code === "not_allowed_status" ? "not_draft" : contentError.code;
     // Failed writes are still reported (with the target post, if known) so the UI can list them.
