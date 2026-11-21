@@ -1,3 +1,4 @@
+import { FileText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,7 +9,7 @@ import { getProject } from "@/lib/content/projects";
 
 import { LocalDateTime } from "../../../_components/client-ui";
 import { CreatePostForm } from "../../../_components/post-forms";
-import { Badge, Breadcrumbs, Card, EmptyState, Notice, StatusBadge, buttonClass } from "../../../_components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, Notice, StatusBadge, buttonClass, segmentClass } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
 export const metadata: Metadata = { title: "Dự án" };
@@ -97,19 +98,19 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
 
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Bài viết</h2>
-          <nav className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1 dark:bg-slate-900" aria-label="Lọc bài viết">
+          <h2 className="flex items-center gap-2 font-semibold">
+            <FileText className="h-4 w-4 text-slate-500" aria-hidden />
+            Bài viết
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{visible.length}</span>
+          </h2>
+          <nav className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1" aria-label="Lọc bài viết">
             {FILTERS.map((f) => (
               <Link
                 key={f.key}
                 href={f.key === "all" ? base : `${base}?filter=${f.key}`}
                 aria-current={filter === f.key ? "page" : undefined}
                 data-testid={`filter-${f.key}`}
-                className={`whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${
-                  filter === f.key
-                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
-                }`}
+                className={`${segmentClass(filter === f.key)} px-2 text-xs sm:px-3 sm:text-sm`}
               >
                 {f.label}
               </Link>
@@ -122,15 +123,15 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
             {filter === "all" && !projectArchived ? "Dùng “Bài viết mới” ở trên để viết bài đầu tiên." : null}
           </EmptyState>
         ) : (
-          <ul className="divide-y divide-slate-200 dark:divide-slate-800" data-testid="post-list">
+          <ul className="-mx-2 divide-y divide-slate-100" data-testid="post-list">
             {visible.map((post) => (
-              <li key={post.id} className="py-3" data-testid="post-item">
+              <li key={post.id} data-testid="post-item">
                 <Link
                   href={contentPaths.post(workspace.id, post.id)}
-                  className="group flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                  className="group flex flex-col gap-1 rounded-lg px-2 py-3 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-medium group-hover:text-indigo-600" data-testid="post-title">
+                    <p className="truncate font-medium text-slate-900 group-hover:text-indigo-600" data-testid="post-title">
                       {post.title}
                     </p>
                     <p className="text-xs text-slate-500">
@@ -138,7 +139,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3 text-sm">
-                    <span className="text-slate-600 dark:text-slate-400" data-testid="post-schedule">
+                    <span className="inline-flex items-center gap-1 text-slate-600" data-testid="post-schedule">
                       {post.scheduledFor ? (
                         <>
                           Dự kiến đăng <LocalDateTime iso={post.scheduledFor} />

@@ -1,3 +1,4 @@
+import { Activity, Bot, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 
 import { type AgentActionLogEntry, listAgentActions } from "@/lib/agent/actions-log";
@@ -8,7 +9,7 @@ import { uuidSchema } from "@/lib/validation/content";
 
 import { ActionList, logEntryToView } from "../../_components/agent-actions";
 import { AgentChat } from "../../_components/agent-chat";
-import { Breadcrumbs, Card, EmptyState, Notice } from "../../_components/ui";
+import { Breadcrumbs, Card, EmptyState, Notice, PageHeader } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
 export const metadata: Metadata = { title: "Trợ lý AI" };
@@ -42,14 +43,12 @@ export default async function AgentPage({ params, searchParams }: PageProps<"/w/
             { label: "Trợ lý AI" },
           ]}
         />
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="agent-title">
-          Trợ lý AI
-        </h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Nhờ Trợ lý đọc dự án và bài viết, tạo bài nháp mới, chỉnh sửa bài đang ở trạng thái Bản nháp hoặc gửi yêu cầu
-          xuất bản. Trợ lý không thể tự xuất bản, phê duyệt, xóa hay đổi trạng thái bài viết: mọi yêu cầu xuất bản đều
-          chờ chủ sở hữu hoặc quản trị viên duyệt.
-        </p>
+        <PageHeader
+          icon={Bot}
+          title="Trợ lý AI"
+          titleTestId="agent-title"
+          description="Nhờ Trợ lý đọc dự án và bài viết, tạo bài nháp mới, chỉnh sửa bài đang ở trạng thái Bản nháp hoặc gửi yêu cầu xuất bản. Trợ lý không thể tự xuất bản, phê duyệt, xóa hay đổi trạng thái bài viết: mọi yêu cầu xuất bản đều chờ chủ sở hữu hoặc quản trị viên duyệt."
+        />
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -76,8 +75,11 @@ export default async function AgentPage({ params, searchParams }: PageProps<"/w/
 
         <aside className="min-w-0 space-y-6">
           <Card>
-            <h2 className="mb-1 font-semibold">Hoạt động AI gần đây</h2>
-            <p className="mb-3 text-xs text-slate-500">
+            <h2 className="mb-1 flex items-center gap-2 font-semibold">
+              <Activity className="h-4 w-4 text-indigo-600" aria-hidden />
+              Hoạt động AI gần đây
+            </h2>
+            <p className="mb-4 text-xs text-slate-500">
               Ghi lại từ máy chủ sau mỗi thao tác của Trợ lý, không dựa vào câu trả lời của AI.
             </p>
             {recent === null ? (
@@ -97,12 +99,23 @@ export default async function AgentPage({ params, searchParams }: PageProps<"/w/
           </Card>
 
           <Card>
-            <h2 className="mb-2 font-semibold">Giới hạn an toàn</h2>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-400">
-              <li>Bài viết do Trợ lý tạo luôn là Bản nháp.</li>
-              <li>Trợ lý chỉ sửa bài ở trạng thái Bản nháp và luôn đọc bài trước khi sửa.</li>
-              <li>Nếu bài vừa bị người khác sửa, Trợ lý dừng lại thay vì ghi đè.</li>
-              <li>Mỗi yêu cầu tối đa 6 lần gọi công cụ và 3 thao tác ghi.</li>
+            <h2 className="mb-3 flex items-center gap-2 font-semibold">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden />
+              Giới hạn an toàn
+            </h2>
+            <ul className="space-y-2.5 text-sm text-slate-600">
+              {[
+                "Bài viết do Trợ lý tạo luôn là Bản nháp.",
+                "Trợ lý chỉ sửa bài ở trạng thái Bản nháp và luôn đọc bài trước khi sửa.",
+                "Nếu bài vừa bị người khác sửa, Trợ lý dừng lại thay vì ghi đè.",
+                "Trợ lý chỉ gửi yêu cầu xuất bản; con người quyết định phê duyệt.",
+                "Mỗi yêu cầu tối đa 6 lần gọi công cụ và 3 thao tác ghi.",
+              ].map((rule) => (
+                <li key={rule} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                  <span>{rule}</span>
+                </li>
+              ))}
             </ul>
           </Card>
         </aside>

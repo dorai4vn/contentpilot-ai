@@ -1,3 +1,4 @@
+import { ArrowRight, Bot, ClipboardCheck, Clock } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -12,7 +13,7 @@ import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../_components/client-ui";
 import { PUBLISH_STATUS_LABELS, PublishStatusBadge, actorLabel, destinationLabel } from "../../_components/publish-ui";
-import { Badge, Breadcrumbs, Card, EmptyState, Notice } from "../../_components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, Notice, PageHeader, buttonClass, segmentClass } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
 export const metadata: Metadata = { title: "Phê duyệt xuất bản" };
@@ -62,12 +63,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
     return query ? `${contentPaths.approvals(workspace.id)}?${query}` : contentPaths.approvals(workspace.id);
   };
 
-  const tab = (active: boolean) =>
-    `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${
-      active
-        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-        : "text-slate-600 hover:text-slate-900 dark:text-slate-400"
-    }`;
+  const tab = segmentClass;
 
   return (
     <div className="space-y-6">
@@ -79,13 +75,12 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
             { label: "Phê duyệt xuất bản" },
           ]}
         />
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="approvals-title">
-          Phê duyệt xuất bản
-        </h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Mọi bài viết chỉ được xuất bản sau khi chủ sở hữu hoặc quản trị viên đọc và phê duyệt đúng phiên bản được gửi.
-          Yêu cầu hết hạn sau 7 ngày.
-        </p>
+        <PageHeader
+          icon={ClipboardCheck}
+          title="Phê duyệt xuất bản"
+          titleTestId="approvals-title"
+          description="Mọi bài viết chỉ được xuất bản sau khi chủ sở hữu hoặc quản trị viên đọc và phê duyệt đúng phiên bản được gửi. Yêu cầu hết hạn sau 7 ngày."
+        />
       </div>
 
       {can.decidePublish ? null : (
@@ -96,7 +91,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
       )}
 
       <Card>
-        <nav className="mb-4 flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1 dark:bg-slate-900" aria-label="Lọc yêu cầu">
+        <nav className="mb-4 flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1" aria-label="Lọc yêu cầu">
           {FILTERS.map((f) => (
             <Link
               key={f}
@@ -123,11 +118,22 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
             </EmptyState>
           )
         ) : (
-          <ul className="divide-y divide-slate-200 dark:divide-slate-800" data-testid="approval-list">
+          <ul className="space-y-2" data-testid="approval-list">
             {shown.map((r) => {
               const post = posts.get(r.postId);
+              const isPending = r.displayStatus === "pending";
               return (
-                <li key={r.id} className="py-3" data-testid="approval-item" data-request-id={r.id} data-status={r.displayStatus}>
+                <li
+                  key={r.id}
+                  className={`rounded-xl border p-3.5 transition sm:p-4 ${
+                    isPending
+                      ? "border-amber-200 bg-amber-50/50 shadow-card ring-1 ring-inset ring-amber-100"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                  data-testid="approval-item"
+                  data-request-id={r.id}
+                  data-status={r.displayStatus}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -139,7 +145,12 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
                           {post?.title ?? "Bài viết không còn truy cập được"}
                         </Link>
                         <PublishStatusBadge status={r.displayStatus} />
-                        {r.requestSource === "agent" ? <Badge tone="indigo">AI đề xuất</Badge> : null}
+                        {r.requestSource === "agent" ? (
+                          <Badge tone="indigo">
+                            <Bot className="h-3 w-3" aria-hidden />
+                            AI đề xuất
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="text-xs text-slate-500">
                         <span data-testid="approval-item-destination">Đích xuất bản: {destinationLabel(r.destinationId, destinationNames)}</span> ·
@@ -153,16 +164,18 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
                         ) : null}
                       </p>
                       {r.cancelReason === "post_changed" ? (
-                        <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="approval-item-stale">
+                        <p className="text-xs text-amber-700" data-testid="approval-item-stale">
                           Bài viết đã thay đổi sau khi gửi, yêu cầu này đã mất hiệu lực.
                         </p>
                       ) : null}
                     </div>
                     <Link
                       href={`${contentPaths.approvals(workspace.id)}/${r.id}`}
-                      className="shrink-0 text-sm font-medium text-indigo-600 hover:underline"
+                      className={`shrink-0 ${isPending && can.decidePublish ? buttonClass.primary : buttonClass.secondary}`}
                     >
-                      {r.displayStatus === "pending" && can.decidePublish ? "Xem và duyệt →" : "Xem chi tiết →"}
+                      {isPending ? <Clock className="h-4 w-4" aria-hidden /> : null}
+                      {isPending && can.decidePublish ? "Xem và duyệt" : "Xem chi tiết"}
+                      <ArrowRight className="h-4 w-4" aria-hidden />
                     </Link>
                   </div>
                 </li>
@@ -173,7 +186,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
 
         {result.totalPages > 1 ? (
           <nav
-            className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-800"
+            className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-sm"
             aria-label="Phân trang"
             data-testid="approvals-pagination"
           >

@@ -19,8 +19,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <>
-      <h1 className="mb-1 text-lg font-semibold">Đăng nhập</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Dùng email và mật khẩu của bạn.</p>
+      <h1 className="mb-1 text-xl font-semibold tracking-tight text-slate-900">Đăng nhập</h1>
+      <p className="mb-6 text-sm text-slate-600">Dùng email và mật khẩu của bạn.</p>
       <AuthForm mode="login" action={signIn} next={next} notice={notice} />
     </>
   );

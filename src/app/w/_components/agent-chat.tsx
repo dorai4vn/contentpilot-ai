@@ -1,5 +1,6 @@
 "use client";
 
+import { Bot, RotateCcw, SendHorizontal, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
@@ -176,7 +177,8 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
           </select>
         </div>
         {entries.length > 0 ? (
-          <button type="button" onClick={resetChat} className={buttonClass.ghost} disabled={pending} data-testid="agent-reset">
+          <button type="button" onClick={resetChat} className={buttonClass.secondary} disabled={pending} data-testid="agent-reset">
+            <RotateCcw className="h-4 w-4 text-slate-500" aria-hidden />
             Cuộc trò chuyện mới
           </button>
         ) : null}
@@ -184,14 +186,17 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
 
       <div
         ref={listRef}
-        className="flex max-h-[60vh] min-h-64 flex-col gap-4 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4 dark:border-slate-800 dark:bg-slate-900/40"
+        className="flex max-h-[62vh] min-h-72 flex-col gap-5 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-5"
         aria-live="polite"
         data-testid="agent-messages"
       >
         {entries.length === 0 ? (
           <div className="m-auto max-w-md py-6 text-center" data-testid="agent-empty">
-            <p className="font-medium">Bạn muốn Trợ lý AI giúp gì?</p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <span className="mx-auto mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
+              <Sparkles className="h-5 w-5" aria-hidden />
+            </span>
+            <p className="font-semibold text-slate-900">Bạn muốn Trợ lý AI giúp gì?</p>
+            <p className="mt-1 text-sm text-slate-600">
               Trợ lý có thể đọc dự án và bài viết, tạo bài nháp mới và chỉnh sửa bài đang ở trạng thái Bản nháp.
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2" data-testid="agent-suggestions">
@@ -203,7 +208,7 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
                     setText(s);
                     inputRef.current?.focus();
                   }}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-left text-sm text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-sm text-slate-700 shadow-xs transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   {s}
                 </button>
@@ -214,7 +219,7 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
           entries.map((entry) => <ChatBubble key={entry.id} entry={entry} workspaceId={workspaceId} />)
         )}
         {pending ? (
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400" role="status" data-testid="agent-pending">
+          <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-white px-3 py-2 text-sm text-slate-600 shadow-card sm:w-fit" role="status" data-testid="agent-pending">
             <span className="inline-flex gap-1" aria-hidden>
               <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-400" />
               <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:120ms]" />
@@ -225,7 +230,11 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
         ) : null}
       </div>
 
-      <form onSubmit={send} className="space-y-2" data-testid="agent-form">
+      <form
+        onSubmit={send}
+        className="space-y-2 rounded-xl border border-slate-200 bg-white p-2 shadow-card transition focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10"
+        data-testid="agent-form"
+      >
         <label htmlFor={inputId} className="sr-only">
           Yêu cầu cho Trợ lý AI
         </label>
@@ -238,11 +247,11 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
           rows={3}
           maxLength={AGENT_CHAT_LIMITS.maxMessageLength}
           placeholder="Ví dụ: Viết bài nháp giới thiệu tính năng mới cho dự án Blog…"
-          className={`${inputClass} resize-y`}
+          className="block w-full resize-y border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:text-slate-500"
           disabled={pending}
           data-testid="agent-input"
         />
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-2 pt-2">
           <p className="text-xs text-slate-500">
             {cooldown > 0 ? (
               <span className="text-amber-700 dark:text-amber-400" data-testid="agent-cooldown">
@@ -255,6 +264,7 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
             )}
           </p>
           <button type="submit" disabled={!canSend} className={buttonClass.primary} data-testid="agent-send">
+            <SendHorizontal className="h-4 w-4" aria-hidden />
             {pending ? "Đang gửi…" : "Gửi"}
           </button>
         </div>
@@ -266,10 +276,16 @@ export function AgentChat({ workspaceId, projects, initialProjectId }: AgentChat
 function ChatBubble({ entry, workspaceId }: { entry: ChatEntry; workspaceId: string }) {
   if (entry.role === "user") {
     return (
-      <div className="flex justify-end" data-testid="chat-user">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-indigo-600 px-3 py-2 text-sm text-white">
+      <div className="flex items-end justify-end gap-2">
+        <div
+          className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2.5 text-sm leading-6 text-white shadow-sm shadow-indigo-600/20"
+          data-testid="chat-user"
+        >
           {entry.content}
         </div>
+        <span className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-600 sm:inline-flex" aria-hidden>
+          <UserRound className="h-4 w-4" />
+        </span>
       </div>
     );
   }
@@ -293,9 +309,12 @@ function ChatBubble({ entry, workspaceId }: { entry: ChatEntry; workspaceId: str
   const items = entry.actions.map((a, i) => apiActionToView(workspaceId, a, i));
   const stopNote = STOP_REASON_LABELS[entry.stopReason];
   return (
-    <div className="flex justify-start" data-testid="chat-assistant">
-      <div className="w-full max-w-[92%] space-y-3 rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3 py-3 text-sm sm:px-4 dark:border-slate-800 dark:bg-slate-950">
-        <p className="whitespace-pre-wrap break-words">{entry.content}</p>
+    <div className="flex items-start justify-start gap-2" data-testid="chat-assistant">
+      <span className="mt-0.5 hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white sm:inline-flex" aria-hidden>
+        <Bot className="h-4 w-4" />
+      </span>
+      <div className="w-full min-w-0 max-w-[92%] space-y-3 rounded-2xl rounded-tl-md border border-slate-200 bg-white px-3.5 py-3 text-sm shadow-card sm:px-4">
+        <p className="whitespace-pre-wrap break-words leading-6 text-slate-800">{entry.content}</p>
         {entry.partial ? (
           <Notice tone="warning" testId="agent-partial">
             Một phần thao tác đã được thực hiện trước khi Trợ lý dừng. Kiểm tra danh sách bên dưới trước khi gửi tiếp.
@@ -307,7 +326,7 @@ function ChatBubble({ entry, workspaceId }: { entry: ChatEntry; workspaceId: str
         ) : null}
         {items.length > 0 ? (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Thao tác đã thực hiện</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Thao tác đã thực hiện</p>
             <ActionList items={items} />
           </div>
         ) : null}

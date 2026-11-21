@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: "Tạo tài khoản" };
 export default function SignupPage() {
   return (
     <>
-      <h1 className="mb-1 text-lg font-semibold">Tạo tài khoản</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">Mật khẩu cần có ít nhất 8 ký tự.</p>
+      <h1 className="mb-1 text-xl font-semibold tracking-tight text-slate-900">Tạo tài khoản</h1>
+      <p className="mb-6 text-sm text-slate-600">Mật khẩu cần có ít nhất 8 ký tự.</p>
       <AuthForm mode="signup" action={signUp} />
     </>
   );

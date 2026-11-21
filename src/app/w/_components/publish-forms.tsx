@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckCircle2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useState } from "react";
 
@@ -149,6 +150,7 @@ export function ApproveForm({ target }: { target: ApprovalTarget }) {
     return (
       <div className="space-y-2">
         <button type="button" className={buttonClass.primary} onClick={() => setConfirming(true)} data-testid="approve-start">
+          <CheckCircle2 className="h-4 w-4" aria-hidden />
           Phê duyệt…
         </button>
         <ActionError state={state} testId="approve" />
@@ -159,12 +161,13 @@ export function ApproveForm({ target }: { target: ApprovalTarget }) {
   return (
     <form
       action={action}
-      className="space-y-3 rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
+      className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm leading-6 text-indigo-950 shadow-card ring-4 ring-indigo-500/5"
       data-testid="approve-confirm"
       role="alertdialog"
       aria-labelledby="approve-confirm-title"
     >
-      <p id="approve-confirm-title" className="font-semibold">
+      <p id="approve-confirm-title" className="flex items-center gap-2 font-semibold">
+        <ShieldCheck className="h-4 w-4 text-indigo-600" aria-hidden />
         Xác nhận xuất bản
       </p>
       <p>
@@ -217,7 +220,7 @@ export function RejectForm({ workspaceId, requestId }: { workspaceId: string; re
         data-testid="reject-note"
       />
       <FieldError message={errors?.note} />
-      <SubmitButton variant="warning" pendingLabel="Đang từ chối…" testId="reject-submit">
+      <SubmitButton variant="danger" pendingLabel="Đang từ chối…" testId="reject-submit">
         Từ chối
       </SubmitButton>
       <ActionError state={state} testId="reject" />

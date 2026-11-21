@@ -40,13 +40,13 @@ export function AuthForm({ mode, action, next, notice }: Props) {
       {next ? <input type="hidden" name="next" value={next} /> : null}
 
       {notice && !state.error && !state.message ? (
-        <p role="status" className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
           {notice}
         </p>
       ) : null}
 
       {mode === "signup" ? (
-        <label className="flex flex-col gap-1 text-sm font-medium">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
           <span>
             Tên hiển thị <span className="font-normal text-slate-500">(không bắt buộc)</span>
           </span>
@@ -58,7 +58,7 @@ export function AuthForm({ mode, action, next, notice }: Props) {
             defaultValue={state.values?.displayName}
             aria-invalid={Boolean(state.fieldErrors?.displayName)}
             data-testid="signup-display-name"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-base font-normal text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 sm:text-sm"
           />
           <span className="text-xs font-normal text-slate-500">
             Thành viên trong các không gian làm việc của bạn sẽ thấy tên này. Email không được hiển thị.
@@ -69,7 +69,7 @@ export function AuthForm({ mode, action, next, notice }: Props) {
         </label>
       ) : null}
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
         Email
         <input
           name="email"
@@ -78,12 +78,12 @@ export function AuthForm({ mode, action, next, notice }: Props) {
           required
           defaultValue={state.values?.email}
           aria-invalid={Boolean(state.fieldErrors?.email)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-base font-normal text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 sm:text-sm"
         />
         {state.fieldErrors?.email ? <span className="text-xs text-red-600">{state.fieldErrors.email}</span> : null}
       </label>
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
         Mật khẩu
         <input
           name="password"
@@ -92,7 +92,7 @@ export function AuthForm({ mode, action, next, notice }: Props) {
           required
           minLength={8}
           aria-invalid={Boolean(state.fieldErrors?.password)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-base font-normal text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 sm:text-sm"
         />
         {state.fieldErrors?.password ? (
           <span className="text-xs text-red-600">{state.fieldErrors.password}</span>
@@ -100,12 +100,12 @@ export function AuthForm({ mode, action, next, notice }: Props) {
       </label>
 
       {state.error ? (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {state.error}
         </p>
       ) : null}
       {state.message ? (
-        <p role="status" className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+        <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {state.message}
         </p>
       ) : null}
@@ -113,14 +113,14 @@ export function AuthForm({ mode, action, next, notice }: Props) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 h-10 rounded-lg bg-indigo-600 px-4 font-medium text-white shadow-sm shadow-indigo-600/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? text.pending : text.submit}
       </button>
 
-      <p className="text-center text-sm text-slate-600 dark:text-slate-400">
+      <p className="text-center text-sm text-slate-600">
         {text.switchText}{" "}
-        <Link href={text.switchHref} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+        <Link href={text.switchHref} className="font-medium text-indigo-600 hover:text-indigo-500 hover:underline">
           {text.switchLabel}
         </Link>
       </p>

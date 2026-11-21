@@ -1,3 +1,4 @@
+import { Eye, FilePlus2, type LucideIcon, PenLine, SendHorizontal, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import type { AgentApiAction } from "@/lib/agent/client";
@@ -102,6 +103,21 @@ function versionText(item: ActionItemView): string | null {
   return null;
 }
 
+/** Icon per tool operation kind (visual only). */
+const KIND_ICON: Record<ActionItemView["kind"], LucideIcon> = {
+  read: Eye,
+  create: FilePlus2,
+  update: PenLine,
+  publish_request: SendHorizontal,
+  unknown: Wrench,
+};
+
+const STATUS_ACCENT: Record<ActionItemView["status"], string> = {
+  success: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  error: "bg-red-50 text-red-600 ring-red-100",
+  skipped: "bg-amber-50 text-amber-600 ring-amber-100",
+};
+
 export function ActionList({ items, testId = "action-list" }: { items: ActionItemView[]; testId?: string }) {
   if (items.length === 0) return null;
   return (
@@ -117,10 +133,17 @@ export function ActionList({ items, testId = "action-list" }: { items: ActionIte
             key={item.key}
             data-testid="action-item"
             data-status={item.status}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+            className="flex gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm"
           >
+            <span
+              className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ${STATUS_ACCENT[item.status]}`}
+              aria-hidden
+            >
+              <KindIcon kind={item.kind} />
+            </span>
+            <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium text-slate-900">{item.label}</span>
               <span
                 className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${status.className}`}
               >
@@ -155,11 +178,17 @@ export function ActionList({ items, testId = "action-list" }: { items: ActionIte
                   {item.actor ? ` · ${item.actor}` : ""}
                 </span>
               ) : null}
-              {item.logFailed ? <span className="text-amber-700 dark:text-amber-400">Chưa ghi được nhật ký</span> : null}
+              {item.logFailed ? <span className="text-amber-700">Chưa ghi được nhật ký</span> : null}
+            </div>
             </div>
           </li>
         );
       })}
     </ul>
   );
+}
+
+function KindIcon({ kind }: { kind: ActionItemView["kind"] }) {
+  const Icon = KIND_ICON[kind] ?? Wrench;
+  return <Icon className="h-3.5 w-3.5" />;
 }
