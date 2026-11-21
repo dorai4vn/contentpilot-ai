@@ -16,6 +16,7 @@
  */
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
+const { shown } = require("./lib/wait.cjs");
 
 const BASE_URL = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const DB_URL = process.env.LOCAL_DB_URL || "";
@@ -114,13 +115,13 @@ function postRow(id) {
     await wsLink.click();
     await owner.page.waitForURL(new RegExp(`/w/${workspaceId}$`));
     check((await text(owner.page, '[data-testid="workspace-title"]')) === wsName, "workspace page shows its name");
-    check(await owner.page.locator('[data-testid="empty-state"]').isVisible(), "empty state before the first project");
+    check(await shown(owner.page.locator('[data-testid="empty-state"]')), "empty state before the first project");
     const projectName = `Blog ${stamp}`;
     await owner.page.fill("#new-project-name", projectName);
     await owner.page.fill("#new-project-description", "Company blog");
     await owner.page.click('[data-testid="create-project-submit"]');
     await owner.page.locator(`[data-testid="project-link"]:has-text("${projectName}")`).waitFor({ timeout: 15000 });
-    check(await owner.page.locator('[data-testid="create-project-success"]').isVisible(), "project created with a success message");
+    check(await shown(owner.page.locator('[data-testid="create-project-success"]')), "project created with a success message");
 
     // 2. Owner: create a post with a schedule in local time ----------------------
     await owner.page.click(`[data-testid="project-link"]:has-text("${projectName}")`);
@@ -152,7 +153,7 @@ function postRow(id) {
     await owner.page.fill("#post-body", "Second draft of the launch post.");
     await owner.page.click('[data-testid="save-post"]');
     await waitForVersion(owner.page, 2);
-    check(await owner.page.locator('[data-testid="save-post-success"]').isVisible(), "save shows a success message");
+    check(await shown(owner.page.locator('[data-testid="save-post-success"]')), "save shows a success message");
     row = JSON.parse(postRow(postId));
     check(row.body === "Second draft of the launch post." && row.version === 2, "edit stored as version 2");
     check(new Date(row.scheduled_for).toISOString() === "2026-12-01T02:00:00.000Z", "saving the body kept the schedule");
@@ -177,6 +178,11 @@ function postRow(id) {
     check((await owner.page.locator('[data-testid="version-item"]').first().textContent()).includes("trạng thái → Sẵn sàng"), "history shows the status change");
     // M4: publishing only happens through a human-approved request. The post page may
     // offer "Gửi yêu cầu xuất bản" but never a button that publishes directly.
+    // Control first: the publish card is rendered, so the absence check below is meaningful.
+    check(
+      await shown(owner.page.locator('[data-testid="request-publish-submit"]:has-text("Gửi yêu cầu xuất bản")')),
+      "the post page offers 'Gửi yêu cầu xuất bản' (request only)",
+    );
     check(
       (await owner.page.locator('button:text-is("Publish"), button:text-is("Xuất bản"), [data-testid="approve-start"], [data-testid="approve-confirm-submit"]').count()) === 0,
       "no direct publish or approve button on the post page",
@@ -264,7 +270,7 @@ function postRow(id) {
 
     // 9. Member permissions -----------------------------------------------------------------
     await member.page.goto(`${BASE_URL}/w/${workspaceId}`);
-    check(await member.page.locator('[data-testid="member-notice"]').isVisible(), "member sees the read-only notice");
+    check(await shown(member.page.locator('[data-testid="member-notice"]')), "member sees the read-only notice");
     check((await member.page.locator('[data-testid="create-project-form"]').count()) === 0, "member has no create-project form");
     check((await member.page.locator('[data-testid="archive-project"], [data-testid="edit-project"]').count()) === 0, "member has no project edit/archive buttons");
     await member.page.click(`[data-testid="project-link"]:has-text("${projectName}")`);
@@ -277,7 +283,7 @@ function postRow(id) {
 
     // 10. Admin archives and restores the project ---------------------------------------------
     await admin.page.goto(`${BASE_URL}/w/${workspaceId}`);
-    check(await admin.page.locator('[data-testid="create-project-form"]').isVisible(), "admin can create projects");
+    check(await shown(admin.page.locator('[data-testid="create-project-form"]')), "admin can create projects");
     await admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}") [data-testid="archive-project"]`).click();
     await admin.page
       .locator(`[data-testid="project-list"] [data-testid="project-item"]:has-text("${projectName}")`)
@@ -287,9 +293,9 @@ function postRow(id) {
       "admin archived the project (database)",
     );
     await admin.page.goto(`${BASE_URL}/w/${workspaceId}?view=archived`);
-    check(await admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}")`).isVisible(), "archived project listed under Archived");
+    check(await shown(admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}")`)), "archived project listed under Archived");
     await member.page.goto(projectUrl);
-    check(await member.page.locator('[data-testid="project-archived-notice"]').isVisible(), "archived project is read-only for members");
+    check(await shown(member.page.locator('[data-testid="project-archived-notice"]')), "archived project is read-only for members");
     check((await member.page.locator('[data-testid="create-post-form"]').count()) === 0, "no new posts in an archived project");
     await admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}") [data-testid="restore-project"]`).click();
     await admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}")`).waitFor({ state: "detached", timeout: 15000 });

@@ -15,6 +15,7 @@
  */
 const { execFileSync } = require("node:child_process");
 const { chromium, devices } = require("playwright");
+const { shown } = require("./lib/wait.cjs");
 
 const BASE_URL = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const DB_URL = process.env.LOCAL_DB_URL || "";
@@ -165,8 +166,8 @@ async function requestPublish(user, reason) {
     check((await owner.page.locator('[data-testid="review-content-body"]').textContent())?.includes("làm việc nhanh hơn"), "review shows the body");
     check((await owner.page.locator('[data-testid="review-requested-version"]').textContent())?.trim() === "Phiên bản 1", "review shows the requested version");
     check((await owner.page.locator('[data-testid="review-requester"]').textContent())?.startsWith("Thành viên #"), "review shows who requested");
-    check(await owner.page.locator('[data-testid="review-requested-at"] time').isVisible(), "review shows when it was requested");
-    check(await owner.page.locator('[data-testid="review-expires-at"] time').isVisible(), "review shows the deadline");
+    check(await shown(owner.page.locator('[data-testid="review-requested-at"] time')), "review shows when it was requested");
+    check(await shown(owner.page.locator('[data-testid="review-expires-at"] time')), "review shows the deadline");
     check(await visible(owner.page, "audit-trail"), "review shows the audit trail");
     check(req(p1.id).status === "pending", "opening the review page approves nothing (database)");
     check((await count(owner.page, "approve-confirm")) === 0, "no confirmation step until the owner asks for it");

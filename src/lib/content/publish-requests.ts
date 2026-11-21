@@ -6,9 +6,12 @@ import { uuidSchema } from "@/lib/validation/content";
 import {
   publishApproveSchema,
   publishRejectSchema,
+  publishRequestCountSchema,
   publishRequestCreateSchema,
   publishRequestListSchema,
+  publishRequestPageSchema,
   publishRequestRefSchema,
+  type PublishQueueFilter,
 } from "@/lib/validation/publish";
 import type {
   ContentChangeSource,
@@ -377,4 +380,117 @@ export async function getPublishRequest(input: unknown): Promise<PublishRequestD
   if (eventsError) throw toContentError(eventsError);
 
   return { request: toRequest(request), events: (events ?? []).map(toEvent) };
+}
+
+// ---------------------------------------------------------------------------
+// Approval queue: server-side pagination and exact counts
+// ---------------------------------------------------------------------------
+
+export type PublishRequestPage = {
+  items: PublishRequest[];
+  filter: PublishQueueFilter;
+  page: number;
+  pageSize: number;
+  /** Exact number of requests matching the filter (all pages). */
+  total: number;
+  totalPages: number;
+};
+
+export type PublishRequestCounts = Record<PublishQueueFilter, number>;
+
+/** The filter methods withFilter needs (structural, so it works for any select). */
+interface Filterable<Q> {
+  eq(column: string, value: string): Q;
+  gt(column: string, value: string): Q;
+  lte(column: string, value: string): Q;
+}
+
+/**
+ * Applies a display filter in the database. "pending" means still decidable
+ * (expires_at in the future); "expired" means pending past expires_at — the same
+ * rule as displayStatus and as the RPCs (expires_at <= now() is expired).
+ */
+function withFilter<Q extends Filterable<Q>>(query: Q, filter: PublishQueueFilter, nowIso: string): Q {
+  switch (filter) {
+    case "all":
+      return query;
+    case "pending":
+      return query.eq("status", "pending").gt("expires_at", nowIso);
+    case "expired":
+      return query.eq("status", "pending").lte("expires_at", nowIso);
+    default:
+      return query.eq("status", filter);
+  }
+}
+
+/**
+ * One page of a workspace's requests for a display filter, newest first.
+ * Order is stable across pages: requested_at desc, then id desc (tie-breaker),
+ * so no row is skipped or repeated between pages of an unchanged list.
+ */
+export async function listPublishRequestsPage(input: unknown): Promise<PublishRequestPage> {
+  const { workspaceId, filter, page, pageSize } = parseContentInput(publishRequestPageSchema, input);
+  const { supabase } = await contentClient();
+  const from = (page - 1) * pageSize;
+
+  const nowIso = new Date().toISOString();
+
+  const base = supabase
+    .from("content_publish_requests")
+    .select(REQUEST_COLUMNS, { count: "exact" })
+    .eq("workspace_id", workspaceId);
+  const { data, error, count } = await withFilter(base, filter, nowIso)
+    .order("requested_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + pageSize - 1);
+
+  let total = count ?? 0;
+  if (error && isRangeNotSatisfiable(error)) {
+    // A page past the end (e.g. ?page=99): PostgREST answers 416 / PGRST103.
+    // Return an empty page with the exact total instead of an error.
+    const counted = await withFilter(
+      supabase.from("content_publish_requests").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
+      filter,
+      nowIso,
+    );
+    if (counted.error) throw toContentError(counted.error);
+    total = counted.count ?? 0;
+  } else if (error) {
+    throw toContentError(error);
+  }
+  return {
+    items: error ? [] : (data ?? []).map(toRequest),
+    filter,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+function isRangeNotSatisfiable(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "PGRST103";
+}
+
+const COUNTED_FILTERS = ["pending", "expired", "approved", "rejected", "cancelled"] as const;
+
+/** Exact number of requests per display filter in a workspace (no rows transferred). */
+export async function countPublishRequests(input: unknown): Promise<PublishRequestCounts> {
+  const { workspaceId } = parseContentInput(publishRequestCountSchema, input);
+  const { supabase } = await contentClient();
+  const nowIso = new Date().toISOString();
+
+  const results = await Promise.all(
+    COUNTED_FILTERS.map(async (filter) => {
+      const base = supabase
+        .from("content_publish_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId);
+      const { error, count } = await withFilter(base, filter, nowIso);
+      if (error) throw toContentError(error);
+      return [filter, count ?? 0] as const;
+    }),
+  );
+  const counts = Object.fromEntries(results) as Omit<PublishRequestCounts, "all">;
+  return { ...counts, all: COUNTED_FILTERS.reduce((sum, f) => sum + counts[f], 0) };
 }

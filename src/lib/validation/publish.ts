@@ -64,3 +64,18 @@ export const publishRequestListSchema = z.strictObject({
   limit: z.number().int().min(1).max(PUBLISH_LIMITS.listMax).optional().default(50),
 });
 export type PublishRequestListInput = z.input<typeof publishRequestListSchema>;
+
+/** Display filters of the approval queue ("expired" = pending past expires_at). */
+export const PUBLISH_QUEUE_FILTERS = ["pending", "expired", "approved", "rejected", "cancelled", "all"] as const;
+export type PublishQueueFilter = (typeof PUBLISH_QUEUE_FILTERS)[number];
+
+/** Server-side pagination of the approval queue (stable order, exact totals). */
+export const publishRequestPageSchema = z.strictObject({
+  workspaceId: uuidSchema,
+  filter: z.enum(PUBLISH_QUEUE_FILTERS, { message: "Bộ lọc không hợp lệ." }).optional().default("pending"),
+  page: z.number().int().min(1).max(100_000).optional().default(1),
+  pageSize: z.number().int().min(1).max(PUBLISH_LIMITS.listMax).optional().default(20),
+});
+export type PublishRequestPageInput = z.input<typeof publishRequestPageSchema>;
+
+export const publishRequestCountSchema = z.strictObject({ workspaceId: uuidSchema });

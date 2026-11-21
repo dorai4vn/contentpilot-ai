@@ -10,6 +10,8 @@ const m = vi.hoisted(() => ({
   loadWorkspace: vi.fn(),
   getPublishRequest: vi.fn(),
   listPublishRequests: vi.fn(),
+  listPublishRequestsPage: vi.fn(),
+  countPublishRequests: vi.fn(),
   getPost: vi.fn(),
   getPostHistory: vi.fn(),
   listPostSummariesByIds: vi.fn(),
@@ -33,6 +35,8 @@ vi.mock("@/app/w/_lib/load", () => ({ loadWorkspace: m.loadWorkspace, routeId: (
 vi.mock("@/lib/content/publish-requests", () => ({
   getPublishRequest: m.getPublishRequest,
   listPublishRequests: m.listPublishRequests,
+  listPublishRequestsPage: m.listPublishRequestsPage,
+  countPublishRequests: m.countPublishRequests,
 }));
 vi.mock("@/lib/content/posts", () => ({
   getPost: m.getPost,
@@ -146,6 +150,8 @@ beforeEach(() => {
     { userId: OTHER, role: "member" },
   ]);
   m.listPublishRequests.mockResolvedValue([]);
+  m.listPublishRequestsPage.mockResolvedValue({ items: [], filter: "pending", page: 1, pageSize: 20, total: 0, totalPages: 1 });
+  m.countPublishRequests.mockResolvedValue({ pending: 0, expired: 0, approved: 0, rejected: 0, cancelled: 0, all: 0 });
   m.listPostSummariesByIds.mockResolvedValue(new Map([[POST, post]]));
   m.listProjects.mockResolvedValue([]);
 });
@@ -242,35 +248,66 @@ describe("review page", () => {
 });
 
 describe("approvals list", () => {
-  it("lists requests with Vietnamese statuses and tab counts", async () => {
-    m.listPublishRequests.mockResolvedValue([
-      request,
-      { ...request, id: "r2", displayStatus: "expired" },
-      { ...request, id: "r3", status: "cancelled", displayStatus: "cancelled", cancelReason: "post_changed" },
-    ]);
-    const all = renderToStaticMarkup(
-      await ApprovalsPage({ params: Promise.resolve({ workspaceId: WS }), searchParams: Promise.resolve({ status: "all" }) } as never),
+  const render = async (searchParams: Record<string, string>) =>
+    renderToStaticMarkup(
+      await ApprovalsPage({ params: Promise.resolve({ workspaceId: WS }), searchParams: Promise.resolve(searchParams) } as never),
     );
+
+  it("shows one server page with exact tab counts and Vietnamese statuses", async () => {
+    m.countPublishRequests.mockResolvedValue({ pending: 1, expired: 1, approved: 0, rejected: 0, cancelled: 1, all: 3 });
+    m.listPublishRequestsPage.mockResolvedValue({
+      items: [request, { ...request, id: "r2", displayStatus: "expired" }, { ...request, id: "r3", status: "cancelled", displayStatus: "cancelled", cancelReason: "post_changed" }],
+      filter: "all",
+      page: 1,
+      pageSize: 20,
+      total: 3,
+      totalPages: 1,
+    });
+    const all = await render({ status: "all" });
+    expect(m.listPublishRequestsPage).toHaveBeenCalledWith({ workspaceId: WS, filter: "all", page: 1, pageSize: 20 });
     for (const label of ["Chờ duyệt (1)", "Hết hạn (1)", "Đã hủy (1)", "Đã phê duyệt (0)", "Đã từ chối (0)", "Tất cả (3)"]) {
       expect(all).toContain(label);
     }
     expect(all).toContain('data-testid="approval-item-stale"');
     expect(all.match(/data-testid="approval-item"/g)).toHaveLength(3);
+    expect(all).not.toContain("approve-start"); // the list itself offers no approve button
+    expect(all).not.toContain("approvals-pagination");
+  });
 
-    const pending = renderToStaticMarkup(
-      await ApprovalsPage({ params: Promise.resolve({ workspaceId: WS }), searchParams: Promise.resolve({}) } as never),
-    );
-    expect(pending.match(/data-testid="approval-item"/g)).toHaveLength(1);
-    // The list itself offers no approve button.
-    expect(pending).not.toContain("approve-start");
+  it("passes filter and page from the URL and links pages keeping the filter", async () => {
+    m.countPublishRequests.mockResolvedValue({ pending: 0, expired: 0, approved: 45, rejected: 0, cancelled: 0, all: 45 });
+    m.listPublishRequestsPage.mockResolvedValue({
+      items: [{ ...request, status: "approved", displayStatus: "approved" }],
+      filter: "approved",
+      page: 2,
+      pageSize: 20,
+      total: 45,
+      totalPages: 3,
+    });
+    const markup = await render({ status: "approved", page: "2" });
+    expect(m.listPublishRequestsPage).toHaveBeenCalledWith({ workspaceId: WS, filter: "approved", page: 2, pageSize: 20 });
+    expect(markup).toContain('data-testid="approvals-page-info">Trang 2 / 3 · 45 yêu cầu');
+    expect(markup).toContain(`href="/w/${WS}/approvals?status=approved"`); // previous = page 1
+    expect(markup).toContain(`href="/w/${WS}/approvals?status=approved&amp;page=3"`);
+  });
+
+  it.each([
+    [{ status: "bogus", page: "abc" }, { filter: "pending", page: 1 }],
+    [{ page: "0" }, { filter: "pending", page: 1 }],
+    [{ page: "-3" }, { filter: "pending", page: 1 }],
+  ])("ignores invalid query values %j", async (searchParams, expected) => {
+    await render(searchParams);
+    expect(m.listPublishRequestsPage).toHaveBeenCalledWith({ workspaceId: WS, pageSize: 20, ...expected });
+  });
+
+  it("a page past the end offers a link back to the first page", async () => {
+    m.listPublishRequestsPage.mockResolvedValue({ items: [], filter: "pending", page: 9, pageSize: 20, total: 5, totalPages: 1 });
+    expect(await render({ page: "9" })).toContain('data-testid="approvals-first-page"');
   });
 
   it("members get a notice about who can decide", async () => {
     asRole("member");
-    const markup = renderToStaticMarkup(
-      await ApprovalsPage({ params: Promise.resolve({ workspaceId: WS }), searchParams: Promise.resolve({}) } as never),
-    );
-    expect(markup).toContain('data-testid="approvals-member-notice"');
+    expect(await render({})).toContain('data-testid="approvals-member-notice"');
   });
 });
 
@@ -314,7 +351,7 @@ describe("post page", () => {
 
 describe("workspace navigation", () => {
   it("links to the approvals page with the pending count", async () => {
-    m.listPublishRequests.mockResolvedValue([request, { ...request, id: "r2", displayStatus: "expired" }]);
+    m.countPublishRequests.mockResolvedValue({ pending: 1, expired: 1, approved: 250, rejected: 0, cancelled: 0, all: 252 });
     const markup = renderToStaticMarkup(
       await WorkspacePage({ params: Promise.resolve({ workspaceId: WS }), searchParams: Promise.resolve({}) } as never),
     );

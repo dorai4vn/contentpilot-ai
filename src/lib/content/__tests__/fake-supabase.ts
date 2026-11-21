@@ -5,7 +5,7 @@
  * (RLS, RPCs, constraints) is covered by tests/db against Postgres.
  */
 
-export type FakeResult = { data: unknown; error: unknown };
+export type FakeResult = { data: unknown; error: unknown; count?: number | null };
 export type RecordedCall = [method: string, args: unknown[]];
 
 const BUILDER_METHODS = [
@@ -17,6 +17,9 @@ const BUILDER_METHODS = [
   "eq",
   "is",
   "in",
+  "gt",
+  "lte",
+  "range",
   "order",
   "limit",
   "single",

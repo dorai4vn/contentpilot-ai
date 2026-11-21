@@ -21,6 +21,7 @@
 const { execFileSync } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const { chromium, devices } = require("playwright");
+const { shown } = require("./lib/wait.cjs");
 
 const BASE_URL = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const DB_URL = process.env.LOCAL_DB_URL || "";
@@ -165,7 +166,7 @@ async function ask(page, text) {
     await page.click('[data-testid="open-agent"]');
     await page.waitForURL(new RegExp(`/w/${ws}/agent\\?project=${project}$`));
     await page.locator('[data-testid="agent-privacy-notice"]').waitFor();
-    check(await page.locator('[data-testid="agent-chat"]').isVisible(), "chat is shown (agent configured)");
+    check(await shown(page.locator('[data-testid="agent-chat"]')), "chat is shown (agent configured)");
     check(
       (await page.locator('[data-testid="agent-privacy-notice"]').textContent()).includes("OpenAI"),
       "notice says content is processed by OpenAI",
@@ -268,7 +269,7 @@ async function ask(page, text) {
     // --- 6. Rate limit ------------------------------------------------------------------------
     await ask(page, "Làm thêm nữa");
     await page.locator('[data-testid="chat-error"][data-kind="rate_limited"]').waitFor({ timeout: 15000 });
-    check(await page.locator('[data-testid="agent-cooldown"]').isVisible(), "rate limit shows a countdown");
+    check(await shown(page.locator('[data-testid="agent-cooldown"]')), "rate limit shows a countdown");
     await page.fill('[data-testid="agent-input"]', "Gửi ngay");
     check(await page.locator('[data-testid="agent-send"]').isDisabled(), "send stays disabled during the countdown");
     const sentBefore = sent.length;
@@ -318,14 +319,14 @@ async function ask(page, text) {
     const mobileReply = phone.locator('[data-testid="chat-assistant"]').first();
     await mobileReply.waitFor({ timeout: 15000 });
     check((await mobileReply.locator('[data-testid="action-item"]').count()) === 3, "mobile: reply shows its 3 actions");
-    check(await mobileReply.locator('[data-testid="action-post-link"]').first().isVisible(), "mobile: post link visible");
+    check(await shown(mobileReply.locator('[data-testid="action-post-link"]').first()), "mobile: post link visible");
     check((await mobileReply.textContent()).includes("Chưa ghi được nhật ký"), "mobile: a logging failure is flagged on the action");
     check(await noOverflow(phone), "mobile: no horizontal overflow with a reply and its actions");
     const box = await mobileReply.boundingBox();
     const viewport = phone.viewportSize();
     check(box && box.x >= 0 && box.x + box.width <= viewport.width, "mobile: the reply fits inside the screen width");
     await phone.locator('[data-testid="agent-form"]').scrollIntoViewIfNeeded();
-    check(await phone.locator('[data-testid="agent-send"]').isVisible(), "mobile: the send button is reachable");
+    check(await shown(phone.locator('[data-testid="agent-send"]')), "mobile: the send button is reachable");
     if (SHOTS) await phone.screenshot({ path: `${SHOTS}/agent-mobile-chat.png`, fullPage: true });
 
     // Expected: the 429 from step 6 is logged by the browser as a failed resource load.

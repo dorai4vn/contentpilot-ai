@@ -4,18 +4,26 @@ import Link from "next/link";
 import { contentPaths } from "@/lib/content/paths";
 import { publishPermissions } from "@/lib/content/permissions";
 import { listPostSummariesByIds } from "@/lib/content/posts";
-import { listPublishRequests } from "@/lib/content/publish-requests";
+import { countPublishRequests, listPublishRequestsPage } from "@/lib/content/publish-requests";
+import { PUBLISH_QUEUE_FILTERS, type PublishQueueFilter } from "@/lib/validation/publish";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../_components/client-ui";
-import { PUBLISH_STATUS_LABELS, type PublishDisplayStatus, PublishStatusBadge, actorLabel } from "../../_components/publish-ui";
+import { PUBLISH_STATUS_LABELS, PublishStatusBadge, actorLabel } from "../../_components/publish-ui";
 import { Badge, Breadcrumbs, Card, EmptyState, Notice } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
 export const metadata: Metadata = { title: "Phê duyệt xuất bản" };
 
-const FILTERS = ["pending", "expired", "approved", "rejected", "cancelled", "all"] as const;
-type Filter = (typeof FILTERS)[number];
+const FILTERS = PUBLISH_QUEUE_FILTERS;
+type Filter = PublishQueueFilter;
+const PAGE_SIZE = 20;
+
+/** Positive integer from the query string, else 1. */
+function pageNumber(value: string | string[] | undefined): number {
+  const n = typeof value === "string" && /^[1-9]\d{0,5}$/.test(value) ? Number(value) : 1;
+  return n;
+}
 
 /**
  * Publish approval queue of a workspace. Read-only: decisions are taken on the
@@ -23,24 +31,29 @@ type Filter = (typeof FILTERS)[number];
  */
 export default async function ApprovalsPage({ params, searchParams }: PageProps<"/w/[workspaceId]/approvals">) {
   const { workspaceId } = await params;
-  const { status } = await searchParams;
+  const { status, page: pageParam } = await searchParams;
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "pending";
+  const page = pageNumber(pageParam);
   const { user, workspace } = await loadWorkspace(workspaceId, `/w/${workspaceId}/approvals`);
   const can = publishPermissions(workspace.role);
 
-  const [requests, members] = await Promise.all([
-    listPublishRequests({ workspaceId: workspace.id, limit: 100 }),
+  // Server-side pagination: only one page of rows is read; counts are exact.
+  const [result, counts, members] = await Promise.all([
+    listPublishRequestsPage({ workspaceId: workspace.id, filter, page, pageSize: PAGE_SIZE }),
+    countPublishRequests({ workspaceId: workspace.id }),
     listWorkspaceMembers(workspace.id),
   ]);
-  const posts = await listPostSummariesByIds({ workspaceId: workspace.id, postIds: requests.map((r) => r.postId) });
+  const shown = result.items;
+  const posts = await listPostSummariesByIds({ workspaceId: workspace.id, postIds: shown.map((r) => r.postId) });
   const roles = new Map(members.map((m) => [m.userId, m.role]));
 
-  const counts = Object.fromEntries(FILTERS.map((f) => [f, 0])) as Record<Filter, number>;
-  for (const r of requests) {
-    counts[r.displayStatus as PublishDisplayStatus] += 1;
-    counts.all += 1;
-  }
-  const shown = filter === "all" ? requests : requests.filter((r) => r.displayStatus === filter);
+  const href = (f: Filter, p = 1) => {
+    const params = new URLSearchParams();
+    if (f !== "pending") params.set("status", f);
+    if (p > 1) params.set("page", String(p));
+    const query = params.toString();
+    return query ? `${contentPaths.approvals(workspace.id)}?${query}` : contentPaths.approvals(workspace.id);
+  };
 
   const tab = (active: boolean) =>
     `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${
@@ -80,7 +93,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
           {FILTERS.map((f) => (
             <Link
               key={f}
-              href={f === "pending" ? contentPaths.approvals(workspace.id) : `${contentPaths.approvals(workspace.id)}?status=${f}`}
+              href={href(f)}
               className={tab(filter === f)}
               aria-current={filter === f ? "page" : undefined}
               data-testid={`approvals-tab-${f}`}
@@ -91,9 +104,17 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
         </nav>
 
         {shown.length === 0 ? (
-          <EmptyState title={filter === "pending" ? "Không có yêu cầu nào đang chờ duyệt" : "Không có yêu cầu nào"}>
-            Yêu cầu xuất bản được gửi từ trang chi tiết bài viết.
-          </EmptyState>
+          page > 1 && result.total > 0 ? (
+            <EmptyState title="Trang này không có yêu cầu nào">
+              <Link href={href(filter)} className="text-indigo-600 hover:underline" data-testid="approvals-first-page">
+                Về trang đầu
+              </Link>
+            </EmptyState>
+          ) : (
+            <EmptyState title={filter === "pending" ? "Không có yêu cầu nào đang chờ duyệt" : "Không có yêu cầu nào"}>
+              Yêu cầu xuất bản được gửi từ trang chi tiết bài viết.
+            </EmptyState>
+          )
         ) : (
           <ul className="divide-y divide-slate-200 dark:divide-slate-800" data-testid="approval-list">
             {shown.map((r) => {
@@ -141,6 +162,32 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
             })}
           </ul>
         )}
+
+        {result.totalPages > 1 ? (
+          <nav
+            className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-800"
+            aria-label="Phân trang"
+            data-testid="approvals-pagination"
+          >
+            {page > 1 ? (
+              <Link href={href(filter, Math.min(page - 1, result.totalPages))} className="font-medium text-indigo-600 hover:underline" data-testid="approvals-prev">
+                ← Trang trước
+              </Link>
+            ) : (
+              <span className="text-slate-400">← Trang trước</span>
+            )}
+            <span className="text-slate-600 dark:text-slate-400" data-testid="approvals-page-info">
+              Trang {page} / {result.totalPages} · {result.total} yêu cầu
+            </span>
+            {page < result.totalPages ? (
+              <Link href={href(filter, page + 1)} className="font-medium text-indigo-600 hover:underline" data-testid="approvals-next">
+                Trang sau →
+              </Link>
+            ) : (
+              <span className="text-slate-400">Trang sau →</span>
+            )}
+          </nav>
+        ) : null}
       </Card>
     </div>
   );

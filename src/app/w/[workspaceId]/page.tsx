@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { contentPaths } from "@/lib/content/paths";
 import { listProjects } from "@/lib/content/projects";
-import { listPublishRequests } from "@/lib/content/publish-requests";
+import { countPublishRequests } from "@/lib/content/publish-requests";
 import { ROLE_LABELS } from "@/lib/workspaces/labels";
 
 import { CreateProjectForm, ProjectCard } from "../_components/project-forms";
@@ -18,11 +18,11 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
   const showArchived = view === "archived";
 
   const { workspace, permissions } = await loadWorkspace(workspaceId, `/w/${workspaceId}`);
-  const [all, pendingRequests] = await Promise.all([
+  const [all, requestCounts] = await Promise.all([
     listProjects({ workspaceId: workspace.id, includeArchived: true }),
-    listPublishRequests({ workspaceId: workspace.id, status: "pending", limit: 100 }),
+    countPublishRequests({ workspaceId: workspace.id }),
   ]);
-  const pendingCount = pendingRequests.filter((r) => r.displayStatus === "pending").length;
+  const pendingCount = requestCounts.pending;
   const projects = all.filter((p) => (p.archivedAt !== null) === showArchived);
   const archivedCount = all.filter((p) => p.archivedAt !== null).length;
 

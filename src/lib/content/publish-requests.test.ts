@@ -96,8 +96,10 @@ describe("module surface", () => {
       [
         "approvePublishRequest",
         "cancelPublishRequest",
+        "countPublishRequests",
         "getPublishRequest",
         "listPublishRequests",
+        "listPublishRequestsPage",
         "rejectPublishRequest",
         "requestPostPublish",
       ].sort(),
@@ -524,5 +526,91 @@ describe("getPublishRequest", () => {
     setup([dbError("XX000")]);
     const error = await expectContentError(publish.getPublishRequest({ requestId: REQUEST }), "unknown");
     expect(JSON.stringify({ ...error, message: error.message })).not.toMatch(/secret|relation/);
+  });
+});
+
+describe("listPublishRequestsPage (server-side pagination)", () => {
+  it("filters, orders stably and reads exactly one page with an exact total", async () => {
+    const fake = setup([{ data: [requestRow], error: null, count: 45 }]);
+    const page = await publish.listPublishRequestsPage({ workspaceId: WS, filter: "approved", page: 3, pageSize: 20 });
+    const query = fake.queries[0]!;
+    expect(query.table).toBe("content_publish_requests");
+    expect(query.calls).toContainEqual(["select", [expect.any(String), { count: "exact" }]]);
+    expect(query.calls).toContainEqual(["eq", ["workspace_id", WS]]);
+    expect(query.calls).toContainEqual(["eq", ["status", "approved"]]);
+    // Stable order: newest first, id as tie-breaker.
+    const orders = query.calls.filter(([m]) => m === "order");
+    expect(orders).toEqual([
+      ["order", ["requested_at", { ascending: false }]],
+      ["order", ["id", { ascending: false }]],
+    ]);
+    expect(query.calls).toContainEqual(["range", [40, 59]]);
+    expect(page).toMatchObject({ filter: "approved", page: 3, pageSize: 20, total: 45, totalPages: 3 });
+    expect(page.items).toHaveLength(1);
+  });
+
+  it.each([
+    ["pending", [["eq", ["status", "pending"]], ["gt", ["expires_at", NOW.toISOString()]]]],
+    ["expired", [["eq", ["status", "pending"]], ["lte", ["expires_at", NOW.toISOString()]]]],
+  ] as const)("%s is decided by expires_at in the database query", async (filter, expected) => {
+    const fake = setup([{ data: [], error: null, count: 0 }]);
+    const page = await publish.listPublishRequestsPage({ workspaceId: WS, filter });
+    for (const call of expected) expect(fake.queries[0]!.calls).toContainEqual(call);
+    expect(fake.queries[0]!.calls).toContainEqual(["range", [0, 19]]);
+    expect(page).toMatchObject({ total: 0, totalPages: 1, items: [] });
+  });
+
+  it("'all' applies no status filter", async () => {
+    const fake = setup([{ data: [], error: null, count: 0 }]);
+    await publish.listPublishRequestsPage({ workspaceId: WS, filter: "all" });
+    expect(fake.queries[0]!.methods()).not.toContain("gt");
+    expect(fake.queries[0]!.calls.filter(([m, args]) => m === "eq" && args[0] === "status")).toHaveLength(0);
+  });
+
+  it.each([
+    { workspaceId: "nope" },
+    { workspaceId: WS, filter: "published" },
+    { workspaceId: WS, page: 0 },
+    { workspaceId: WS, page: 1.5 },
+    { workspaceId: WS, pageSize: 101 },
+    { workspaceId: WS, userId: USER },
+  ])("rejects invalid input %j", async (input) => {
+    const fake = setup([]);
+    await expectContentError(publish.listPublishRequestsPage(input), "invalid_input");
+    expect(fake.queries).toHaveLength(0);
+  });
+
+  it("hides database errors", async () => {
+    setup([dbError("XX000")]);
+    await expectContentError(publish.listPublishRequestsPage({ workspaceId: WS }), "unknown");
+  });
+
+  it("a page past the end (PostgREST 416 / PGRST103) is an empty page with the exact total", async () => {
+    const fake = setup([dbError("PGRST103"), { data: null, error: null, count: 30 }]);
+    const page = await publish.listPublishRequestsPage({ workspaceId: WS, filter: "pending", page: 9, pageSize: 20 });
+    expect(page).toMatchObject({ items: [], total: 30, totalPages: 2, page: 9 });
+    const recount = fake.queries[1]!;
+    expect(recount.calls).toContainEqual(["select", ["id", { count: "exact", head: true }]]);
+    expect(recount.calls).toContainEqual(["eq", ["workspace_id", WS]]);
+    expect(recount.calls).toContainEqual(["eq", ["status", "pending"]]);
+  });
+});
+
+describe("countPublishRequests", () => {
+  it("counts each display status with head-only queries in one workspace", async () => {
+    const fake = setup([
+      { data: null, error: null, count: 3 },
+      { data: null, error: null, count: 1 },
+      { data: null, error: null, count: 120 },
+      { data: null, error: null, count: 2 },
+      { data: null, error: null, count: 4 },
+    ] as FakeResult[]);
+    const counts = await publish.countPublishRequests({ workspaceId: WS });
+    expect(counts).toEqual({ pending: 3, expired: 1, approved: 120, rejected: 2, cancelled: 4, all: 130 });
+    expect(fake.queries).toHaveLength(5);
+    for (const query of fake.queries) {
+      expect(query.calls).toContainEqual(["select", ["id", { count: "exact", head: true }]]);
+      expect(query.calls).toContainEqual(["eq", ["workspace_id", WS]]);
+    }
   });
 });
