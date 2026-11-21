@@ -390,7 +390,17 @@ describe("bypass attempts", () => {
     const disguised = await agentCarol.rpc("request_post_publish", { p_post_id: post.agent, p_expected_version: 1, p_source: "user" });
     expect(disguised.error?.code).toBe("42501");
     const turn = randomUUID();
-    const filed = await agentCarol.rpc("request_post_publish", { p_post_id: post.agent, p_expected_version: 1, p_source: "agent", p_agent_turn_id: turn });
+    // M4.6a: an agent request must name its destination (no implicit internal default).
+    const implicit = await agentCarol.rpc("request_post_publish", { p_post_id: post.agent, p_expected_version: 1, p_source: "agent", p_agent_turn_id: turn });
+    expect(implicit.error?.code).toBe("22023");
+    const { data: internal } = await agentCarol.from("publishing_destinations").select("id").eq("workspace_id", WA).eq("kind", "internal").single();
+    const filed = await agentCarol.rpc("request_post_publish", {
+      p_post_id: post.agent,
+      p_expected_version: 1,
+      p_source: "agent",
+      p_agent_turn_id: turn,
+      p_destination_id: internal!.id,
+    });
     expect(filed.error).toBeNull();
     expect(filed.data).toMatchObject({ status: "pending", request_source: "agent", agent_turn_id: turn, requested_by: carol.id });
     const requestId = filed.data!.id;

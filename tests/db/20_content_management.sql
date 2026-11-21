@@ -379,8 +379,11 @@ select pg_temp.assert_error(
 select pg_temp.assert_error(
   $q$update public.content_posts set published_at = now() where id = '40000000-0000-0000-0000-000000000001'$q$,
   '23514', 'superuser cannot set published_at (published_at consistency CHECK)');
-select pg_temp.assert((select count(*) from public.content_posts where status = 'published') = 0,
-  'no post is published');
+select pg_temp.assert(
+  (select count(*) from public.content_posts
+    where status = 'published'
+      and workspace_id in ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002')) = 0,
+  'no post of this test is published');
 
 -- 6. Permanent deletion is impossible --------------------------------------------------
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000e1');

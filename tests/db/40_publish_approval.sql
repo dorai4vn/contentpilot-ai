@@ -136,9 +136,9 @@ select pg_temp.assert(
            or has_function_privilege('anon', p.oid, 'EXECUTE'))),
   'internal and trigger functions cannot be called by API roles');
 select pg_temp.assert(
-  not has_function_privilege('anon', 'public.approve_publish_request(uuid, integer)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.request_post_publish(uuid, integer, public.content_change_source, uuid, text)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.approve_publish_request(uuid, integer)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.approve_publish_request(uuid, integer, uuid)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.request_post_publish(uuid, integer, public.content_change_source, uuid, text, uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.approve_publish_request(uuid, integer, uuid)', 'EXECUTE'),
   'only signed-in users can call the approval RPCs');
 select pg_temp.assert(
   not exists (select 1 from pg_constraint
@@ -221,7 +221,10 @@ select pg_temp.assert(
   (select r.status = 'pending' and r.request_source = 'agent' and r.agent_turn_id = 'dc900000-0000-0000-0000-000000000001'
           and r.requested_by = '00000000-0000-0000-0000-0000000000d3'
      from public.request_post_publish('dc200000-0000-0000-0000-000000000002', 1, 'agent',
-                                      'dc900000-0000-0000-0000-000000000001', 'Bài đã hoàn chỉnh') r),
+                                      'dc900000-0000-0000-0000-000000000001', 'Bài đã hoàn chỉnh',
+                                      -- M4.6a: the agent must name the destination explicitly.
+                                      (select id from public.publishing_destinations
+                                        where workspace_id = 'dc000000-0000-0000-0000-0000000000c0' and kind = 'internal')) r),
   'agent creates a pending, agent-marked request for post 2');
 select pg_temp.reset_actor();
 
@@ -487,7 +490,8 @@ select pg_temp.reset_actor();
 
 -- 11. Overall state --------------------------------------------------------------------------------
 select pg_temp.assert(
-  (select array_agg(id::text order by id) from public.content_posts where status = 'published')
+  (select array_agg(id::text order by id) from public.content_posts
+    where status = 'published' and workspace_id = 'dc000000-0000-0000-0000-0000000000c0')
   = array['dc200000-0000-0000-0000-000000000001', 'dc200000-0000-0000-0000-000000000002',
           'dc200000-0000-0000-0000-000000000003'],
   'exactly the three explicitly approved posts are published');

@@ -185,7 +185,9 @@ select pg_temp.assert(
   pg_temp.affected($q$delete from public.workspaces where id = '10000000-0000-0000-0000-000000000001'$q$) = 1,
   'owner can delete workspace');
 select pg_temp.reset_actor();
-select pg_temp.assert((select count(*) from public.workspace_members) = 0, 'memberships are removed with the workspace');
+select pg_temp.assert(
+  (select count(*) from public.workspace_members where workspace_id = '10000000-0000-0000-0000-000000000001') = 0,
+  'memberships are removed with the workspace');
 
 -- 8. RLS is actually enabled ---------------------------------------------------------
 select pg_temp.assert(

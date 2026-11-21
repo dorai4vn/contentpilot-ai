@@ -19,6 +19,40 @@ export type PublishRequestStatus = "pending" | "approved" | "rejected" | "cancel
 export type PublishRequestCancelReason = "withdrawn" | "post_changed" | "expired";
 export type PublishRequestEvent = "requested" | "approved" | "rejected" | "cancelled" | "published";
 
+export type PublishingDestinationKind = "internal";
+export type PublishingDestinationStatus = "active" | "disabled";
+export type PublishDeliveryStatus = "queued" | "sending" | "succeeded" | "failed" | "cancelled";
+
+export type PublishingDestinationRow = {
+  id: string;
+  workspace_id: string;
+  kind: PublishingDestinationKind;
+  name: string;
+  target_ref: string | null;
+  status: PublishingDestinationStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PublishDeliveryRow = {
+  id: string;
+  workspace_id: string;
+  request_id: string;
+  destination_id: string;
+  post_id: string;
+  post_version: number;
+  status: PublishDeliveryStatus;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  external_post_id: string | null;
+  last_error_code: string | null;
+  idempotency_key: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
 export type ContentPublishRequestRow = {
   id: string;
   workspace_id: string;
@@ -236,6 +270,36 @@ export type Database = {
           },
         ];
       };
+      publishing_destinations: {
+        Row: PublishingDestinationRow;
+        // Owners/admins (RLS); only these columns are granted.
+        Insert: { workspace_id: string; kind: PublishingDestinationKind; name: string; target_ref?: string | null };
+        Update: { name?: string; status?: PublishingDestinationStatus; target_ref?: string | null };
+        Relationships: [
+          {
+            foreignKeyName: "publishing_destinations_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      publish_deliveries: {
+        Row: PublishDeliveryRow;
+        // Written only by approve_publish_request (and, in M5, a server-side worker).
+        Insert: { [_ in never]: never };
+        Update: { [_ in never]: never };
+        Relationships: [
+          {
+            foreignKeyName: "publish_deliveries_request_fkey";
+            columns: ["workspace_id", "request_id"];
+            isOneToOne: true;
+            referencedRelation: "content_publish_requests";
+            referencedColumns: ["workspace_id", "id"];
+          },
+        ];
+      };
       user_profiles: {
         Row: { user_id: string; display_name: string; created_at: string; updated_at: string };
         // Only display_name is granted; user_id is set from auth.uid() by a trigger.
@@ -244,7 +308,9 @@ export type Database = {
         Relationships: [];
       };
       content_publish_requests: {
-        Row: ContentPublishRequestRow;
+        // M4.6a: destination_id is the one destination this request (and its approval) is for.
+        // ContentPublishRequestRow (used by the M4.2 data layer) is unchanged until M4.6b reads it.
+        Row: ContentPublishRequestRow & { destination_id: string };
         // Written only by the publish RPCs.
         Insert: { [_ in never]: never };
         Update: { [_ in never]: never };
@@ -333,11 +399,14 @@ export type Database = {
           p_source?: ContentChangeSource;
           p_agent_turn_id?: string | null;
           p_reason?: string | null;
+          /** M4.6a. Omitted (legacy user calls): the workspace's internal destination. Required for agent requests. */
+          p_destination_id?: string | null;
         };
         Returns: ContentPublishRequestRow;
       };
       approve_publish_request: {
-        Args: { p_request_id: string; p_expected_post_version: number };
+        /** p_expected_destination_id (M4.6a): when given, must equal the request's destination. */
+        Args: { p_request_id: string; p_expected_post_version: number; p_expected_destination_id?: string | null };
         Returns: ContentPostRow;
       };
       reject_publish_request: {

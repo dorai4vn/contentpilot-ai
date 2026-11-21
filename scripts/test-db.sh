@@ -54,6 +54,13 @@ echo "==> Installing Supabase compatibility shim"
 "${PSQL[@]}" -f "$TESTS/00_supabase_shim.sql"
 
 for f in "$MIGRATIONS"/*.sql; do
+  # Optional fixture run just BEFORE a migration, to test its backfill on data
+  # that existed before it (tests/db/hooks/before_<migration file name>).
+  hook="$TESTS/hooks/before_$(basename "$f")"
+  if [[ -f "$hook" ]]; then
+    echo "==> Seeding pre-migration data: $(basename "$hook")"
+    "${PSQL[@]}" -o /dev/null -f "$hook" 2>&1 | sed -E 's/^psql:[^ ]+ NOTICE:  /  /'
+  fi
   echo "==> Applying migration $(basename "$f")"
   "${PSQL[@]}" -f "$f"
 done
