@@ -439,3 +439,42 @@ describe("errors never leak secrets or internals", () => {
     expect(json.reply).not.toContain("Dữ liệu không đáng tin cậy");
   });
 });
+
+describe("actor isolation (M4.6c)", () => {
+  it("the turn runs as the agent; the membership check before it runs as the user", async () => {
+    const { currentActor } = await import("@/lib/supabase/server");
+    const seen: Record<string, string> = {};
+    mocks.getMyWorkspace.mockImplementation(async () => {
+      seen.membership = currentActor();
+      return { id: WS, name: "WS", role: "owner", createdAt: "x" };
+    });
+    mocks.listProjects.mockImplementation(async () => {
+      seen.tool = currentActor();
+      return [project];
+    });
+    mocks.recordAgentAction.mockImplementation(async () => {
+      seen.log = currentActor();
+      return "recorded";
+    });
+    scriptModel([tools(toolCall("list_projects", {})), say("Có 1 dự án.")]);
+
+    const { status } = await call(validBody());
+    expect(status).toBe(200);
+    expect(seen).toEqual({ membership: "user", tool: "agent", log: "agent" });
+    // Nothing leaks out of the request.
+    expect(currentActor()).toBe("user");
+  });
+
+  it("a client-sent actor header is ignored: it neither grants nor removes the agent scope", async () => {
+    const { currentActor } = await import("@/lib/supabase/server");
+    let actorInTool = "";
+    mocks.getMyWorkspace.mockResolvedValue({ id: WS, name: "WS", role: "owner", createdAt: "x" });
+    mocks.listProjects.mockImplementation(async () => {
+      actorInTool = currentActor();
+      return [project];
+    });
+    scriptModel([tools(toolCall("list_projects", {})), say("ok")]);
+    await call(validBody(), { headers: { "x-contentpilot-actor": "user" } });
+    expect(actorInTool).toBe("agent");
+  });
+});

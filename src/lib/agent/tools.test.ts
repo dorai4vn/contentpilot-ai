@@ -14,9 +14,17 @@ function walk(schema: Schema, visit: (s: Schema) => void) {
 }
 
 describe("tool catalogue", () => {
-  it("has exactly the five M3 tools", () => {
+  it("has exactly the five M3 tools and the two M4.6c publishing tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([...AGENT_TOOL_NAMES]);
-    expect(AGENT_TOOL_NAMES).toEqual(["list_projects", "list_posts", "get_post", "create_post", "update_post"]);
+    expect(AGENT_TOOL_NAMES).toEqual([
+      "list_projects",
+      "list_posts",
+      "get_post",
+      "create_post",
+      "update_post",
+      "list_publish_destinations",
+      "request_publish",
+    ]);
   });
 
   it("classifies reads and writes", () => {
@@ -26,11 +34,13 @@ describe("tool catalogue", () => {
       get_post: "read",
       create_post: "create",
       update_post: "update",
+      list_publish_destinations: "read",
+      request_publish: "publish_request",
     });
   });
 
   it("has Vietnamese labels for the UI", () => {
-    for (const tool of AGENT_TOOLS) expect(tool.label).toMatch(/^(Đọc|Tạo|Cập nhật)/);
+    for (const tool of AGENT_TOOLS) expect(tool.label).toMatch(/^(Đọc|Tạo|Cập nhật|Xem|Gửi yêu cầu)/);
   });
 
   it("looks up definitions by name only", () => {
@@ -81,7 +91,26 @@ describe("OpenAI function calling (strict mode) compatibility", () => {
       expect(Object.keys(props), name).not.toContain("status");
       expect(Object.keys(props), name).not.toContain("workspace_id");
     }
-    expect(tools.map((t) => t.name).join(",")).not.toMatch(/delete|publish|archive|status/);
+    // The only publishing tools are a read and a REQUEST: nothing approves, rejects,
+    // cancels or executes a publication.
+    const names = tools.map((t) => t.name);
+    expect(names.filter((n) => /publish/.test(n))).toEqual(["list_publish_destinations", "request_publish"]);
+    expect(names.join(",")).not.toMatch(/delete|archive|status|approve|reject|cancel|execute|deliver/);
+  });
+
+  it("request_publish takes only the post, the version read, an explicit destination and a note", () => {
+    const params = agentToolDefinition("request_publish")!.parameters as Schema;
+    expect(Object.keys(params.properties as Schema).sort()).toEqual(["destination_id", "expected_version", "post_id", "reason"]);
+    // destination_id is required and not nullable: no implicit default destination.
+    expect(params.required).toContain("destination_id");
+    expect(((params.properties as Schema).destination_id as Schema).type).toBe("string");
+    for (const key of Object.keys(params.properties as Schema)) {
+      expect(key).not.toMatch(/user|role|source|turn|workspace|approv|status/i);
+    }
+  });
+
+  it("list_publish_destinations takes no argument", () => {
+    expect(Object.keys((agentToolDefinition("list_publish_destinations")!.parameters as Schema).properties as Schema)).toEqual([]);
   });
 });
 

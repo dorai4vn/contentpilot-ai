@@ -55,18 +55,20 @@ export function buildAgentRequest(input: {
 // ---------------------------------------------------------------------------
 
 const effectSchema = z.object({
-  kind: z.enum(["read", "create", "update"]),
+  kind: z.enum(["read", "create", "update", "publish_request"]),
   projectId: z.string().optional(),
   postId: z.string().optional(),
   versionBefore: z.number().optional(),
   versionAfter: z.number().optional(),
+  requestId: z.string().optional(),
+  destinationId: z.string().optional(),
   fields: z.array(z.enum(["title", "body", "scheduled_for"])).optional(),
 });
 
 const actionSchema = z.object({
   tool: z.string(),
   label: z.string(),
-  kind: z.enum(["read", "create", "update", "unknown"]),
+  kind: z.enum(["read", "create", "update", "publish_request", "unknown"]),
   status: z.enum(["success", "error", "skipped"]),
   code: z.string().optional(),
   message: z.string().optional(),
@@ -196,6 +198,8 @@ export async function callAgent(
 export function isPartialResult(data: Pick<AgentApiSuccess, "actions" | "stopReason">): boolean {
   return (
     data.stopReason !== "completed" &&
-    data.actions.some((a) => a.status === "success" && (a.kind === "create" || a.kind === "update"))
+    data.actions.some(
+      (a) => a.status === "success" && (a.kind === "create" || a.kind === "update" || a.kind === "publish_request"),
+    )
   );
 }

@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth/dal";
 import { ContentError, contentFieldErrors } from "@/lib/content/errors";
 import { getProject } from "@/lib/content/projects";
 import { MissingConfigurationError } from "@/lib/env";
+import { runAsAgent } from "@/lib/supabase/server";
 import { agentRequestSchema } from "@/lib/validation/agent";
 
 /**
@@ -148,13 +149,19 @@ export async function POST(request: Request): Promise<Response> {
         if (!project || project.workspaceId !== ctx.workspaceId) return errorResponse("not_found");
       }
 
-      const result = await runAgent({
-        ctx,
-        model: createOpenAIModel(),
-        messages,
-        timeZone: timeZone ?? "Asia/Ho_Chi_Minh",
-        projectId: projectId ?? null,
-      });
+      // The whole turn runs as the AI agent (server-side actor scope): every
+      // database call it makes carries the agent marker, so the database refuses
+      // approve/reject and only accepts agent-marked publish requests. The actor
+      // is never taken from the request.
+      const result = await runAsAgent(() =>
+        runAgent({
+          ctx,
+          model: createOpenAIModel(),
+          messages,
+          timeZone: timeZone ?? "Asia/Ho_Chi_Minh",
+          projectId: projectId ?? null,
+        }),
+      );
 
       // Nothing happened and the model failed: report it as an error status.
       if (result.actions.length === 0 && result.stopReason === "model_error") {

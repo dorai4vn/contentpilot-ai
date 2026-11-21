@@ -10,6 +10,8 @@ export const TOOL_LABELS: Record<string, string> = {
   get_post: "Đọc nội dung bài viết",
   create_post: "Tạo bài viết",
   update_post: "Cập nhật bài viết",
+  list_publish_destinations: "Xem các đích xuất bản",
+  request_publish: "Gửi yêu cầu xuất bản",
   unknown: "Công cụ không hợp lệ",
 };
 
@@ -26,7 +28,10 @@ export const ACTION_CODE_LABELS: Record<string, string> = {
   version_conflict: "Bài viết vừa được người khác thay đổi; không ghi đè.",
   invalid_input: "Dữ liệu không hợp lệ.",
   unknown_tool: "Công cụ không được phép.",
-  read_required: "Cần đọc bài viết trước khi sửa.",
+  read_required: "Cần đọc bài viết trước khi sửa hoặc gửi yêu cầu xuất bản.",
+  request_pending_exists: "Bài viết đã có yêu cầu xuất bản đang chờ duyệt cho đích này.",
+  post_published: "Bài viết đã được xuất bản.",
+  destination_disabled: "Đích xuất bản đang tạm ngừng.",
   stale_version: "Phiên bản không khớp với bản vừa đọc.",
   conflict_no_retry: "Không thử lại sau xung đột phiên bản.",
   tool_limit: "Đã đạt giới hạn số lần gọi công cụ.",

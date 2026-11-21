@@ -11,7 +11,7 @@ export type ContentPostStatus = "draft" | "ready" | "published";
 
 export type ContentChangeSource = "user" | "agent";
 
-export type AgentActionKind = "read" | "create" | "update" | "unknown";
+export type AgentActionKind = "read" | "create" | "update" | "publish_request" | "unknown";
 export type AgentActionStatus = "success" | "error" | "skipped";
 export type AgentActionField = "title" | "body" | "scheduled_for";
 
@@ -244,6 +244,8 @@ export type Database = {
           version_before: number | null;
           version_after: number | null;
           fields: AgentActionField[] | null;
+          /** M4.6c: the publish request a publish_request row describes. */
+          request_id: string | null;
           created_at: string;
         };
         // Only these columns are granted for INSERT; user_id and created_at are set by the database.
@@ -259,6 +261,7 @@ export type Database = {
           version_before?: number | null;
           version_after?: number | null;
           fields?: AgentActionField[] | null;
+          request_id?: string | null;
         };
         // Append-only.
         Update: { [_ in never]: never };

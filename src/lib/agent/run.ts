@@ -22,9 +22,11 @@ import { type AgentToolKind, agentToolDefinition, openAIFunctionTools } from "./
  * One chat turn of the M3 agent: OpenAI function calling over the five tools.
  *
  * Enforced here, in code (not only in the prompt):
- *  - at most 6 tool calls and 3 executed writes per turn, then a safe stop;
- *  - update_post only after get_post returned that post in this turn, with the
- *    exact version as expected_version;
+ *  - at most 6 tool calls and 3 executed writes per turn (create, update and
+ *    publish requests all count), then a safe stop;
+ *  - update_post and request_publish only after get_post returned that post in
+ *    this turn, with the exact version as expected_version;
+ *  - request_publish gets the server-generated turn id (never the model's);
  *  - after a version_conflict on a post, no further update of that post in the
  *    turn (no retry, no overwrite);
  *  - time budget, model errors and malformed output end the turn with a generic
@@ -72,7 +74,7 @@ type AgentLoopErrorCode =
 const LOOP_MESSAGES: Record<Exclude<AgentLoopErrorCode, AgentToolErrorCode>, string> = {
   tool_limit: `Đã đạt giới hạn ${AGENT_LIMITS.maxToolCalls} lần gọi công cụ trong lượt này; thao tác không được thực hiện.`,
   write_limit: `Đã đạt giới hạn ${AGENT_LIMITS.maxWrites} thao tác ghi trong lượt này; thao tác không được thực hiện.`,
-  read_required: "Phải đọc bài viết bằng get_post trong lượt này trước khi cập nhật.",
+  read_required: "Phải đọc bài viết bằng get_post trong lượt này trước khi cập nhật hoặc gửi yêu cầu xuất bản.",
   stale_version: "expected_version không khớp với phiên bản vừa đọc. Hãy đọc lại bài viết bằng get_post.",
   conflict_no_retry:
     "Bài viết này vừa gặp xung đột phiên bản. Không thử lại trong lượt này; hãy báo người dùng và hỏi họ muốn làm gì.",
@@ -82,7 +84,7 @@ export const AGENT_REPLIES = {
   timeout: "Trợ lý AI phản hồi quá lâu nên yêu cầu đã được dừng. Vui lòng thử lại.",
   modelError: "Hiện không thể kết nối tới dịch vụ AI. Vui lòng thử lại sau.",
   toolLimit: `Trợ lý đã dừng vì đạt giới hạn ${AGENT_LIMITS.maxToolCalls} lần gọi công cụ trong một lượt.`,
-  writeLimit: `Trợ lý đã dừng vì đạt giới hạn ${AGENT_LIMITS.maxWrites} thao tác ghi (tạo hoặc sửa bài) trong một lượt.`,
+  writeLimit: `Trợ lý đã dừng vì đạt giới hạn ${AGENT_LIMITS.maxWrites} thao tác ghi (tạo, sửa bài hoặc gửi yêu cầu xuất bản) trong một lượt.`,
   turnLimit: "Trợ lý đã dừng vì yêu cầu cần quá nhiều bước xử lý.",
   partial: "Một số thao tác đã được thực hiện trước khi dừng, xem danh sách bên dưới.",
   continueHint: "Bạn có thể gửi tiếp yêu cầu để làm phần còn lại.",
@@ -158,7 +160,9 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
   const finish = (stopReason: AgentStopReason, reply: string): AgentRunResult => {
     clearTimeout(deadline);
-    const wrote = actions.some((a) => a.status === "success" && (a.kind === "create" || a.kind === "update"));
+    const wrote = actions.some(
+      (a) => a.status === "success" && (a.kind === "create" || a.kind === "update" || a.kind === "publish_request"),
+    );
     const notes = stopReason === "completed" ? [] : [wrote ? AGENT_REPLIES.partial : ""].filter(Boolean);
     let text = [reply, ...notes].filter(Boolean).join("\n\n");
     if (leaksSystemPrompt(text, instructions)) text = AGENT_REPLIES.leak;
@@ -197,19 +201,20 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       stop ??= "tool_limit";
       return skip("tool_limit");
     }
-    const isWrite = kind === "create" || kind === "update";
+    const isWrite = kind === "create" || kind === "update" || kind === "publish_request";
     if (isWrite && writes >= AGENT_LIMITS.maxWrites) {
       stop ??= "write_limit";
       return skip("write_limit");
     }
     toolCalls++;
 
-    // update_post must follow get_post of the same post in this turn, with that exact version.
-    if (call.name === "update_post") {
+    // update_post and request_publish must follow get_post of the same post in
+    // this turn, with that exact version.
+    if (call.name === "update_post" || call.name === "request_publish") {
       const args = safeParseArgs(call.arguments);
       const postId = typeof args?.post_id === "string" ? args.post_id.trim().toLowerCase() : null;
       if (postId) {
-        const effect: AgentToolEffect = { kind: "update", postId };
+        const effect: AgentToolEffect = { kind: call.name === "update_post" ? "update" : "publish_request", postId };
         if (conflicted.has(postId)) return skip("conflict_no_retry", effect);
         const known = knownVersions.get(postId);
         if (known === undefined) return skip("read_required", effect);
@@ -219,7 +224,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     }
 
     if (isWrite) writes++;
-    const result = await execute(ctx, call.name, call.arguments);
+    const result = await execute(ctx, call.name, call.arguments, { turnId });
 
     if (result.ok) {
       const postId = result.effect.postId;

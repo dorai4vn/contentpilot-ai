@@ -10,6 +10,8 @@ import {
 } from "@/lib/content/errors";
 import { type ContentPost, createPost, getPost, listPosts, patchPost } from "@/lib/content/posts";
 import { getProject, listProjects } from "@/lib/content/projects";
+import { requestPostPublish } from "@/lib/content/publish-requests";
+import { getPublishingDestination, listPublishingDestinations } from "@/lib/publishing/destinations";
 import { uuidSchema } from "@/lib/validation/content";
 import { getMyWorkspace } from "@/lib/workspaces/queries";
 import type { WorkspaceRole } from "@/types/database";
@@ -37,6 +39,11 @@ import {
  *    only the requested fields, requires expected_version and makes exactly one
  *    write attempt (a version conflict is reported, never retried).
  *  - Every write is recorded with change source "agent".
+ *  - request_publish only creates a PENDING publish request (source "agent",
+ *    agent_turn_id = the server-generated turn id) through the M4 data layer;
+ *    a human must approve it. No tool approves, rejects, cancels or publishes.
+ *    The /api/agent route runs the turn inside runAsAgent, so the database sees
+ *    the agent marker header and refuses approve/reject even in an owner session.
  */
 
 // ---------------------------------------------------------------------------
@@ -84,6 +91,10 @@ export type AgentToolEffect = {
   postId?: string;
   versionBefore?: number;
   versionAfter?: number;
+  /** request_publish: the pending request created (stored in agent_actions, never sent to the model). */
+  requestId?: string;
+  /** request_publish: the destination of that request. */
+  destinationId?: string;
   /** Changed fields of an update (names only). */
   fields?: ("title" | "body" | "scheduled_for")[];
 };
@@ -137,9 +148,13 @@ async function projectInScope(ctx: AgentToolContext, projectId: string) {
 // Tool implementations
 // ---------------------------------------------------------------------------
 
+/** Per-turn facts set by the server (never by the model). */
+export type AgentTurn = Readonly<{ turnId: string }>;
+
 type Handler<K extends AgentToolName> = (
   ctx: AgentToolContext,
   args: AgentToolArgs[K],
+  turn: AgentTurn | undefined,
 ) => Promise<{ data: unknown; effect: AgentToolEffect }>;
 
 const handlers: { [K in AgentToolName]: Handler<K> } = {
@@ -235,6 +250,53 @@ const handlers: { [K in AgentToolName]: Handler<K> } = {
       },
     };
   },
+
+  async list_publish_destinations(ctx) {
+    const destinations = await listPublishingDestinations({ workspaceId: ctx.workspaceId });
+    return {
+      // Only what the model needs: never target_ref, credentials or webhooks.
+      data: { destinations: destinations.map((d) => ({ id: d.id, name: d.name, kind: d.kind, status: d.status })) },
+      effect: { kind: "read" },
+    };
+  },
+
+  async request_publish(ctx, args, turn) {
+    if (!turn) throw new ContentError("invalid_input");
+    // The destination must be visible, of this workspace and active (re-checked by
+    // the data layer and the database).
+    const destination = await getPublishingDestination({ destinationId: args.destination_id });
+    if (!destination || destination.workspaceId !== ctx.workspaceId) throw new ContentError("not_found");
+    if (destination.status !== "active") throw new ContentError("destination_disabled");
+
+    const request = await requestPostPublish(
+      {
+        postId: args.post_id,
+        expectedVersion: args.expected_version,
+        destinationId: destination.id,
+        reason: args.reason ?? null,
+      },
+      { source: "agent", agentTurnId: turn.turnId, workspaceId: ctx.workspaceId },
+    );
+    return {
+      data: {
+        // No request id or user ids for the model: it cannot act on the request anyway.
+        publish_request: {
+          status: "pending",
+          post_id: request.postId,
+          post_version: request.postVersion,
+          destination: { id: destination.id, name: destination.name },
+          note: "Waiting for a human (owner or admin) to approve. Nothing has been published.",
+        },
+      },
+      effect: {
+        kind: "publish_request",
+        postId: request.postId,
+        versionAfter: request.postVersion,
+        requestId: request.id,
+        destinationId: destination.id,
+      },
+    };
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -259,6 +321,7 @@ export async function executeAgentTool(
   ctx: AgentToolContext,
   name: string,
   rawArgs: unknown,
+  turn?: AgentTurn,
 ): Promise<AgentToolResult> {
   const definition = agentToolDefinition(name);
   if (!definition) return failure(name, "unknown_tool");
@@ -271,7 +334,7 @@ export async function executeAgentTool(
 
   try {
     const handler = handlers[tool] as Handler<typeof tool>;
-    const { data, effect } = await handler(ctx, args.data as never);
+    const { data, effect } = await handler(ctx, args.data as never, turn);
     return { ok: true, tool, data, effect };
   } catch (error) {
     const contentError = toContentError(error);

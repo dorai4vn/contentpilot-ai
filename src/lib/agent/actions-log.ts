@@ -49,6 +49,10 @@ const VERIFIED_TARGET_CODES = new Set([
   "forbidden",
   "conflict_no_retry",
   "stale_version",
+  // request_publish: produced after the post was found in the context workspace.
+  "request_pending_exists",
+  "post_published",
+  "destination_disabled",
 ]);
 
 const KNOWN_TOOLS = new Set<string>(AGENT_TOOL_NAMES);
@@ -78,6 +82,9 @@ export function toAgentActionRow(
     version_before: success && isUpdate ? (effect?.versionBefore ?? null) : null,
     version_after: success ? (effect?.versionAfter ?? null) : null,
     fields: success && isUpdate && effect?.fields?.length ? (effect.fields as AgentActionField[]) : null,
+    // Only a successful publish request names its request; the database checks it
+    // is a real agent request of this user, turn, post and version.
+    request_id: success && action.kind === "publish_request" ? (effect?.requestId ?? null) : null,
   };
 }
 
@@ -124,6 +131,7 @@ export type AgentActionLogEntry = {
   versionBefore: number | null;
   versionAfter: number | null;
   fields: AgentActionField[] | null;
+  requestId: string | null;
   createdAt: string;
 };
 
@@ -133,7 +141,7 @@ const listSchema = z.strictObject({
 });
 
 const LOG_COLUMNS =
-  "id, turn_id, user_id, tool, kind, status, error_code, project_id, post_id, version_before, version_after, fields, created_at";
+  "id, turn_id, user_id, tool, kind, status, error_code, project_id, post_id, version_before, version_after, fields, request_id, created_at";
 
 /** Most recent agent actions of a workspace (members only, via RLS). */
 export async function listAgentActions(input: unknown): Promise<AgentActionLogEntry[]> {
@@ -159,6 +167,7 @@ export async function listAgentActions(input: unknown): Promise<AgentActionLogEn
     versionBefore: row.version_before,
     versionAfter: row.version_after,
     fields: row.fields,
+    requestId: row.request_id,
     createdAt: row.created_at,
   }));
 }

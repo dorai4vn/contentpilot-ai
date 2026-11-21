@@ -1,6 +1,7 @@
 import type { FunctionTool } from "openai/resources/responses/responses";
 import { z } from "zod";
 
+import { PUBLISH_LIMITS } from "@/lib/validation/publish";
 import {
   editablePostStatusSchema,
   expectedVersionSchema,
@@ -17,14 +18,28 @@ import {
  * as `null`, no additional properties).
  *
  * Deliberately absent from every tool: workspace ids (the executor injects the
- * authenticated workspace), status changes, publishing, archiving and deletion
- * (risky actions are for M4, behind human approval).
+ * authenticated workspace), user ids, roles, request source or turn id (set by
+ * the server), status changes, approving/rejecting/executing a publication,
+ * archiving and deletion. The agent may only propose publishing
+ * (request_publish), which a human must approve (M4).
  */
 
-export const AGENT_TOOL_NAMES = ["list_projects", "list_posts", "get_post", "create_post", "update_post"] as const;
+export const AGENT_TOOL_NAMES = [
+  "list_projects",
+  "list_posts",
+  "get_post",
+  "create_post",
+  "update_post",
+  "list_publish_destinations",
+  "request_publish",
+] as const;
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
 
-export type AgentToolKind = "read" | "create" | "update";
+/**
+ * "publish_request" only PROPOSES publishing (a pending request a human must
+ * approve). There is no approve, reject, cancel or publish tool, by design.
+ */
+export type AgentToolKind = "read" | "create" | "update" | "publish_request";
 
 // ---------------------------------------------------------------------------
 // Argument schemas (what the model may send). null = "not provided".
@@ -64,6 +79,17 @@ export const agentToolArgs = {
       message: "Cần ít nhất một thay đổi (tiêu đề, nội dung hoặc lịch đăng).",
       path: ["form"],
     }),
+  list_publish_destinations: z.strictObject({}),
+  request_publish: z.strictObject({
+    post_id: uuidSchema,
+    expected_version: expectedVersionSchema,
+    destination_id: uuidSchema,
+    reason: z
+      .string()
+      .trim()
+      .max(PUBLISH_LIMITS.noteMax, { message: `Lý do tối đa ${PUBLISH_LIMITS.noteMax} ký tự.` })
+      .nullish(),
+  }),
 } satisfies Record<AgentToolName, z.ZodType>;
 
 export type AgentToolArgs = { [K in AgentToolName]: z.output<(typeof agentToolArgs)[K]> };
@@ -148,6 +174,27 @@ export const AGENT_TOOLS: readonly AgentToolDefinition[] = [
         "New planned publication time (ISO 8601 with seconds and offset) or null to keep it.",
       ),
       clear_schedule: { type: ["boolean", "null"], description: "true to remove the planned publication time; otherwise null." },
+    }),
+  },
+  {
+    name: "list_publish_destinations",
+    kind: "read",
+    label: "Xem các đích xuất bản",
+    description:
+      "List the active publishing destinations of the current workspace (id, name, kind, status). Use it to find the destination the user asked for before request_publish.",
+    parameters: objectSchema({}),
+  },
+  {
+    name: "request_publish",
+    kind: "publish_request",
+    label: "Gửi yêu cầu xuất bản",
+    description:
+      "Ask a human (owner or admin) to approve publishing ONE version of a post to ONE destination. It only creates a pending request: nothing is published until a human approves it. Call get_post first and pass the returned version as expected_version. destination_id must come from list_publish_destinations and must be the destination the user asked for; if the user did not say which one and there is more than one, ask them instead of choosing. Do not retry on errors.",
+    parameters: objectSchema({
+      post_id: uuid("Post id."),
+      expected_version: { type: "integer", description: "The version returned by get_post." },
+      destination_id: uuid("Destination id from list_publish_destinations."),
+      reason: nullableString("Short note for the approver (max 500 characters) or null."),
     }),
   },
 ];

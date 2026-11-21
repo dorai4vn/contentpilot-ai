@@ -46,8 +46,9 @@ export default async function AgentPage({ params, searchParams }: PageProps<"/w/
           Trợ lý AI
         </h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Nhờ Trợ lý đọc dự án và bài viết, tạo bài nháp mới hoặc chỉnh sửa bài đang ở trạng thái Bản nháp. Trợ lý không
-          thể xuất bản, xóa hay đổi trạng thái bài viết.
+          Nhờ Trợ lý đọc dự án và bài viết, tạo bài nháp mới, chỉnh sửa bài đang ở trạng thái Bản nháp hoặc gửi yêu cầu
+          xuất bản. Trợ lý không thể tự xuất bản, phê duyệt, xóa hay đổi trạng thái bài viết: mọi yêu cầu xuất bản đều
+          chờ chủ sở hữu hoặc quản trị viên duyệt.
         </p>
       </div>
 

@@ -9,8 +9,26 @@ const prompt = buildSystemPrompt({ now, timeZone: "Asia/Ho_Chi_Minh" });
 describe("buildSystemPrompt", () => {
   it("is in Vietnamese and states the scope and forbidden actions", () => {
     expect(prompt).toContain("Trợ lý AI của ContentPilot AI");
-    expect(prompt).toMatch(/KHÔNG thể xuất bản, xóa, lưu trữ, khôi phục hay đổi trạng thái/);
+    expect(prompt).toMatch(/KHÔNG thể tự xuất bản, phê duyệt, từ chối hay hủy yêu cầu xuất bản/);
+    expect(prompt).toMatch(/không thể xóa, lưu trữ, khôi phục hay đổi trạng thái/);
     expect(prompt).toMatch(/luôn ở trạng thái Bản nháp/);
+  });
+
+  it("explains that publishing is only a request a human must approve", () => {
+    expect(prompt).toMatch(/chỉ được ĐỀ NGHỊ xuất bản bằng request_publish/);
+    expect(prompt).toMatch(/chỉ được xuất bản khi chủ sở hữu hoặc quản trị viên tự phê duyệt/);
+    expect(prompt).toMatch(/TUYỆT ĐỐI không nói bài viết đã được xuất bản/);
+    expect(prompt).toMatch(/Một yêu cầu xuất bản KHÔNG có nghĩa là bài đã được xuất bản/);
+  });
+
+  it("never lets the model pick a destination on its own", () => {
+    expect(prompt).toMatch(/có nhiều hơn một đích, hãy HỎI người dùng, không tự chọn/);
+    expect(prompt).toMatch(/Không bao giờ chọn một đích khác với đích người dùng yêu cầu/);
+  });
+
+  it("requires get_post with the exact version before request_publish, and no retry", () => {
+    expect(prompt).toMatch(/Gọi get_post cho đúng bài đó ngay trước request_publish/);
+    expect(prompt).toMatch(/KHÔNG thử lại; hãy giải thích cho người dùng/);
   });
 
   it("marks content and tool results as untrusted data, not instructions", () => {

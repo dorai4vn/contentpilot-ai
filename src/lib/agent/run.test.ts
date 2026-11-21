@@ -196,7 +196,8 @@ describe("read → create → update", () => {
       changeSource: "agent",
     });
 
-    // Every request carries the Vietnamese system prompt and exactly the five tools.
+    // Every request carries the Vietnamese system prompt and exactly the seven tools
+    // (no approve / reject / cancel / publish tool).
     for (const request of requests) {
       expect(request.instructions).toContain("Trợ lý AI của ContentPilot AI");
       expect(request.tools.map((t) => t.name)).toEqual([
@@ -205,6 +206,8 @@ describe("read → create → update", () => {
         "get_post",
         "create_post",
         "update_post",
+        "list_publish_destinations",
+        "request_publish",
       ]);
     }
     // Each tool call is answered with an output carrying the same call id.

@@ -180,6 +180,22 @@ interface PublisherAdapter {
   review page; the confirmation step names the destination; the review page shows
   the execution state. No destination picker until a real external adapter exists.
 
+### Done in M4.6c (AI agent publish requests)
+- Agent tools `list_publish_destinations` (id, name, kind, status only) and
+  `request_publish(post_id, expected_version, destination_id, reason)`:
+  `destination_id` is mandatory, `get_post` with the same version is required
+  first, it counts toward the write budget, and it only creates a **pending**
+  request (source `agent`, `agent_turn_id` = the server-generated turn id).
+- Actor isolation: `runAsAgent()` in `src/lib/supabase/server.ts`
+  (AsyncLocalStorage) is called only by the `/api/agent` route around the agent
+  turn. Clients created inside it send `x-contentpilot-actor: agent`; the
+  database then refuses approve/reject and accepts only agent-marked requests.
+  The actor is never read from the incoming request or from model output.
+- Audit: migration `20261121150000_agent_publish_requests.sql` adds
+  `agent_actions.kind = 'publish_request'` and `request_id`; a success row must
+  match a real agent request of the same user, turn, post and version.
+- No approve, reject, cancel or publish-execution tool exists for the agent.
+
 ## Extending to Telegram, Discord and Facebook (M5)
 
 For each platform:

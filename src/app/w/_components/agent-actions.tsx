@@ -16,10 +16,12 @@ export type ActionItemView = {
   key: string;
   label: string;
   status: "success" | "error" | "skipped";
-  kind: "read" | "create" | "update" | "unknown";
+  kind: "read" | "create" | "update" | "publish_request" | "unknown";
   reason?: string;
   postHref?: string;
   projectHref?: string;
+  /** publish_request: the approval page of the pending request. */
+  requestHref?: string;
   versionBefore?: number | null;
   versionAfter?: number | null;
   fields?: string[] | null;
@@ -38,6 +40,7 @@ export function apiActionToView(workspaceId: string, action: AgentApiAction, ind
     reason: action.status === "success" ? undefined : (actionCodeLabel(action.code) ?? action.message),
     postHref: effect?.postId ? contentPaths.post(workspaceId, effect.postId) : undefined,
     projectHref: !effect?.postId && effect?.projectId ? contentPaths.project(workspaceId, effect.projectId) : undefined,
+    requestHref: effect?.requestId ? `${contentPaths.approvals(workspaceId)}/${effect.requestId}` : undefined,
     versionBefore: effect?.versionBefore,
     versionAfter: effect?.versionAfter,
     fields: effect?.fields,
@@ -49,7 +52,7 @@ export type AgentLogEntryView = {
   id: string;
   userId: string | null;
   tool: string;
-  kind: "read" | "create" | "update" | "unknown";
+  kind: "read" | "create" | "update" | "publish_request" | "unknown";
   status: "success" | "error" | "skipped";
   errorCode: string | null;
   projectId: string | null;
@@ -57,6 +60,7 @@ export type AgentLogEntryView = {
   versionBefore: number | null;
   versionAfter: number | null;
   fields: string[] | null;
+  requestId?: string | null;
   createdAt: string;
 };
 
@@ -69,6 +73,7 @@ export function logEntryToView(workspaceId: string, entry: AgentLogEntryView, cu
     reason: entry.status === "success" ? undefined : actionCodeLabel(entry.errorCode),
     postHref: entry.postId ? contentPaths.post(workspaceId, entry.postId) : undefined,
     projectHref: !entry.postId && entry.projectId ? contentPaths.project(workspaceId, entry.projectId) : undefined,
+    requestHref: entry.requestId ? `${contentPaths.approvals(workspaceId)}/${entry.requestId}` : undefined,
     versionBefore: entry.versionBefore,
     versionAfter: entry.versionAfter,
     fields: entry.fields,
@@ -90,6 +95,10 @@ function versionText(item: ActionItemView): string | null {
   }
   if (item.kind === "create" && item.versionAfter) return `Phiên bản ${item.versionAfter} (bản nháp mới)`;
   if (item.kind === "read" && item.versionAfter) return `Đã đọc phiên bản ${item.versionAfter}`;
+  // A publish request is only a proposal: never say "published".
+  if (item.kind === "publish_request" && item.versionAfter) {
+    return `Đã gửi yêu cầu xuất bản phiên bản ${item.versionAfter} — đang chờ chủ sở hữu hoặc quản trị viên duyệt`;
+  }
   return null;
 }
 
@@ -128,6 +137,11 @@ export function ActionList({ items, testId = "action-list" }: { items: ActionIte
               {item.postHref ? (
                 <Link href={item.postHref} className="font-medium text-indigo-600 hover:underline" data-testid="action-post-link">
                   Mở bài viết
+                </Link>
+              ) : null}
+              {item.requestHref ? (
+                <Link href={item.requestHref} className="font-medium text-indigo-600 hover:underline" data-testid="action-request-link">
+                  Xem yêu cầu chờ duyệt
                 </Link>
               ) : null}
               {item.projectHref ? (

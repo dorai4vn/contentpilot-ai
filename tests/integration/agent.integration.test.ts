@@ -18,6 +18,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { Database } from "@/types/database";
 
+import {
+  assertAuditInsertGrants,
+  EXPECTED_AUDIT_INSERT_COLUMNS,
+  insertableAuditColumns,
+  restoreAuditInsertGrants,
+  snapshotAuditInsertGrants,
+} from "./audit-grants";
 import { assertLocalTarget } from "./local-target";
 
 // ---------------------------------------------------------------------------
@@ -133,6 +140,7 @@ async function must<T>(promise: PromiseLike<{ data: T; error: unknown }>, what: 
 }
 
 beforeAll(async () => {
+  assertAuditInsertGrants(psql);
   [alice, carol, bob] = [await signUp("alice"), await signUp("carol"), await signUp("bob")];
 
   await must(alice.client.from("workspaces").insert({ id: WA, name: "IT workspace A" }), "create WA");
@@ -457,9 +465,13 @@ describe("logging failure does not change what the agent did", () => {
     actAs(alice);
     const ctx = await createAgentToolContext({ id: alice.id, email: alice.email }, WA);
     // Simulate an infrastructure failure on the LOCAL database only: the log
-    // table refuses inserts (as if its migration were missing).
-    psql("revoke insert on table public.agent_actions from authenticated");
+    // table refuses inserts (as if its migration were missing). The grants are
+    // snapshotted first and restored exactly afterwards, even if the test fails.
+    const grants = snapshotAuditInsertGrants(psql);
+    expect(grants.columns).toEqual(expect.arrayContaining([...EXPECTED_AUDIT_INSERT_COLUMNS]));
     try {
+      psql("revoke insert on table public.agent_actions from authenticated");
+      expect(insertableAuditColumns(psql)).toEqual([]);
       const { model } = scripted([
         tools(call("create_post", { project_id: PA, title: "Bài khi log hỏng", body: "Nội dung", scheduled_for: null })),
         say("Mình đã tạo bài nháp “Bài khi log hỏng”."),
@@ -478,9 +490,10 @@ describe("logging failure does not change what the agent did", () => {
       const log = await must(alice.client.from("agent_actions").select("id").eq("turn_id", result.turnId), "log");
       expect(log).toHaveLength(0);
     } finally {
-      psql(
-        "grant insert (workspace_id, turn_id, tool, kind, status, error_code, project_id, post_id, version_before, version_after, fields) on table public.agent_actions to authenticated",
-      );
+      restoreAuditInsertGrants(psql, grants);
     }
+    // Back to exactly the state before the test (request_id included).
+    expect(snapshotAuditInsertGrants(psql)).toEqual(grants);
+    assertAuditInsertGrants(psql);
   });
 });

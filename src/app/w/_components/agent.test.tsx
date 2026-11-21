@@ -224,3 +224,51 @@ describe("historyForApi", () => {
     ]);
   });
 });
+
+describe("publish request actions (M4.6c)", () => {
+  const REQUEST = "77777777-7777-4777-8777-777777777777";
+  const action: AgentApiAction = {
+    tool: "request_publish",
+    label: "x",
+    kind: "publish_request",
+    status: "success",
+    effect: { kind: "publish_request", postId: POST, versionAfter: 3, requestId: REQUEST, destinationId: "d" },
+    log: "recorded",
+  };
+  const markup = html(<ActionList items={[apiActionToView(WS, action, 0)]} />);
+
+  it("says the request is waiting for a human, never that the post is published", () => {
+    expect(markup).toContain("Gửi yêu cầu xuất bản");
+    expect(markup).toContain("Đã gửi yêu cầu xuất bản phiên bản 3 — đang chờ chủ sở hữu hoặc quản trị viên duyệt");
+    expect(markup).not.toMatch(/Đã xuất bản|đã được xuất bản/);
+  });
+
+  it("links to the pending request and the post", () => {
+    expect(markup).toContain(`href="/w/${WS}/approvals/${REQUEST}"`);
+    expect(markup).toContain('data-testid="action-request-link"');
+    expect(markup).toContain(`href="/w/${WS}/posts/${POST}"`);
+  });
+
+  it("log entries of publish requests link to the request too", () => {
+    const view = logEntryToView(
+      WS,
+      {
+        id: "a1",
+        userId: USER,
+        tool: "request_publish",
+        kind: "publish_request",
+        status: "success",
+        errorCode: null,
+        projectId: null,
+        postId: POST,
+        versionBefore: null,
+        versionAfter: 3,
+        fields: null,
+        requestId: REQUEST,
+        createdAt: "2026-11-21T10:00:00Z",
+      },
+      USER,
+    );
+    expect(view.requestHref).toBe(`/w/${WS}/approvals/${REQUEST}`);
+  });
+});

@@ -52,6 +52,7 @@ describe("toAgentActionRow", () => {
       version_before: 3,
       version_after: 4,
       fields: ["body"],
+      request_id: null,
     });
   });
 
@@ -127,6 +128,69 @@ describe("toAgentActionRow", () => {
   });
 });
 
+describe("toAgentActionRow: publish requests (M4.6c)", () => {
+  const REQUEST = "66666666-6666-4666-8666-666666666666";
+
+  it("a successful request names the request, the post and the requested version", () => {
+    const row = toAgentActionRow(ctx, TURN, {
+      tool: "request_publish",
+      kind: "publish_request",
+      status: "success",
+      effect: { kind: "publish_request", postId: POST, versionAfter: 3, requestId: REQUEST, destinationId: "d" },
+    });
+    expect(row).toMatchObject({
+      tool: "request_publish",
+      kind: "publish_request",
+      status: "success",
+      error_code: null,
+      post_id: POST,
+      version_after: 3,
+      version_before: null,
+      fields: null,
+      request_id: REQUEST,
+    });
+    // The destination id and anything else in the effect is not copied.
+    expect(Object.keys(row)).not.toContain("destination_id");
+  });
+
+  it.each(["request_pending_exists", "post_published", "destination_disabled"])(
+    "a failed request (%s) keeps the verified post but never a request id",
+    (code) => {
+      const row = toAgentActionRow(ctx, TURN, {
+        tool: "request_publish",
+        kind: "publish_request",
+        status: "error",
+        code,
+        effect: { kind: "publish_request", postId: POST, requestId: REQUEST },
+      });
+      expect(row).toMatchObject({ error_code: code, post_id: POST, request_id: null, version_after: null });
+    },
+  );
+
+  it("unverified failures (not_found, read_required) drop the model's ids", () => {
+    for (const code of ["not_found", "read_required"]) {
+      const row = toAgentActionRow(ctx, TURN, {
+        tool: "request_publish",
+        kind: "publish_request",
+        status: code === "read_required" ? "skipped" : "error",
+        code,
+        effect: { kind: "publish_request", postId: POST },
+      });
+      expect(row).toMatchObject({ post_id: null, request_id: null });
+    }
+  });
+
+  it("only publish_request rows ever carry a request id", () => {
+    const row = toAgentActionRow(ctx, TURN, {
+      tool: "get_post",
+      kind: "read",
+      status: "success",
+      effect: { kind: "read", postId: POST, versionAfter: 3, requestId: REQUEST },
+    });
+    expect(row.request_id).toBeNull();
+  });
+});
+
 describe("recordAgentAction", () => {
   const action: LoggableAgentAction = {
     tool: "create_post",
@@ -158,6 +222,7 @@ describe("recordAgentAction", () => {
         "kind",
         "post_id",
         "project_id",
+        "request_id",
         "status",
         "tool",
         "turn_id",
