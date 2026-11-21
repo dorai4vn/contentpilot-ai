@@ -165,7 +165,8 @@ async function requestPublish(user, reason) {
     check((await owner.page.locator('[data-testid="review-content-title"]').textContent())?.trim() === "Ra mắt Trợ lý AI", "review shows the title");
     check((await owner.page.locator('[data-testid="review-content-body"]').textContent())?.includes("làm việc nhanh hơn"), "review shows the body");
     check((await owner.page.locator('[data-testid="review-requested-version"]').textContent())?.trim() === "Phiên bản 1", "review shows the requested version");
-    check((await owner.page.locator('[data-testid="review-requester"]').textContent())?.startsWith("Thành viên #"), "review shows who requested");
+    // The member set no display name: only the role is shown, never an id.
+    check((await owner.page.locator('[data-testid="review-requester"]').textContent())?.trim() === "Thành viên", "review shows who requested (role only, no id)");
     check(await shown(owner.page.locator('[data-testid="review-requested-at"] time')), "review shows when it was requested");
     check(await shown(owner.page.locator('[data-testid="review-expires-at"] time')), "review shows the deadline");
     check(await visible(owner.page, "audit-trail"), "review shows the audit trail");

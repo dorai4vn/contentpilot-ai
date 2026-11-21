@@ -38,7 +38,9 @@ if [[ -z "${TEST_DATABASE_URL:-}" ]]; then
     chown -R postgres "$TMP_CLUSTER"
     RUN_AS=(runuser -u postgres --)
   fi
-  "${RUN_AS[@]}" "$PG_BIN/initdb" -D "$TMP_CLUSTER/data" -U postgres --auth=trust >/dev/null
+  # UTF-8 like Supabase (the default here would be SQL_ASCII, where char_length counts
+  # bytes and multibyte letters look like control bytes to the regex engine).
+  "${RUN_AS[@]}" "$PG_BIN/initdb" -D "$TMP_CLUSTER/data" -U postgres --auth=trust --encoding=UTF8 --locale=C.UTF-8 >/dev/null
   "${RUN_AS[@]}" "$PG_BIN/pg_ctl" -D "$TMP_CLUSTER/data" -o "-p $PORT -k $TMP_CLUSTER -c listen_addresses=''" -w start >/dev/null
   TEST_DATABASE_URL="postgresql://postgres@/postgres?host=$TMP_CLUSTER&port=$PORT"
 fi

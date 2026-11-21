@@ -236,6 +236,13 @@ export type Database = {
           },
         ];
       };
+      user_profiles: {
+        Row: { user_id: string; display_name: string; created_at: string; updated_at: string };
+        // Only display_name is granted; user_id is set from auth.uid() by a trigger.
+        Insert: { display_name: string };
+        Update: { display_name?: string };
+        Relationships: [];
+      };
       content_publish_requests: {
         Row: ContentPublishRequestRow;
         // Written only by the publish RPCs.
@@ -336,6 +343,10 @@ export type Database = {
       reject_publish_request: {
         Args: { p_request_id: string; p_note?: string | null };
         Returns: ContentPublishRequestRow;
+      };
+      shares_workspace_with: {
+        Args: { p_user_id: string };
+        Returns: boolean;
       };
       cancel_publish_request: {
         Args: { p_request_id: string };

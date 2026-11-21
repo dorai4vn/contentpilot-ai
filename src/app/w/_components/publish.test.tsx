@@ -95,12 +95,31 @@ describe("labels", () => {
     expect(html(<PublishStatusBadge status="expired" />)).toContain("Hết hạn");
   });
 
-  it("names actors without exposing anything but role and a short id", () => {
-    const roles = new Map([[OTHER, "admin" as const]]);
-    expect(actorLabel(ME, ME, roles)).toBe("Bạn");
-    expect(actorLabel(OTHER, ME, roles)).toBe("Quản trị viên #55555555");
-    expect(actorLabel(null, ME, roles)).toBe("Tài khoản đã xóa");
-    expect(actorLabel("77777777-7777-4777-8777-777777777777", ME, roles)).toMatch(/^Người không còn trong không gian làm việc/);
+  it("names actors by display name and role, never by id or email", () => {
+    const FORMER = "77777777-7777-4777-8777-777777777777";
+    const NONAME = "88888888-8888-4888-8888-888888888888";
+    const people = {
+      roles: new Map([
+        [ME, "owner" as const],
+        [OTHER, "admin" as const],
+        [NONAME, "member" as const],
+      ]),
+      names: new Map([
+        [ME, "An"],
+        [OTHER, "Bình Trần"],
+        [FORMER, "Chi"],
+      ]),
+    };
+    expect(actorLabel(ME, ME, people)).toBe("An (bạn)");
+    expect(actorLabel(ME, ME, { roles: people.roles, names: new Map() })).toBe("Bạn");
+    expect(actorLabel(OTHER, ME, people)).toBe("Bình Trần (Quản trị viên)");
+    expect(actorLabel(NONAME, ME, people)).toBe("Thành viên");
+    expect(actorLabel(FORMER, ME, people)).toBe("Chi (cựu thành viên)");
+    expect(actorLabel("99999999-9999-4999-8999-999999999999", ME, people)).toBe("Cựu thành viên");
+    expect(actorLabel(null, ME, people)).toBe("Người dùng đã xóa");
+    for (const id of [ME, OTHER, NONAME, FORMER, null]) {
+      expect(actorLabel(id, ME, people)).not.toMatch(/[0-9a-f]{8}|@/);
+    }
   });
 
   it("audit timeline shows who, what, when and the version, escaping text", () => {

@@ -503,7 +503,7 @@ select pg_temp.assert(
       and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
   = array['approve_publish_request', 'archive_content_post', 'cancel_publish_request', 'has_workspace_role',
           'is_workspace_member', 'reject_publish_request', 'request_post_publish', 'restore_content_post',
-          'update_content_post'],
+          'shares_workspace_with', 'update_content_post'],
   'authenticated can execute exactly the intended SECURITY DEFINER functions');
 select pg_temp.assert(
   (select count(*) = 2 from pg_constraint

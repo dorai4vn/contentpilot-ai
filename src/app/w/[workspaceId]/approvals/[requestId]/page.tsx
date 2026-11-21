@@ -6,6 +6,7 @@ import { contentPaths } from "@/lib/content/paths";
 import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getPublishRequest } from "@/lib/content/publish-requests";
+import { listDisplayNames } from "@/lib/profiles/profiles";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../../_components/client-ui";
@@ -37,8 +38,12 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
     listWorkspaceMembers(workspace.id),
   ]);
   if (!post || post.workspaceId !== workspace.id) notFound();
-  const roles = new Map(members.map((m) => [m.userId, m.role]));
-  const who = (id: string | null) => actorLabel(id, user.id, roles);
+  const involved = [request.requestedBy, request.decidedBy, ...events.map((e) => e.actorId)].filter((id): id is string => id !== null);
+  const people = {
+    roles: new Map(members.map((m) => [m.userId, m.role])),
+    names: await listDisplayNames(members.map((m) => m.userId).concat(involved)),
+  };
+  const who = (id: string | null) => actorLabel(id, user.id, people);
 
   // The content that was requested: that version's snapshot, never the current post.
   const requested = history.find((v) => v.version === request.postVersion) ?? null;

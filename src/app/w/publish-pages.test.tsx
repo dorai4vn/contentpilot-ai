@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
   listPostSummariesByIds: vi.fn(),
   getProject: vi.fn(),
   listWorkspaceMembers: vi.fn(),
+  listDisplayNames: vi.fn(),
   listProjects: vi.fn(),
   actions: {
     requestPublishAction: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("@/lib/content/posts", () => ({
 }));
 vi.mock("@/lib/content/projects", () => ({ getProject: m.getProject, listProjects: m.listProjects }));
 vi.mock("@/lib/workspaces/queries", () => ({ listWorkspaceMembers: m.listWorkspaceMembers }));
+vi.mock("@/lib/profiles/profiles", () => ({ listDisplayNames: m.listDisplayNames }));
 vi.mock("@/app/_actions/content/publish", () => m.actions);
 vi.mock("@/app/_actions/content/posts", () => ({
   createPostAction: vi.fn(),
@@ -150,6 +152,7 @@ beforeEach(() => {
     { userId: OTHER, role: "member" },
   ]);
   m.listPublishRequests.mockResolvedValue([]);
+  m.listDisplayNames.mockResolvedValue(new Map([[OTHER, "Bình Trần"]]));
   m.listPublishRequestsPage.mockResolvedValue({ items: [], filter: "pending", page: 1, pageSize: 20, total: 0, totalPages: 1 });
   m.countPublishRequests.mockResolvedValue({ pending: 0, expired: 0, approved: 0, rejected: 0, cancelled: 0, all: 0 });
   m.listPostSummariesByIds.mockResolvedValue(new Map([[POST, post]]));
@@ -163,7 +166,8 @@ describe("review page", () => {
     expect(markup).toContain("Nội dung phiên bản 3 được xin duyệt");
     expect(markup).not.toContain("Nội dung hiện tại"); // the requested snapshot, not the live post
     expect(markup).toContain('data-testid="review-requested-version">Phiên bản 3');
-    expect(markup).toContain('data-testid="review-requester">Thành viên #55555555');
+    expect(markup).toContain('data-testid="review-requester">Bình Trần (Thành viên)');
+    expect(markup).not.toMatch(/#[0-9a-f]{8}/);
     expect(markup).toContain('dateTime="2026-11-20T10:05:00Z"');
     expect(markup).toContain('dateTime="2026-11-27T10:05:00Z"');
     expect(markup).toContain("Đã kiểm tra chính tả");
@@ -237,6 +241,21 @@ describe("review page", () => {
     markup = await reviewPage();
     expect(markup).toContain("Sửa tiêu đề");
     expect(markup).not.toContain("approve-start");
+  });
+
+  it("without a display name only the role is shown; a deleted account is 'Người dùng đã xóa'", async () => {
+    m.listDisplayNames.mockResolvedValue(new Map());
+    m.getPublishRequest.mockResolvedValue({
+      request: { ...request, status: "rejected", displayStatus: "rejected", decidedBy: null, decidedAt: "2026-11-20T12:00:00Z" },
+      events: [
+        { id: "e1", requestId: REQUEST, postId: POST, postVersion: 3, event: "requested", cancelReason: null, actorId: OTHER, actorSource: "user", createdAt: "2026-11-20T10:05:00Z" },
+        { id: "e2", requestId: REQUEST, postId: POST, postVersion: 3, event: "rejected", cancelReason: null, actorId: null, actorSource: "user", createdAt: "2026-11-20T12:00:00Z" },
+      ],
+    });
+    const markup = await reviewPage();
+    expect(markup).toContain('data-testid="review-requester">Thành viên<');
+    expect(markup).toContain("Người dùng đã xóa");
+    expect(markup).not.toMatch(/#[0-9a-f]{8}|@example/);
   });
 
   it("a request of another workspace is a 404", async () => {

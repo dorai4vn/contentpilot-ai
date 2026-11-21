@@ -20,7 +20,7 @@ export type FormState = {
   error?: string;
   message?: string;
   fieldErrors?: Partial<Record<string, string>>;
-  values?: { email?: string };
+  values?: { email?: string; displayName?: string };
 };
 
 /** Reads credentials from a submitted form and validates them. */

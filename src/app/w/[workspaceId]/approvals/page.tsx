@@ -6,6 +6,7 @@ import { publishPermissions } from "@/lib/content/permissions";
 import { listPostSummariesByIds } from "@/lib/content/posts";
 import { countPublishRequests, listPublishRequestsPage } from "@/lib/content/publish-requests";
 import { PUBLISH_QUEUE_FILTERS, type PublishQueueFilter } from "@/lib/validation/publish";
+import { listDisplayNames } from "@/lib/profiles/profiles";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../_components/client-ui";
@@ -45,7 +46,10 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
   ]);
   const shown = result.items;
   const posts = await listPostSummariesByIds({ workspaceId: workspace.id, postIds: shown.map((r) => r.postId) });
-  const roles = new Map(members.map((m) => [m.userId, m.role]));
+  const people = {
+    roles: new Map(members.map((m) => [m.userId, m.role])),
+    names: await listDisplayNames(members.map((m) => m.userId).concat(shown.flatMap((r) => (r.requestedBy ? [r.requestedBy] : [])))),
+  };
 
   const href = (f: Filter, p = 1) => {
     const params = new URLSearchParams();
@@ -135,7 +139,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
                         {r.requestSource === "agent" ? <Badge tone="indigo">AI đề xuất</Badge> : null}
                       </div>
                       <p className="text-xs text-slate-500">
-                        Phiên bản {r.postVersion} · gửi bởi {actorLabel(r.requestedBy, user.id, roles)} ·{" "}
+                        Phiên bản {r.postVersion} · gửi bởi {actorLabel(r.requestedBy, user.id, people)} ·{" "}
                         <LocalDateTime iso={r.requestedAt} />
                         {r.displayStatus === "pending" ? (
                           <>

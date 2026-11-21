@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import { safeRedirectPath } from "@/lib/auth/routes";
 import { MissingConfigurationError } from "@/lib/env";
 import { getSiteOrigin } from "@/lib/site-url";
+import { logSafeError } from "@/lib/logging/safe-log";
+import { saveSignupDisplayName } from "@/lib/profiles/profiles";
 import { createClient } from "@/lib/supabase/server";
 import { fieldErrorsFrom, parseCredentials, type FormState } from "@/lib/validation/auth";
+import { optionalDisplayNameSchema } from "@/lib/validation/profile";
 
 const NOT_CONFIGURED = "Chức năng đăng nhập chưa được cấu hình trên bản triển khai này.";
 
@@ -44,17 +47,32 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = parseCredentials(formData);
   const email = String(formData.get("email") ?? "");
-  if (!parsed.success) {
-    return { fieldErrors: fieldErrorsFrom(parsed.error), values: { email } };
+  const rawName = formData.get("displayName");
+  const nameInput = typeof rawName === "string" ? rawName : "";
+  const name = optionalDisplayNameSchema.safeParse(nameInput);
+  if (!parsed.success || !name.success) {
+    return {
+      fieldErrors: {
+        ...(parsed.success ? {} : fieldErrorsFrom(parsed.error)),
+        ...(name.success ? {} : { displayName: name.error.issues[0]?.message ?? "Tên hiển thị không hợp lệ." }),
+      },
+      values: { email, displayName: nameInput },
+    };
   }
+  const displayName = name.data;
 
   const supabase = await getClientOrNull();
-  if (!supabase) return { error: NOT_CONFIGURED, values: { email } };
+  if (!supabase) return { error: NOT_CONFIGURED, values: { email, displayName: nameInput } };
 
   const origin = await getSiteOrigin();
   const { data, error } = await supabase.auth.signUp({
     ...parsed.data,
-    options: { emailRedirectTo: `${origin}/auth/confirm?next=/dashboard` },
+    options: {
+      emailRedirectTo: `${origin}/auth/confirm?next=/dashboard`,
+      // Kept in the user's own metadata until a session exists (email confirmation);
+      // the profile is created from it at /auth/confirm. Never contains the email.
+      ...(displayName ? { data: { display_name: displayName } } : {}),
+    },
   });
 
   if (error) {
@@ -69,6 +87,10 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
 
   // Email confirmation disabled in Supabase: the user is signed in immediately.
   if (data.session) {
+    if (displayName && !(await saveSignupDisplayName(supabase, displayName))) {
+      // Optional: the account is created anyway; the name can be set on /account.
+      logSafeError("signup", { event: "profile_not_saved" });
+    }
     redirect("/dashboard");
   }
 

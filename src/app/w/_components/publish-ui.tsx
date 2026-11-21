@@ -55,13 +55,23 @@ const EVENT_LABELS: Record<PublishRequestEvent, string> = {
   published: "Xuất bản bài viết",
 };
 
-/** Who did it, as far as members can know: "Bạn", or the member's role and a short id. */
-export function actorLabel(userId: string | null, me: string, roles: ReadonlyMap<string, WorkspaceRole>): string {
-  if (userId === null) return "Tài khoản đã xóa";
-  if (userId === me) return "Bạn";
-  const role = roles.get(userId);
-  const short = userId.slice(0, 8);
-  return role ? `${ROLE_LABELS[role]} #${short}` : `Người không còn trong không gian làm việc #${short}`;
+/** What the UI knows about the people in a workspace: role and (optional) display name. */
+export type PeopleDirectory = {
+  roles: ReadonlyMap<string, WorkspaceRole>;
+  names: ReadonlyMap<string, string>;
+};
+
+/**
+ * Who did it, for approval history: the display name with the role, or only the
+ * role when no name is set. Never a user id or an email.
+ */
+export function actorLabel(userId: string | null, me: string, people: PeopleDirectory): string {
+  if (userId === null) return "Người dùng đã xóa";
+  const name = people.names.get(userId);
+  if (userId === me) return name ? `${name} (bạn)` : "Bạn";
+  const role = people.roles.get(userId);
+  if (role) return name ? `${name} (${ROLE_LABELS[role]})` : ROLE_LABELS[role];
+  return name ? `${name} (cựu thành viên)` : "Cựu thành viên";
 }
 
 export type AuditEventView = {

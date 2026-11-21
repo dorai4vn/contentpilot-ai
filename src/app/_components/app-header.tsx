@@ -14,6 +14,13 @@ export function AppHeader({ email }: { email: string | null }) {
           <span className="hidden text-slate-600 sm:inline dark:text-slate-400" data-testid="user-email">
             {email}
           </span>
+          <Link
+            href="/account"
+            className="rounded-md px-2 py-1.5 font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            data-testid="account-link"
+          >
+            Tài khoản
+          </Link>
           <form action={signOut}>
             <button
               type="submit"
