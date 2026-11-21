@@ -7,10 +7,11 @@ import { listPostSummariesByIds } from "@/lib/content/posts";
 import { countPublishRequests, listPublishRequestsPage } from "@/lib/content/publish-requests";
 import { PUBLISH_QUEUE_FILTERS, type PublishQueueFilter } from "@/lib/validation/publish";
 import { listDisplayNames } from "@/lib/profiles/profiles";
+import { listPublishingDestinations } from "@/lib/publishing/destinations";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../_components/client-ui";
-import { PUBLISH_STATUS_LABELS, PublishStatusBadge, actorLabel } from "../../_components/publish-ui";
+import { PUBLISH_STATUS_LABELS, PublishStatusBadge, actorLabel, destinationLabel } from "../../_components/publish-ui";
 import { Badge, Breadcrumbs, Card, EmptyState, Notice } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
@@ -39,11 +40,13 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
   const can = publishPermissions(workspace.role);
 
   // Server-side pagination: only one page of rows is read; counts are exact.
-  const [result, counts, members] = await Promise.all([
+  const [result, counts, members, destinations] = await Promise.all([
     listPublishRequestsPage({ workspaceId: workspace.id, filter, page, pageSize: PAGE_SIZE }),
     countPublishRequests({ workspaceId: workspace.id }),
     listWorkspaceMembers(workspace.id),
+    listPublishingDestinations({ workspaceId: workspace.id, includeDisabled: true }),
   ]);
+  const destinationNames = new Map(destinations.map((d) => [d.id, d.name]));
   const shown = result.items;
   const posts = await listPostSummariesByIds({ workspaceId: workspace.id, postIds: shown.map((r) => r.postId) });
   const people = {
@@ -139,6 +142,7 @@ export default async function ApprovalsPage({ params, searchParams }: PageProps<
                         {r.requestSource === "agent" ? <Badge tone="indigo">AI đề xuất</Badge> : null}
                       </div>
                       <p className="text-xs text-slate-500">
+                        <span data-testid="approval-item-destination">Đích xuất bản: {destinationLabel(r.destinationId, destinationNames)}</span> ·
                         Phiên bản {r.postVersion} · gửi bởi {actorLabel(r.requestedBy, user.id, people)} ·{" "}
                         <LocalDateTime iso={r.requestedAt} />
                         {r.displayStatus === "pending" ? (

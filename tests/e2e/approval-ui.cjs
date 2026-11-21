@@ -15,7 +15,7 @@
  */
 const { execFileSync } = require("node:child_process");
 const { chromium, devices } = require("playwright");
-const { shown } = require("./lib/wait.cjs");
+const { shown, editorReady } = require("./lib/wait.cjs");
 
 const BASE_URL = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const DB_URL = process.env.LOCAL_DB_URL || "";
@@ -137,6 +137,10 @@ async function requestPublish(user, reason) {
     // 1. Member sends a publish request ---------------------------------------------------------
     const p1 = await createPost(member, projectUrl, "Ra mắt Trợ lý AI", "Trợ lý AI giúp đội ngũ nội dung làm việc nhanh hơn.");
     check(await visible(member.page, "request-publish-form"), "draft post offers 'Gửi yêu cầu xuất bản'");
+    check(
+      (await member.page.locator('[data-testid="request-publish-destination"]').textContent())?.trim() === "Đích xuất bản: Nội bộ",
+      "request form names its destination: Nội bộ",
+    );
     await requestPublish(member, "Đã kiểm tra chính tả");
     const r1 = req(p1.id);
     check(r1?.status === "pending" && r1.version === 1, "request stored as pending for version 1 (database)");
@@ -165,6 +169,7 @@ async function requestPublish(user, reason) {
     check((await owner.page.locator('[data-testid="review-content-title"]').textContent())?.trim() === "Ra mắt Trợ lý AI", "review shows the title");
     check((await owner.page.locator('[data-testid="review-content-body"]').textContent())?.includes("làm việc nhanh hơn"), "review shows the body");
     check((await owner.page.locator('[data-testid="review-requested-version"]').textContent())?.trim() === "Phiên bản 1", "review shows the requested version");
+    check((await owner.page.locator('[data-testid="review-destination"]').textContent())?.trim() === "Nội bộ", "review shows the destination");
     // The member set no display name: only the role is shown, never an id.
     check((await owner.page.locator('[data-testid="review-requester"]').textContent())?.trim() === "Thành viên", "review shows who requested (role only, no id)");
     check(await shown(owner.page.locator('[data-testid="review-requested-at"] time')), "review shows when it was requested");
@@ -176,6 +181,7 @@ async function requestPublish(user, reason) {
     await owner.page.click('[data-testid="approve-start"]');
     check(await visible(owner.page, "approve-confirm"), "'Phê duyệt…' opens an explicit confirmation");
     check((await owner.page.locator('[data-testid="approve-confirm"]').textContent())?.includes("phiên bản 1"), "confirmation names the version to publish");
+    check((await owner.page.locator('[data-testid="approve-confirm-destination"]').textContent())?.trim() === "Nội bộ", "confirmation names the destination");
     await shot(owner.page, "review-confirm-desktop");
     await owner.page.click('[data-testid="approve-cancel"]');
     check((await count(owner.page, "approve-confirm")) === 0 && req(p1.id).status === "pending", "'Quay lại' closes it without approving");
@@ -187,12 +193,23 @@ async function requestPublish(user, reason) {
     const s1 = postState(p1.id);
     check(s1.status === "published" && s1.version === 2 && s1.published, "post published at version 2 (database)");
     check((await owner.page.locator('[data-testid="audit-event"]').count()) === 3, "audit trail: requested, approved, published");
+    check((await owner.page.locator('[data-testid="review-delivery"]').textContent())?.trim() === "Đã xuất bản", "execution state shown: Đã xuất bản");
+    check(
+      sql(`select d.status || ':' || dest.kind from public.publish_deliveries d join public.publishing_destinations dest on dest.id = d.destination_id where d.request_id = ${q(r1.id)}`) === "succeeded:internal",
+      "one succeeded delivery on the internal destination (database)",
+    );
 
     // 5. Published post is read-only -----------------------------------------------------------
     await member.page.goto(p1.url);
     check(await visible(member.page, "post-published-notice"), "published post shows the 'đã xuất bản' notice");
     check((await member.page.locator('[data-testid="status-badge"]').first().textContent())?.trim() === "Đã xuất bản", "status badge 'Đã xuất bản'");
     check(await member.page.locator("#post-title").isDisabled(), "editor is read-only");
+    // Still read-only once the client has hydrated (hydration safety must not unlock it).
+    await editorReady(member.page);
+    check(
+      (await member.page.locator("#post-title").isDisabled()) && (await member.page.locator("#post-body").isDisabled()),
+      "published post stays read-only after hydration",
+    );
     for (const control of ["save-post", "status-switch", "archive-post", "request-publish-form"]) {
       check((await count(member.page, control)) === 0, `no '${control}' on a published post`);
     }
@@ -225,6 +242,7 @@ async function requestPublish(user, reason) {
     const p4 = await createPost(member, projectUrl, "Bài sẽ sửa tiếp", "Bản 1.");
     await requestPublish(member);
     const r4 = req(p4.id);
+    await editorReady(member.page);
     await member.page.fill("#post-body", "Bản 2, sửa sau khi gửi yêu cầu.");
     await member.page.click('[data-testid="save-post"]');
     await member.page.locator('[data-testid="save-post-success"]').waitFor({ timeout: 15000 });

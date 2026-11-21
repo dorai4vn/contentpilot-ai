@@ -18,6 +18,7 @@ describe("toContentError", () => {
     ["CP410", "request_closed"],
     ["CP412", "request_pending_exists"],
     ["CP422", "post_published"],
+    ["CP426", "destination_disabled"],
     ["42501", "forbidden"],
     ["23514", "invalid_input"],
     ["23502", "invalid_input"],

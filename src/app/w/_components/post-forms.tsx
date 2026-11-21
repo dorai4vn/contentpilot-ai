@@ -16,7 +16,7 @@ import { contentPaths } from "@/lib/content/paths";
 import { CONTENT_LIMITS } from "@/lib/validation/content";
 import type { ContentPostStatus } from "@/types/database";
 
-import { ActionFeedback, SubmitButton } from "./client-ui";
+import { ActionFeedback, SubmitButton, useMounted } from "./client-ui";
 import { ScheduleField } from "./schedule-field";
 import { FieldError, FieldLabel, Notice, STATUS_LABELS, buttonClass, inputClass } from "./ui";
 
@@ -123,9 +123,21 @@ function EditForm({
     return result;
   }, null);
 
+  // Hydration safety: until React has hydrated this form, the fields are read-only.
+  // Hydrating an uncontrolled field resets its selection, so "select all + type"
+  // during that window would insert text instead of replacing it. readOnly (not
+  // disabled) keeps the values in the form; `readOnly` (archived / published) is
+  // still rendered as disabled exactly as before.
+  const mounted = useMounted();
   const errors = state && !state.ok ? state.fieldErrors : undefined;
   return (
-    <form action={action} className="space-y-4" data-testid="post-editor-form">
+    <form
+      action={action}
+      className="space-y-4"
+      data-testid="post-editor-form"
+      data-ready={mounted ? "true" : "false"}
+      aria-busy={!mounted}
+    >
       <input type="hidden" name="postId" value={post.id} />
       <input type="hidden" name="expectedVersion" value={post.version} data-testid="expected-version" />
       <input type="hidden" name="status" value={post.status} />
@@ -138,6 +150,7 @@ function EditForm({
           maxLength={CONTENT_LIMITS.postTitleMax}
           defaultValue={post.title}
           disabled={readOnly}
+          readOnly={!mounted}
           className={inputClass}
         />
         <FieldError message={errors?.title} />
@@ -151,6 +164,7 @@ function EditForm({
           maxLength={CONTENT_LIMITS.postBodyMax}
           defaultValue={post.body}
           disabled={readOnly}
+          readOnly={!mounted}
           className={`${inputClass} font-mono leading-relaxed`}
         />
         <FieldError message={errors?.body} />
@@ -161,7 +175,7 @@ function EditForm({
       </div>
       {readOnly ? null : (
         <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton pendingLabel="Đang lưu…" testId="save-post">
+          <SubmitButton pendingLabel="Đang lưu…" testId="save-post" disabled={!mounted}>
             Lưu thay đổi
           </SubmitButton>
           {/* Success is shown by PostEditor: this form re-mounts after a save. */}

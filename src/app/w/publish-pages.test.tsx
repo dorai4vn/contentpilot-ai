@@ -18,6 +18,9 @@ const m = vi.hoisted(() => ({
   getProject: vi.fn(),
   listWorkspaceMembers: vi.fn(),
   listDisplayNames: vi.fn(),
+  getInternalDestination: vi.fn(),
+  listPublishingDestinations: vi.fn(),
+  listPublishDeliveries: vi.fn(),
   listProjects: vi.fn(),
   actions: {
     requestPublishAction: vi.fn(),
@@ -47,6 +50,11 @@ vi.mock("@/lib/content/posts", () => ({
 vi.mock("@/lib/content/projects", () => ({ getProject: m.getProject, listProjects: m.listProjects }));
 vi.mock("@/lib/workspaces/queries", () => ({ listWorkspaceMembers: m.listWorkspaceMembers }));
 vi.mock("@/lib/profiles/profiles", () => ({ listDisplayNames: m.listDisplayNames }));
+vi.mock("@/lib/publishing/destinations", () => ({
+  getInternalDestination: m.getInternalDestination,
+  listPublishingDestinations: m.listPublishingDestinations,
+  listPublishDeliveries: m.listPublishDeliveries,
+}));
 vi.mock("@/app/_actions/content/publish", () => m.actions);
 vi.mock("@/app/_actions/content/posts", () => ({
   createPostAction: vi.fn(),
@@ -73,6 +81,16 @@ const WS = "22222222-2222-4222-8222-222222222222";
 const PROJECT = "33333333-3333-4333-8333-333333333333";
 const POST = "44444444-4444-4444-8444-444444444444";
 const REQUEST = "66666666-6666-4666-8666-666666666666";
+const DEST = "88888888-8888-4888-8888-888888888888";
+const internalDestination = {
+  id: DEST,
+  workspaceId: "22222222-2222-4222-8222-222222222222",
+  kind: "internal",
+  name: "Nội bộ",
+  targetRef: null,
+  status: "active",
+  createdAt: "2026-11-01T00:00:00Z",
+};
 
 const post = {
   id: POST,
@@ -107,6 +125,7 @@ const request = {
   id: REQUEST,
   workspaceId: WS,
   postId: POST,
+  destinationId: DEST,
   postVersion: 3,
   status: "pending",
   displayStatus: "pending",
@@ -153,6 +172,9 @@ beforeEach(() => {
   ]);
   m.listPublishRequests.mockResolvedValue([]);
   m.listDisplayNames.mockResolvedValue(new Map([[OTHER, "Bình Trần"]]));
+  m.getInternalDestination.mockResolvedValue(internalDestination);
+  m.listPublishingDestinations.mockResolvedValue([internalDestination]);
+  m.listPublishDeliveries.mockResolvedValue([]);
   m.listPublishRequestsPage.mockResolvedValue({ items: [], filter: "pending", page: 1, pageSize: 20, total: 0, totalPages: 1 });
   m.countPublishRequests.mockResolvedValue({ pending: 0, expired: 0, approved: 0, rejected: 0, cancelled: 0, all: 0 });
   m.listPostSummariesByIds.mockResolvedValue(new Map([[POST, post]]));
@@ -172,6 +194,27 @@ describe("review page", () => {
     expect(markup).toContain('dateTime="2026-11-27T10:05:00Z"');
     expect(markup).toContain("Đã kiểm tra chính tả");
     expect(markup).toContain('data-testid="audit-trail"');
+    expect(markup).toContain('data-testid="review-destination">Nội bộ<');
+    expect(m.listPublishingDestinations).toHaveBeenCalledWith({ workspaceId: WS, includeDisabled: true });
+    expect(m.listPublishDeliveries).toHaveBeenCalledWith({ workspaceId: WS, requestId: REQUEST });
+    expect(markup).not.toContain("review-delivery"); // no delivery yet
+  });
+
+  it("shows the execution state once the request was approved", async () => {
+    m.getPublishRequest.mockResolvedValue({
+      request: { ...request, status: "approved", displayStatus: "approved", decidedBy: ME, decidedAt: "2026-11-20T12:00:00Z" },
+      events: [],
+    });
+    m.getPost.mockResolvedValue({ ...post, status: "published", version: 4 });
+    m.listPublishDeliveries.mockResolvedValue([{ id: "d1", status: "succeeded", destinationId: DEST, requestId: REQUEST }]);
+    expect(await reviewPage()).toContain('data-testid="review-delivery">Đã xuất bản<');
+  });
+
+  it("an unknown destination id is shown neutrally, never as an id", async () => {
+    m.listPublishingDestinations.mockResolvedValue([]);
+    const markup = await reviewPage();
+    expect(markup).toContain('data-testid="review-destination">Đích không xác định<');
+    expect(markup).not.toContain(DEST);
   });
 
   it.each(["owner", "admin"] as const)("%s sees approve (step 1 only) and reject", async (role) => {
@@ -180,6 +223,7 @@ describe("review page", () => {
     expect(markup).toContain('data-testid="approve-start"');
     expect(markup).toContain('data-testid="reject-form"');
     // Rendering the page never shows the confirm step nor calls an action.
+    expect(markup).not.toContain('name="expectedDestinationId"');
     expect(markup).not.toContain('name="confirm"');
     for (const fn of Object.values(m.actions)) expect(fn).not.toHaveBeenCalled();
   });
@@ -288,6 +332,7 @@ describe("approvals list", () => {
       expect(all).toContain(label);
     }
     expect(all).toContain('data-testid="approval-item-stale"');
+    expect(all.match(/data-testid="approval-item-destination">Đích xuất bản: Nội bộ</g)).toHaveLength(3);
     expect(all.match(/data-testid="approval-item"/g)).toHaveLength(3);
     expect(all).not.toContain("approve-start"); // the list itself offers no approve button
     expect(all).not.toContain("approvals-pagination");
@@ -331,10 +376,13 @@ describe("approvals list", () => {
 });
 
 describe("post page", () => {
-  it("a draft without a request offers the request form", async () => {
+  it("a draft without a request offers the request form, for the internal destination explicitly", async () => {
     asRole("member");
     const markup = await postPage();
     expect(markup).toContain('data-testid="request-publish-form"');
+    expect(m.getInternalDestination).toHaveBeenCalledWith({ workspaceId: WS });
+    expect(markup).toContain(`name="destinationId" value="${DEST}"`);
+    expect(markup).toContain("Đích xuất bản: <span");
     expect(markup).toContain('data-testid="save-post"');
   });
 

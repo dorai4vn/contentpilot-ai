@@ -6,7 +6,8 @@ design every publishing change must follow. It was approved for M4.6 and applies
 to all later milestones.
 
 Status: **M4.6a** implemented the database foundation
-(`supabase/migrations/20261121120000_publishing_destinations.sql`). Only the
+(`supabase/migrations/20261121120000_publishing_destinations.sql`) and **M4.6b**
+the application layer (data access, Publisher Adapter, registry, UI). Only the
 `internal` destination kind is enabled; no external platform is integrated yet.
 
 ## Principles
@@ -159,15 +160,25 @@ interface PublisherAdapter {
   before M4.6a have no delivery row (none is invented).
 - New error code: **CP426** destination disabled.
 
-### To do in M4.6b
-- Data layer: read `destination_id`, list destinations, pass
-  `p_destination_id` explicitly and `p_expected_destination_id` when approving;
-  map CP426 to a Vietnamese message.
-- UI: show the destination ("Đích: Nội bộ") on requests, the review page and the
-  confirmation step.
-- `PublisherAdapter` interface, registry and `InternalPublisher`.
-- Update the M4.2 unit test that parses RPC signatures to read the latest
-  migration defining them.
+### Done in M4.6b (application layer)
+- `src/lib/publishing/`: `PublisherAdapter` interface (`adapter.ts`), registry
+  (`registry.ts`, no fallback for unknown kinds), `InternalPublisher`
+  (`adapters/internal.ts`, `execution: "in_approval"`, never touches the
+  network), `PublisherSecret` (`types.ts`: an opaque credential holder that
+  never serialises its value) and read-only data access for destinations and
+  deliveries (`destinations.ts`).
+- The M4.2 data layer always sends `p_destination_id` and
+  `p_expected_destination_id` explicitly. A destination must be visible, in the
+  post's workspace and active (`not_found` / `destination_disabled`); legacy
+  callers without one are mapped explicitly to the internal destination; the
+  agent must always name one.
+- Errors: CP426 → `destination_disabled`; a destination other than the reviewed
+  one → `destination_mismatch` (Vietnamese messages, no database details).
+- Server Actions require `destinationId` (request form) and
+  `expectedDestinationId` (approve form).
+- UI: "Đích xuất bản: Nội bộ" on the request form, the approval list and the
+  review page; the confirmation step names the destination; the review page shows
+  the execution state. No destination picker until a real external adapter exists.
 
 ## Extending to Telegram, Discord and Facebook (M5)
 

@@ -16,7 +16,7 @@
  */
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
-const { shown } = require("./lib/wait.cjs");
+const { shown, editorReady } = require("./lib/wait.cjs");
 
 const BASE_URL = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const DB_URL = process.env.LOCAL_DB_URL || "";
@@ -150,6 +150,7 @@ function postRow(id) {
     );
 
     // 3. Edit the body ------------------------------------------------------------
+    await editorReady(owner.page);
     await owner.page.fill("#post-body", "Second draft of the launch post.");
     await owner.page.click('[data-testid="save-post"]');
     await waitForVersion(owner.page, 2);
@@ -242,9 +243,11 @@ function postRow(id) {
     await admin.page.goto(postUrl);
     await waitForVersion(owner.page, 3);
     await waitForVersion(admin.page, 3);
+    await editorReady(owner.page);
     await owner.page.fill("#post-body", "Owner's final text.");
     await owner.page.click('[data-testid="save-post"]');
     await waitForVersion(owner.page, 4);
+    await editorReady(admin.page);
     await admin.page.fill("#post-body", "Admin's competing text.");
     await admin.page.click('[data-testid="save-post"]');
     await admin.page.locator('[data-testid="version-conflict"]').waitFor({ timeout: 15000 });
@@ -255,6 +258,52 @@ function postRow(id) {
     await admin.page.click('[data-testid="load-latest"]');
     await waitForVersion(admin.page, 4);
     check((await admin.page.locator("#post-body").inputValue()) === "Owner's final text.", "load latest shows the newest content");
+
+    // 7b. Hydration safety: the editor is read-only until hydrated ------------------------
+    // Uses its own post (in a new tab) so the versions of the main post stay as expected.
+    {
+      const tab = await owner.context.newPage();
+      tab.on("pageerror", (error) => browserErrors.push(`owner-tab: ${error.message}`));
+      await tab.goto(projectUrl);
+      await tab.click('[data-testid="new-post-toggle"]');
+      await tab.fill("#new-post-title", "Hydration check");
+      await tab.fill("#new-post-body", "Original text.");
+      await tab.click('[data-testid="create-post-submit"]');
+      await tab.waitForURL(/\/posts\/[0-9a-f-]{36}$/, { timeout: 15000 });
+      const hydrationUrl = tab.url();
+      const hydrationPostId = hydrationUrl.split("/").pop();
+
+      // Hold the JavaScript (not the CSS, which React needs to reveal streamed content).
+      const held = [];
+      const jsChunks = (url) => url.pathname.startsWith("/_next/static/chunks/") && url.pathname.endsWith(".js");
+      await tab.route(jsChunks, (route) => held.push(route));
+      await tab.goto(hydrationUrl, { waitUntil: "commit" });
+      await tab.locator("#post-body").waitFor({ state: "attached", timeout: 15000 });
+      check(
+        (await tab.locator('[data-testid="post-editor-form"]').getAttribute("data-ready")) === "false",
+        "before hydration the editor reports data-ready=false",
+      );
+      check(await tab.locator("#post-body").evaluate((el) => el.readOnly), "before hydration the body is read-only");
+      check(await tab.locator("#post-title").evaluate((el) => el.readOnly), "before hydration the title is read-only");
+      check(await tab.locator('[data-testid="save-post"]').isDisabled(), "before hydration Save cannot be pressed");
+      await tab.locator("#post-body").focus();
+      await tab.keyboard.type("typed too early ");
+      check((await tab.locator("#post-body").inputValue()) === "Original text.", "typing before hydration changes nothing");
+
+      await tab.unroute(jsChunks);
+      for (const route of held) await route.continue().catch(() => {});
+      await editorReady(tab);
+      check(!(await tab.locator("#post-body").evaluate((el) => el.readOnly)), "after hydration the body is editable");
+      await tab.locator("#post-body").focus();
+      await tab.keyboard.press("Control+A");
+      await tab.keyboard.type("Replaced after hydration.");
+      check((await tab.locator("#post-body").inputValue()) === "Replaced after hydration.", "select all + type replaces the text after hydration");
+      await tab.click('[data-testid="save-post"]');
+      await waitForVersion(tab, 2);
+      const saved = JSON.parse(postRow(hydrationPostId));
+      check(saved.body === "Replaced after hydration." && saved.version === 2, "after hydration the edit is saved (database)");
+      await tab.close();
+    }
 
     // 8. Archive and restore a post ------------------------------------------------------
     await owner.page.reload();

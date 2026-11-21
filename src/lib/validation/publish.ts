@@ -37,6 +37,12 @@ export const publishRequestCreateSchema = z.strictObject({
   postId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   reason: optionalNote("Lý do"),
+  /**
+   * The destination (M4.6). Must be an active destination of the post's
+   * workspace. Omitted only by legacy M4 callers: then the data layer resolves
+   * the workspace's internal destination explicitly. Required for the agent.
+   */
+  destinationId: uuidSchema.optional(),
 });
 export type PublishRequestCreateInput = z.input<typeof publishRequestCreateSchema>;
 
@@ -44,6 +50,8 @@ export type PublishRequestCreateInput = z.input<typeof publishRequestCreateSchem
 export const publishApproveSchema = z.strictObject({
   requestId: uuidSchema,
   expectedPostVersion: expectedVersionSchema,
+  /** The destination the approver was shown (M4.6). Required by the approve form. */
+  expectedDestinationId: uuidSchema.optional(),
 });
 export type PublishApproveInput = z.input<typeof publishApproveSchema>;
 

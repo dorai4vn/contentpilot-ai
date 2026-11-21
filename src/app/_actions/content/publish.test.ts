@@ -36,6 +36,7 @@ const OTHER_WS = "99999999-9999-4999-8999-999999999999";
 const PROJECT = "33333333-3333-4333-8333-333333333333";
 const POST = "44444444-4444-4444-8444-444444444444";
 const REQUEST = "66666666-6666-4666-8666-666666666666";
+const DEST = "88888888-8888-4888-8888-888888888888";
 
 const pending = {
   id: REQUEST,
@@ -72,9 +73,9 @@ function form(values: Record<string, string>) {
   return fd;
 }
 
-const requestForm = () => form({ workspaceId: WS, postId: POST, expectedVersion: "3", reason: " Sẵn sàng " });
+const requestForm = () => form({ workspaceId: WS, postId: POST, expectedVersion: "3", destinationId: DEST, reason: " Sẵn sàng " });
 const approveForm = (extra: Record<string, string> = {}) =>
-  form({ workspaceId: WS, requestId: REQUEST, expectedPostVersion: "3", confirm: "approve", ...extra });
+  form({ workspaceId: WS, requestId: REQUEST, expectedPostVersion: "3", expectedDestinationId: DEST, confirm: "approve", ...extra });
 const rejectForm = () => form({ workspaceId: WS, requestId: REQUEST, note: "Cần sửa" });
 const cancelForm = () => form({ workspaceId: WS, requestId: REQUEST });
 
@@ -112,11 +113,17 @@ describe("signed-out callers", () => {
 describe("requestPublishAction", () => {
   it("files a user request scoped to the page's workspace and revalidates", async () => {
     mocks.requestPostPublish.mockResolvedValue(pending);
-    const result = await requestPublishAction(null, form({ workspaceId: WS, postId: POST, expectedVersion: "3", reason: " Sẵn sàng ", $ACTION_ID_x: "" }));
+    const result = await requestPublishAction(
+      null,
+      form({ workspaceId: WS, postId: POST, expectedVersion: "3", destinationId: DEST, reason: " Sẵn sàng ", $ACTION_ID_x: "" }),
+    );
 
     expect(result).toEqual({ ok: true, data: { workspaceId: WS, postId: POST, requestId: REQUEST, requestStatus: "pending" } });
     // Only ids, version and reason as input; the workspace only as a scope guard; never a source/agent option.
-    expect(mocks.requestPostPublish).toHaveBeenCalledWith({ postId: POST, expectedVersion: 3, reason: "Sẵn sàng" }, { workspaceId: WS });
+    expect(mocks.requestPostPublish).toHaveBeenCalledWith(
+      { postId: POST, expectedVersion: 3, reason: "Sẵn sàng", destinationId: DEST },
+      { workspaceId: WS },
+    );
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/w/${WS}/posts/${POST}`);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/w/${WS}/approvals`);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/w/${WS}`);
@@ -153,7 +160,11 @@ describe("approvePublishAction", () => {
       data: { workspaceId: WS, postId: POST, requestId: REQUEST, requestStatus: "approved", postStatus: "published", postVersion: 4 },
     });
     expect(mocks.getPublishRequest).toHaveBeenCalledWith({ requestId: REQUEST });
-    expect(mocks.approvePublishRequest).toHaveBeenCalledWith({ requestId: REQUEST, expectedPostVersion: 3 });
+    expect(mocks.approvePublishRequest).toHaveBeenCalledWith({
+      requestId: REQUEST,
+      expectedPostVersion: 3,
+      expectedDestinationId: DEST,
+    });
     expect(mocks.getPublishRequest.mock.invocationCallOrder[0]).toBeLessThan(mocks.approvePublishRequest.mock.invocationCallOrder[0]!);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/w/${WS}/posts/${POST}`);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/w/${WS}/p/${PROJECT}`);
@@ -246,6 +257,43 @@ describe("approvePublishAction", () => {
       await import("./publish");
       for (const fn of [...writeFns, mocks.getPublishRequest, mocks.listPublishRequests]) expect(fn).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("destination scope (M4.6)", () => {
+  it("a request form without its destination is rejected (no implicit destination from the UI)", async () => {
+    const result = await requestPublishAction(null, form({ workspaceId: WS, postId: POST, expectedVersion: "3" }));
+    expect(result).toMatchObject({ ok: false, code: "invalid_input" });
+    expect(mocks.requestPostPublish).not.toHaveBeenCalled();
+  });
+
+  it("an approval form without the destination the approver saw is rejected", async () => {
+    const fd = form({ workspaceId: WS, requestId: REQUEST, expectedPostVersion: "3", confirm: "approve" });
+    expect(await approvePublishAction(null, fd)).toMatchObject({ ok: false, code: "invalid_input" });
+    expect(mocks.approvePublishRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(["nope", ""])("a malformed destination id %j is rejected", async (destinationId) => {
+    expect(await approvePublishAction(null, approveForm({ expectedDestinationId: destinationId }))).toMatchObject({
+      ok: false,
+      code: "invalid_input",
+    });
+    expect(mocks.approvePublishRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["destination_disabled", /tạm ngừng/],
+    ["destination_mismatch", /không khớp/],
+  ] as const)("%s -> Vietnamese message", async (code, message) => {
+    mocks.approvePublishRequest.mockRejectedValue(new ContentError(code));
+    const result = await approvePublishAction(null, approveForm());
+    expect(result).toEqual(failure(code));
+    expect((result as { error: string }).error).toMatch(message);
+  });
+
+  it("a disabled destination when requesting -> destination_disabled", async () => {
+    mocks.requestPostPublish.mockRejectedValue(new ContentError("destination_disabled"));
+    expect(await requestPublishAction(null, requestForm())).toEqual(failure("destination_disabled"));
   });
 });
 

@@ -41,6 +41,20 @@ export function PublishStatusBadge({ status }: { status: PublishDisplayStatus })
   );
 }
 
+/** Vietnamese labels of delivery (execution) states. */
+export const DELIVERY_STATUS_LABELS: Record<"queued" | "sending" | "succeeded" | "failed" | "cancelled", string> = {
+  queued: "Đang chờ thực thi",
+  sending: "Đang gửi",
+  succeeded: "Đã xuất bản",
+  failed: "Lỗi, sẽ thử lại",
+  cancelled: "Đã hủy",
+};
+
+/** Name of a destination for display; unknown ids (not visible) get a neutral label. */
+export function destinationLabel(destinationId: string, names: ReadonlyMap<string, string>): string {
+  return names.get(destinationId) ?? "Đích không xác định";
+}
+
 export const CANCEL_REASON_LABELS: Record<PublishRequestCancelReason, string> = {
   withdrawn: "người gửi hoặc quản trị viên đã rút yêu cầu",
   post_changed: "bài viết đã thay đổi sau khi gửi yêu cầu, nên yêu cầu cũ mất hiệu lực",

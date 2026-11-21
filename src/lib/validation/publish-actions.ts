@@ -13,7 +13,11 @@ import { publishApproveSchema, publishRejectSchema, publishRequestCreateSchema, 
  * request source or agent turn — is rejected by the strict schemas.
  */
 
-export const requestPublishFormSchema = publishRequestCreateSchema.extend({ workspaceId: uuidSchema });
+/** The form always names its destination (M4.6): today the workspace's internal one. */
+export const requestPublishFormSchema = publishRequestCreateSchema.extend({
+  workspaceId: uuidSchema,
+  destinationId: uuidSchema,
+});
 export type RequestPublishForm = z.output<typeof requestPublishFormSchema>;
 
 /**
@@ -22,6 +26,8 @@ export type RequestPublishForm = z.output<typeof requestPublishFormSchema>;
  */
 export const approvePublishFormSchema = publishApproveSchema.extend({
   workspaceId: uuidSchema,
+  /** The destination shown to the approver (M4.6): approval is scoped to it. */
+  expectedDestinationId: uuidSchema,
   confirm: z.literal("approve", { message: "Thiếu xác nhận phê duyệt." }),
 });
 export type ApprovePublishForm = z.output<typeof approvePublishFormSchema>;

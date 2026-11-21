@@ -80,6 +80,7 @@ const POST1 = randomUUID();
 const POST2 = randomUUID();
 const POST3 = randomUUID();
 const POST_B = randomUUID();
+let DEST_A = ""; // internal destination of WA (created by the database with the workspace)
 
 beforeAll(async () => {
   [owner, member, outsider] = await Promise.all(["owner", "member", "outsider"].map(signUp));
@@ -90,6 +91,10 @@ beforeAll(async () => {
     member.client.from("content_posts").insert([POST1, POST2, POST3].map((id, i) => ({ id, workspace_id: WA, project_id: PA, title: `Bài ${i + 1}`, body: "x" }))),
     "posts",
   );
+  DEST_A = (await must(
+    owner.client.from("publishing_destinations").select("id").eq("workspace_id", WA).eq("kind", "internal").single(),
+    "internal destination of WA",
+  )).id;
   await must(outsider.client.from("workspaces").insert({ id: WB, name: "IT actions B" }), "WB");
   await must(outsider.client.from("content_projects").insert({ id: PB, workspace_id: WB, name: "Blog B" }), "PB");
   await must(outsider.client.from("content_posts").insert({ id: POST_B, workspace_id: WB, project_id: PB, title: "B" }), "post B");
@@ -100,22 +105,22 @@ describe("publish approval Server Actions on real Supabase", () => {
 
   it("signed out: redirected to login, nothing written", async () => {
     await expect(
-      as(null, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST1, expectedVersion: "1" }))),
+      as(null, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST1, expectedVersion: "1" }))),
     ).rejects.toThrow(/NEXT_REDIRECT/);
     const { count } = await owner.client.from("content_publish_requests").select("id", { count: "exact", head: true }).eq("workspace_id", WA);
     expect(count).toBe(0);
   });
 
   it("member files a request; a mismatched workspace on the form is refused", async () => {
-    const wrongWs = await as(member, () => requestPublishAction(null, form({ workspaceId: WB, postId: POST1, expectedVersion: "1" })));
+    const wrongWs = await as(member, () => requestPublishAction(null, form({ workspaceId: WB, destinationId: DEST_A, postId: POST1, expectedVersion: "1" })));
     expect(wrongWs).toMatchObject({ ok: false, code: "not_found" });
 
-    const result = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST1, expectedVersion: "1", reason: "Sẵn sàng" })));
+    const result = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST1, expectedVersion: "1", reason: "Sẵn sàng" })));
     expect(result).toMatchObject({ ok: true, data: { workspaceId: WA, postId: POST1, requestStatus: "pending" } });
     requestId = (result as { data: { requestId: string } }).data.requestId;
     expect(hoisted.revalidated).toContain(`/w/${WA}/approvals`);
 
-    const again = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST1, expectedVersion: "1" })));
+    const again = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST1, expectedVersion: "1" })));
     expect(again).toMatchObject({ ok: false, code: "request_pending_exists", error: "Bài viết này đã có một yêu cầu xuất bản đang chờ duyệt." });
   });
 
@@ -126,49 +131,49 @@ describe("publish approval Server Actions on real Supabase", () => {
 
   it("member cannot approve; outsider cannot see it; wrong workspace on the form is refused", async () => {
     const byMember = await as(member, () =>
-      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", confirm: "approve" })),
+      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })),
     );
     expect(byMember).toMatchObject({ ok: false, code: "forbidden" });
     const byOutsider = await as(outsider, () =>
-      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", confirm: "approve" })),
+      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })),
     );
     expect(byOutsider).toMatchObject({ ok: false, code: "not_found" });
     const outsiderOwnWs = await as(outsider, () =>
-      approvePublishAction(null, form({ workspaceId: WB, requestId, expectedPostVersion: "1", confirm: "approve" })),
+      approvePublishAction(null, form({ workspaceId: WB, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })),
     );
     expect(outsiderOwnWs).toMatchObject({ ok: false, code: "not_found" });
     const ownerWrongWs = await as(owner, () =>
-      approvePublishAction(null, form({ workspaceId: WB, requestId, expectedPostVersion: "1", confirm: "approve" })),
+      approvePublishAction(null, form({ workspaceId: WB, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })),
     );
     expect(ownerWrongWs).toMatchObject({ ok: false, code: "not_found" });
   });
 
   it("forged approver/role fields are refused before anything runs", async () => {
     const forged = await as(member, () =>
-      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", confirm: "approve", role: "owner", decidedBy: owner.id })),
+      approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve", role: "owner", decidedBy: owner.id })),
     );
     expect(forged).toMatchObject({ ok: false, code: "invalid_input" });
   });
 
   it("owner approves explicitly; repeating is refused", async () => {
-    const stale = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "2", confirm: "approve" })));
+    const stale = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "2", expectedDestinationId: DEST_A, confirm: "approve" })));
     expect(stale).toMatchObject({ ok: false, code: "version_conflict" });
 
-    const result = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", confirm: "approve" })));
+    const result = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })));
     expect(result).toMatchObject({ ok: true, data: { postStatus: "published", postVersion: 2, requestStatus: "approved" } });
     expect(hoisted.revalidated).toContain(`/w/${WA}/p/${PA}`);
 
-    const again = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", confirm: "approve" })));
+    const again = await as(owner, () => approvePublishAction(null, form({ workspaceId: WA, requestId, expectedPostVersion: "1", expectedDestinationId: DEST_A, confirm: "approve" })));
     expect(again).toMatchObject({ ok: false, code: "request_closed" });
     const post = await must(owner.client.from("content_posts").select("status, version").eq("id", POST1).single(), "post");
     expect(post).toEqual({ status: "published", version: 2 });
 
-    const rerequest = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST1, expectedVersion: "2" })));
+    const rerequest = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST1, expectedVersion: "2" })));
     expect(rerequest).toMatchObject({ ok: false, code: "post_published" });
   });
 
   it("owner rejects; the requester cancels another request", async () => {
-    const r2 = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST2, expectedVersion: "1" })));
+    const r2 = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST2, expectedVersion: "1" })));
     const id2 = (r2 as { data: { requestId: string } }).data.requestId;
     expect(await as(member, () => rejectPublishAction(null, form({ workspaceId: WA, requestId: id2 })))).toMatchObject({ ok: false, code: "forbidden" });
     expect(await as(owner, () => rejectPublishAction(null, form({ workspaceId: WA, requestId: id2, note: "Chưa đạt" })))).toMatchObject({
@@ -176,7 +181,7 @@ describe("publish approval Server Actions on real Supabase", () => {
       data: { requestStatus: "rejected" },
     });
 
-    const r3 = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, postId: POST3, expectedVersion: "1" })));
+    const r3 = await as(member, () => requestPublishAction(null, form({ workspaceId: WA, destinationId: DEST_A, postId: POST3, expectedVersion: "1" })));
     const id3 = (r3 as { data: { requestId: string } }).data.requestId;
     expect(await as(outsider, () => cancelPublishAction(null, form({ workspaceId: WA, requestId: id3 })))).toMatchObject({ ok: false, code: "not_found" });
     expect(await as(member, () => cancelPublishAction(null, form({ workspaceId: WA, requestId: id3 })))).toMatchObject({

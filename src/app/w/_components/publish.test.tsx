@@ -17,6 +17,7 @@ import { AuditTimeline, PUBLISH_STATUS_LABELS, PublishStatusBadge, actorLabel } 
 const WS = "22222222-2222-4222-8222-222222222222";
 const POST = "44444444-4444-4444-8444-444444444444";
 const REQUEST = "66666666-6666-4666-8666-666666666666";
+const DEST = "88888888-8888-4888-8888-888888888888";
 const ME = "11111111-1111-4111-8111-111111111111";
 const OTHER = "55555555-5555-4555-8555-555555555555";
 
@@ -34,10 +35,15 @@ function fields(markup: string): Record<string, string> {
 }
 
 describe("RequestPublishForm", () => {
-  const markup = html(<RequestPublishForm workspaceId={WS} postId={POST} version={4} />);
+  const markup = html(<RequestPublishForm workspaceId={WS} postId={POST} version={4} destination={{ id: DEST, name: "Nội bộ" }} />);
 
-  it("sends only workspace, post, the version shown and an optional reason", () => {
-    expect(fields(markup)).toEqual({ workspaceId: WS, postId: POST, expectedVersion: "4", reason: "" });
+  it("sends only workspace, post, the version shown, the explicit destination and an optional reason", () => {
+    expect(fields(markup)).toEqual({ workspaceId: WS, postId: POST, expectedVersion: "4", destinationId: DEST, reason: "" });
+  });
+
+  it("names the destination", () => {
+    expect(markup).toContain('data-testid="request-publish-destination">Đích xuất bản: <span');
+    expect(markup).toContain(">Nội bộ</span>");
   });
 
   it("names the version being requested, in Vietnamese", () => {
@@ -51,7 +57,14 @@ describe("RequestPublishForm", () => {
 });
 
 describe("ApproveForm: explicit two-step approval", () => {
-  const target = { workspaceId: WS, requestId: REQUEST, postTitle: "Ra mắt <b>AI</b>", postVersion: 3 };
+  const target = {
+    workspaceId: WS,
+    requestId: REQUEST,
+    postTitle: "Ra mắt <b>AI</b>",
+    postVersion: 3,
+    destinationId: DEST,
+    destinationName: "Nội bộ",
+  };
   const markup = html(<ApproveForm target={target} />);
 
   it("first renders only a button that submits nothing", () => {

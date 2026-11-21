@@ -83,7 +83,7 @@ async function requestInWorkspace(requestId: string, workspaceId: string): Promi
   return detail.request;
 }
 
-/** Fields: workspaceId, postId, expectedVersion, reason? */
+/** Fields: workspaceId, postId, expectedVersion, destinationId, reason? */
 export async function requestPublishAction(
   _prev: ActionState<PublishActionData>,
   formData: FormData,
@@ -91,16 +91,20 @@ export async function requestPublishAction(
   await requireUser();
   const input = parseForm(requestPublishFormSchema, formData);
   if (!input.ok) return input.result;
-  const { workspaceId, postId, expectedVersion, reason } = input.data;
+  const { workspaceId, postId, expectedVersion, reason, destinationId } = input.data;
   // Human request: source "user" (the data-layer default). The workspace option
-  // makes the data layer verify the post belongs to this workspace before writing.
-  return runAction(() => requestPostPublish({ postId, expectedVersion, reason }, { workspaceId }), requestDone);
+  // makes the data layer verify the post belongs to this workspace, and the
+  // destination must be an active destination of that workspace.
+  return runAction(
+    () => requestPostPublish({ postId, expectedVersion, reason, destinationId }, { workspaceId }),
+    requestDone,
+  );
 }
 
 /**
- * Explicit approval by an owner/admin: publishes the post at the version the
+ * Explicit approval by an owner/admin, scoped to the destination and version the
  * approver was shown. Fields: workspaceId, requestId, expectedPostVersion,
- * confirm ("approve").
+ * expectedDestinationId, confirm ("approve").
  */
 export async function approvePublishAction(
   _prev: ActionState<PublishActionData>,
@@ -109,11 +113,11 @@ export async function approvePublishAction(
   await requireUser();
   const input = parseForm(approvePublishFormSchema, formData);
   if (!input.ok) return input.result;
-  const { workspaceId, requestId, expectedPostVersion } = input.data;
+  const { workspaceId, requestId, expectedPostVersion, expectedDestinationId } = input.data;
   return runAction(
     async () => {
       await requestInWorkspace(requestId, workspaceId);
-      return approvePublishRequest({ requestId, expectedPostVersion });
+      return approvePublishRequest({ requestId, expectedPostVersion, expectedDestinationId });
     },
     (post: PublishedPost): PublishActionData => {
       revalidatePublishPaths(post.workspaceId, post.id, post.projectId);

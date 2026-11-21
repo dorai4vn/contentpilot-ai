@@ -18,4 +18,14 @@ function shown(locator, timeout = DEFAULT_TIMEOUT) {
     );
 }
 
-module.exports = { shown, DEFAULT_TIMEOUT };
+/**
+ * Waits until the post editor has hydrated (EditForm sets data-ready="true" once
+ * mounted; before that its fields are read-only). Interact with the editor only
+ * after this: hydrating an uncontrolled field resets its selection, so typing
+ * during hydration could insert text instead of replacing it.
+ */
+function editorReady(page, timeout = DEFAULT_TIMEOUT) {
+  return page.locator('[data-testid="post-editor-form"][data-ready="true"]').waitFor({ state: "attached", timeout });
+}
+
+module.exports = { shown, editorReady, DEFAULT_TIMEOUT };

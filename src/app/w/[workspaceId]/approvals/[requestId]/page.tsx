@@ -7,11 +7,20 @@ import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getPublishRequest } from "@/lib/content/publish-requests";
 import { listDisplayNames } from "@/lib/profiles/profiles";
+import { listPublishDeliveries, listPublishingDestinations } from "@/lib/publishing/destinations";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
 
 import { LocalDateTime } from "../../../_components/client-ui";
 import { ApproveForm, CancelRequestForm, RejectForm } from "../../../_components/publish-forms";
-import { AuditTimeline, CANCEL_REASON_LABELS, Facts, PublishStatusBadge, actorLabel } from "../../../_components/publish-ui";
+import {
+  AuditTimeline,
+  CANCEL_REASON_LABELS,
+  DELIVERY_STATUS_LABELS,
+  Facts,
+  PublishStatusBadge,
+  actorLabel,
+  destinationLabel,
+} from "../../../_components/publish-ui";
 import { Badge, Breadcrumbs, Card, Notice, StatusBadge } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
@@ -32,11 +41,16 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
   if (!detail || detail.request.workspaceId !== workspace.id) notFound();
   const { request, events } = detail;
 
-  const [post, history, members] = await Promise.all([
+  const [post, history, members, destinations, deliveries] = await Promise.all([
     getPost({ postId: request.postId }),
     getPostHistory({ postId: request.postId }),
     listWorkspaceMembers(workspace.id),
+    listPublishingDestinations({ workspaceId: workspace.id, includeDisabled: true }),
+    listPublishDeliveries({ workspaceId: workspace.id, requestId: request.id }),
   ]);
+  const destinationNames = new Map(destinations.map((d) => [d.id, d.name]));
+  const destinationName = destinationLabel(request.destinationId, destinationNames);
+  const delivery = deliveries[0] ?? null;
   if (!post || post.workspaceId !== workspace.id) notFound();
   const involved = [request.requestedBy, request.decidedBy, ...events.map((e) => e.actorId)].filter((id): id is string => id !== null);
   const people = {
@@ -122,6 +136,7 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                     </Link>
                   ),
                 },
+                { label: "Đích xuất bản", value: destinationName, testId: "review-destination" },
                 { label: "Phiên bản xin duyệt", value: `Phiên bản ${request.postVersion}`, testId: "review-requested-version" },
                 {
                   label: "Phiên bản hiện tại",
@@ -136,6 +151,9 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 { label: "Thời điểm gửi", value: <LocalDateTime iso={request.requestedAt} />, testId: "review-requested-at" },
                 { label: "Hạn duyệt", value: <LocalDateTime iso={request.expiresAt} />, testId: "review-expires-at" },
                 ...(request.reason ? [{ label: "Ghi chú của người gửi", value: `“${request.reason}”` }] : []),
+                ...(delivery
+                  ? [{ label: "Thực thi xuất bản", value: DELIVERY_STATUS_LABELS[delivery.status], testId: "review-delivery" }]
+                  : []),
               ]}
             />
           </Card>
@@ -174,6 +192,8 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                     requestId: request.id,
                     postTitle: requested.title,
                     postVersion: request.postVersion,
+                    destinationId: request.destinationId,
+                    destinationName,
                   }}
                 />
                 <hr className="border-slate-200 dark:border-slate-800" />

@@ -62,8 +62,24 @@ function useRefreshOnSuccess(state: State) {
   }, [state, router]);
 }
 
-/** Ask for publication of the post at the version shown. */
-export function RequestPublishForm({ workspaceId, postId, version }: { workspaceId: string; postId: string; version: number }) {
+export type DestinationOption = { id: string; name: string };
+
+/**
+ * Ask for publication of the post at the version shown, on one explicit
+ * destination (today the workspace's internal destination: no picker until a
+ * real external adapter exists).
+ */
+export function RequestPublishForm({
+  workspaceId,
+  postId,
+  version,
+  destination,
+}: {
+  workspaceId: string;
+  postId: string;
+  version: number;
+  destination: DestinationOption;
+}) {
   const [state, action] = useActionState<State, FormData>(requestPublishAction, null);
   useRefreshOnSuccess(state);
   const id = useId();
@@ -73,6 +89,10 @@ export function RequestPublishForm({ workspaceId, postId, version }: { workspace
       <input type="hidden" name="workspaceId" value={workspaceId} />
       <input type="hidden" name="postId" value={postId} />
       <input type="hidden" name="expectedVersion" value={version} />
+      <input type="hidden" name="destinationId" value={destination.id} />
+      <p className="text-sm text-slate-600 dark:text-slate-400" data-testid="request-publish-destination">
+        Đích xuất bản: <span className="font-medium text-slate-800 dark:text-slate-200">{destination.name}</span>
+      </p>
       <div>
         <FieldLabel htmlFor={`${id}-reason`}>Ghi chú cho người duyệt (không bắt buộc)</FieldLabel>
         <textarea
@@ -103,6 +123,9 @@ export type ApprovalTarget = {
   requestId: string;
   postTitle: string;
   postVersion: number;
+  /** The destination this approval is for (shown and sent back as expectedDestinationId). */
+  destinationId: string;
+  destinationName: string;
 };
 
 /**
@@ -146,12 +169,14 @@ export function ApproveForm({ target }: { target: ApprovalTarget }) {
       </p>
       <p>
         Bạn sắp xuất bản <strong>phiên bản {target.postVersion}</strong> của bài viết{" "}
-        <strong data-testid="approve-confirm-title-text">“{target.postTitle}”</strong>. Sau khi xuất bản, bài viết chỉ có
-        thể xem, không sửa được nữa.
+        <strong data-testid="approve-confirm-title-text">“{target.postTitle}”</strong> lên đích{" "}
+        <strong data-testid="approve-confirm-destination">{target.destinationName}</strong>. Phê duyệt chỉ áp dụng cho
+        đích này. Sau khi xuất bản, bài viết chỉ có thể xem, không sửa được nữa.
       </p>
       <input type="hidden" name="workspaceId" value={target.workspaceId} />
       <input type="hidden" name="requestId" value={target.requestId} />
       <input type="hidden" name="expectedPostVersion" value={target.postVersion} />
+      <input type="hidden" name="expectedDestinationId" value={target.destinationId} />
       <input type="hidden" name="confirm" value="approve" />
       <div className="flex flex-wrap gap-2">
         <SubmitButton pendingLabel="Đang xuất bản…" testId="approve-confirm-submit">

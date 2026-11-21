@@ -23,6 +23,8 @@ import type {
   WorkspaceRole,
 } from "@/types/database";
 
+import { resolveRequestDestination } from "@/lib/publishing/destinations";
+
 import { contentClient } from "./client";
 import { ContentError, parseContentInput, toContentError } from "./errors";
 
@@ -30,8 +32,10 @@ import { ContentError, parseContentInput, toContentError } from "./errors";
  * M4 publish approval: data layer over the RPCs of
  * supabase/migrations/20261120200000_publish_approval.sql.
  *
- *   request_post_publish(p_post_id, p_expected_version, p_source, p_agent_turn_id, p_reason)
- *   approve_publish_request(p_request_id, p_expected_post_version)  -> content_posts
+ *   request_post_publish(p_post_id, p_expected_version, p_source, p_agent_turn_id, p_reason,
+ *                        p_destination_id)                               (M4.6a)
+ *   approve_publish_request(p_request_id, p_expected_post_version,
+ *                           p_expected_destination_id)  -> content_posts (M4.6a)
  *   reject_publish_request(p_request_id, p_note)                    -> content_publish_requests
  *   cancel_publish_request(p_request_id)                            -> content_publish_requests
  *
@@ -59,6 +63,8 @@ export type PublishRequest = {
   id: string;
   workspaceId: string;
   postId: string;
+  /** The one destination this request (and its approval) is for. */
+  destinationId: string;
   postVersion: number;
   status: PublishRequestStatus;
   displayStatus: PublishRequestDisplayStatus;
@@ -113,7 +119,7 @@ type EventRow = {
 };
 
 const REQUEST_COLUMNS =
-  "id, workspace_id, post_id, post_version, status, request_source, agent_turn_id, reason, requested_by, requested_at, expires_at, decided_by, decided_at, decision_note, cancel_reason";
+  "id, workspace_id, post_id, destination_id, post_version, status, request_source, agent_turn_id, reason, requested_by, requested_at, expires_at, decided_by, decided_at, decision_note, cancel_reason";
 const EVENT_COLUMNS = "id, request_id, post_id, post_version, event, cancel_reason, actor_id, actor_source, created_at";
 
 function isExpired(row: Pick<ContentPublishRequestRow, "expires_at">, now = Date.now()): boolean {
@@ -126,6 +132,7 @@ function toRequest(row: ContentPublishRequestRow): PublishRequest {
     id: row.id,
     workspaceId: row.workspace_id,
     postId: row.post_id,
+    destinationId: row.destination_id,
     postVersion: row.post_version,
     status: row.status,
     displayStatus: row.status === "pending" && isExpired(row) ? "expired" : row.status,
@@ -250,24 +257,31 @@ function assertDecidable(request: ContentPublishRequestRow): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Asks for the post to be published at exactly `expectedVersion` (any member).
- * Errors: version_conflict, request_pending_exists, post_published, archived,
+ * Asks for the post to be published at exactly `expectedVersion` on ONE
+ * destination (any member). The destination is always passed to the database
+ * explicitly: the given one (active, same workspace as the post), or — legacy M4
+ * callers that send none — the workspace's internal destination, resolved here.
+ * The agent must always name it. Errors: version_conflict,
+ * request_pending_exists, post_published, archived, destination_disabled,
  * not_found.
  */
 export async function requestPostPublish(input: unknown, options?: PublishRequestOptions): Promise<PublishRequest> {
   const { source, agentTurnId, workspaceId } = parseRequestOptions(options);
-  const { postId, expectedVersion, reason } = parseContentInput(publishRequestCreateSchema, input);
+  const { postId, expectedVersion, reason, destinationId } = parseContentInput(publishRequestCreateSchema, input);
+  if (source === "agent" && destinationId === undefined) {
+    throw new ContentError("invalid_input", { destinationId: "Cần chọn đích xuất bản." });
+  }
   const { supabase } = await contentClient();
 
-  if (workspaceId !== undefined) {
-    const { data: post, error } = await supabase
-      .from("content_posts")
-      .select("id, workspace_id")
-      .eq("id", postId)
-      .maybeSingle();
-    if (error) throw toContentError(error);
-    if (!post || post.workspace_id !== workspaceId) throw new ContentError("not_found");
-  }
+  // The post decides the workspace (never the input); RLS hides other workspaces.
+  const { data: post, error: postError } = await supabase
+    .from("content_posts")
+    .select("id, workspace_id")
+    .eq("id", postId)
+    .maybeSingle();
+  if (postError) throw toContentError(postError);
+  if (!post || (workspaceId !== undefined && post.workspace_id !== workspaceId)) throw new ContentError("not_found");
+  const destination = await resolveRequestDestination(supabase, post.workspace_id, destinationId);
 
   const { data, error } = await supabase.rpc("request_post_publish", {
     p_post_id: postId,
@@ -275,9 +289,10 @@ export async function requestPostPublish(input: unknown, options?: PublishReques
     p_source: source,
     p_agent_turn_id: agentTurnId ?? null,
     p_reason: reason,
+    p_destination_id: destination.id,
   });
-  // Two concurrent requests for the same post: the loser hits the unique
-  // "one pending request per post" index.
+  // Two concurrent requests for the same post and destination: the loser hits
+  // the unique "one pending request per (post, destination)" index.
   if (error && typeof error === "object" && "code" in error && error.code === "23505") {
     throw new ContentError("request_pending_exists");
   }
@@ -285,23 +300,31 @@ export async function requestPostPublish(input: unknown, options?: PublishReques
 }
 
 /**
- * Approves a pending request and publishes the post in one database transaction
- * (owners/admins of the request's workspace). `expectedPostVersion` is the post
- * version the approver was shown. Errors: forbidden, request_closed,
- * request_expired, version_conflict, archived, post_published, not_found.
+ * Approves a pending request for exactly its destination (owners/admins of the
+ * request's workspace). For the internal destination the post is published in
+ * the same database transaction. `expectedPostVersion` and
+ * `expectedDestinationId` are what the approver was shown; the destination is
+ * always sent to the database explicitly (the stored one when a legacy caller
+ * omits it). Errors: forbidden, request_closed, request_expired,
+ * version_conflict, destination_mismatch, destination_disabled, archived,
+ * post_published, not_found.
  */
 export async function approvePublishRequest(input: unknown): Promise<PublishedPost> {
-  const { requestId, expectedPostVersion } = parseContentInput(publishApproveSchema, input);
+  const { requestId, expectedPostVersion, expectedDestinationId } = parseContentInput(publishApproveSchema, input);
   const { supabase, user } = await contentClient();
 
   const { request, role } = await loadRequestForDecision(supabase, user.id, requestId);
   if (!MANAGER_ROLES.includes(role)) throw new ContentError("forbidden");
   assertDecidable(request);
   if (request.post_version !== expectedPostVersion) throw new ContentError("version_conflict");
+  if (expectedDestinationId !== undefined && expectedDestinationId !== request.destination_id) {
+    throw new ContentError("destination_mismatch");
+  }
 
   const { data, error } = await supabase.rpc("approve_publish_request", {
     p_request_id: requestId,
     p_expected_post_version: expectedPostVersion,
+    p_expected_destination_id: expectedDestinationId ?? request.destination_id,
   });
   if (error) throw toContentError(error);
   if (!data) throw new ContentError("unknown");

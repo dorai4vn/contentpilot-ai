@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +21,8 @@ const PROJECT = "33333333-3333-4333-8333-333333333333";
 const POST = "44444444-4444-4444-8444-444444444444";
 const REQUEST = "66666666-6666-4666-8666-666666666666";
 const TURN = "77777777-7777-4777-8777-777777777777";
+const DEST = "88888888-8888-4888-8888-888888888888"; // internal destination of WS
+const EXT = "99999999-0000-4000-8000-000000000001"; // another destination of WS
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 
@@ -28,6 +30,7 @@ const requestRow = {
   id: REQUEST,
   workspace_id: WS,
   post_id: POST,
+  destination_id: DEST,
   post_version: 3,
   status: "pending",
   request_source: "user",
@@ -61,6 +64,19 @@ const publishedRow = {
 };
 
 const role = (r: "owner" | "admin" | "member") => ok({ role: r });
+const destinationRow = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  workspace_id: WS,
+  kind: "internal",
+  name: "Nội bộ",
+  target_ref: null,
+  status: "active",
+  created_at: "2026-11-01T00:00:00Z",
+  ...over,
+});
+/** Reads done by requestPostPublish before the RPC: the post, then the destination. */
+const postRef = (workspaceId = WS) => ok({ id: POST, workspace_id: workspaceId });
+const internalDest = () => ok(destinationRow(DEST));
 
 function setup(results: FakeResult[]) {
   const fake = fakeSupabase(results);
@@ -107,17 +123,24 @@ describe("module surface", () => {
   });
 });
 
-describe("RPC signatures match the committed M4.1 migration", () => {
-  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261120200000_publish_approval.sql"), "utf8");
+describe("RPC signatures match the LATEST migration defining them", () => {
+  // Migrations replace functions (M4.6a); the last definition in file order wins.
+  const dir = join(process.cwd(), "supabase/migrations");
+  const sql = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(dir, f), "utf8"))
+    .join("\n");
   const params = (fn: string) => {
-    const match = new RegExp(`create function public\\.${fn}\\(([^)]*)\\)`).exec(sql);
-    if (!match) throw new Error(`function ${fn} not found in migration`);
-    return match[1]!.split(",").map((p) => p.trim().split(/\s+/)[0]).filter(Boolean);
+    const matches = [...sql.matchAll(new RegExp(`create function public\\.${fn}\\(([^)]*)\\)`, "g"))];
+    const last = matches.at(-1);
+    if (!last) throw new Error(`function ${fn} not found in migrations`);
+    return last[1]!.split(",").map((p) => p.trim().split(/\s+/)[0]).filter(Boolean);
   };
 
   it.each([
-    ["request_post_publish", ["p_post_id", "p_expected_version", "p_source", "p_agent_turn_id", "p_reason"]],
-    ["approve_publish_request", ["p_request_id", "p_expected_post_version"]],
+    ["request_post_publish", ["p_post_id", "p_expected_version", "p_source", "p_agent_turn_id", "p_reason", "p_destination_id"]],
+    ["approve_publish_request", ["p_request_id", "p_expected_post_version", "p_expected_destination_id"]],
     ["reject_publish_request", ["p_request_id", "p_note"]],
     ["cancel_publish_request", ["p_request_id"]],
   ])("%s(%s)", async (fn, expected) => {
@@ -130,7 +153,11 @@ describe("RPC signatures match the committed M4.1 migration", () => {
       cancel_publish_request: () => publish.cancelPublishRequest({ requestId: REQUEST }),
     }[fn as string]!;
     const result = fn === "approve_publish_request" ? publishedRow : requestRow;
-    const fake = setup(fn === "request_post_publish" ? [ok(result)] : [ok({ ...requestRow, requested_by: USER }), role("owner"), ok(result)]);
+    const fake = setup(
+      fn === "request_post_publish"
+        ? [postRef(), internalDest(), ok(result)]
+        : [ok({ ...requestRow, requested_by: USER }), role("owner"), ok(result)],
+    );
     await run();
     expect(fake.rpcs).toHaveLength(1);
     expect(fake.rpcs[0]!.fn).toBe(fn);
@@ -154,22 +181,66 @@ describe("unauthenticated callers", () => {
 });
 
 describe("requestPostPublish", () => {
-  it("calls request_post_publish with exactly the documented parameters", async () => {
-    const fake = setup([ok(requestRow)]);
+  it("legacy call without a destination: resolves the internal destination and passes it explicitly", async () => {
+    const fake = setup([postRef(), internalDest(), ok(requestRow)]);
     const result = await publish.requestPostPublish({ postId: POST.toUpperCase(), expectedVersion: "3", reason: "  Sẵn sàng " });
 
+    expect(fake.queries[0]!.table).toBe("content_posts");
+    expect(fake.queries[1]!.table).toBe("publishing_destinations");
+    expect(fake.queries[1]!.calls).toContainEqual(["eq", ["workspace_id", WS]]);
+    expect(fake.queries[1]!.calls).toContainEqual(["eq", ["kind", "internal"]]);
     expect(fake.rpcs).toEqual([
       {
         fn: "request_post_publish",
-        args: { p_post_id: POST, p_expected_version: 3, p_source: "user", p_agent_turn_id: null, p_reason: "Sẵn sàng" },
+        args: {
+          p_post_id: POST,
+          p_expected_version: 3,
+          p_source: "user",
+          p_agent_turn_id: null,
+          p_reason: "Sẵn sàng",
+          p_destination_id: DEST,
+        },
       },
     ]);
-    expect(fake.queries).toHaveLength(0);
-    expect(result).toMatchObject({ id: REQUEST, postVersion: 3, status: "pending", displayStatus: "pending" });
+    expect(result).toMatchObject({ id: REQUEST, destinationId: DEST, postVersion: 3, status: "pending", displayStatus: "pending" });
+  });
+
+  it("an explicit destination of the post's workspace is checked and passed", async () => {
+    const fake = setup([postRef(), ok(destinationRow(EXT, { name: "Kênh A" })), ok({ ...requestRow, destination_id: EXT })]);
+    const result = await publish.requestPostPublish({ postId: POST, expectedVersion: 3, destinationId: EXT });
+    expect(fake.queries[1]!.calls).toContainEqual(["eq", ["id", EXT]]);
+    expect(fake.rpcs[0]!.args.p_destination_id).toBe(EXT);
+    expect(result.destinationId).toBe(EXT);
+  });
+
+  it("a destination of another workspace (or invisible) is not_found, nothing written", async () => {
+    let fake = setup([postRef(), ok(destinationRow(EXT, { workspace_id: OTHER_WS }))]);
+    await expectContentError(publish.requestPostPublish({ postId: POST, expectedVersion: 3, destinationId: EXT }), "not_found");
+    expect(fake.rpcs).toHaveLength(0);
+    fake = setup([postRef(), ok(null)]);
+    await expectContentError(publish.requestPostPublish({ postId: POST, expectedVersion: 3, destinationId: EXT }), "not_found");
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("a disabled destination: destination_disabled (Vietnamese), nothing written", async () => {
+    const fake = setup([postRef(), ok(destinationRow(EXT, { status: "disabled" }))]);
+    const error = await expectContentError(
+      publish.requestPostPublish({ postId: POST, expectedVersion: 3, destinationId: EXT }),
+      "destination_disabled",
+    );
+    expect(error.message).toMatch(/tạm ngừng/);
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("a post that is not visible: not_found before resolving any destination", async () => {
+    const fake = setup([ok(null)]);
+    await expectContentError(publish.requestPostPublish({ postId: POST, expectedVersion: 3 }), "not_found");
+    expect(fake.queries).toHaveLength(1);
+    expect(fake.rpcs).toHaveLength(0);
   });
 
   it("sends an empty reason as null", async () => {
-    const fake = setup([ok(requestRow)]);
+    const fake = setup([postRef(), internalDest(), ok(requestRow)]);
     await publish.requestPostPublish({ postId: POST, expectedVersion: 3, reason: "   " });
     expect(fake.rpcs[0]!.args.p_reason).toBeNull();
   });
@@ -211,26 +282,36 @@ describe("requestPostPublish", () => {
   });
 
   it("accepts a reason of exactly 500 code points (emoji count once)", async () => {
-    const fake = setup([ok(requestRow)]);
+    const fake = setup([postRef(), internalDest(), ok(requestRow)]);
     await publish.requestPostPublish({ postId: POST, expectedVersion: 3, reason: "😀".repeat(500) });
     expect(fake.rpcs).toHaveLength(1);
   });
 
-  it("agent requests (trusted option) pass the source and turn id", async () => {
-    const fake = setup([ok({ id: POST, workspace_id: WS }), ok({ ...requestRow, request_source: "agent", agent_turn_id: TURN })]);
+  it("agent requests (trusted option) pass the source, turn id and their explicit destination", async () => {
+    const fake = setup([postRef(), internalDest(), ok({ ...requestRow, request_source: "agent", agent_turn_id: TURN })]);
     const result = await publish.requestPostPublish(
-      { postId: POST, expectedVersion: 3 },
+      { postId: POST, expectedVersion: 3, destinationId: DEST },
       { source: "agent", agentTurnId: TURN, workspaceId: WS },
     );
     expect(fake.queries[0]!.table).toBe("content_posts");
-    expect(fake.rpcs[0]!.args).toMatchObject({ p_source: "agent", p_agent_turn_id: TURN });
+    expect(fake.rpcs[0]!.args).toMatchObject({ p_source: "agent", p_agent_turn_id: TURN, p_destination_id: DEST });
     expect(result).toMatchObject({ requestSource: "agent", agentTurnId: TURN });
   });
 
-  it("a workspace-scoped call refuses a post of another workspace without writing", async () => {
-    const fake = setup([ok({ id: POST, workspace_id: OTHER_WS })]);
-    await expectContentError(
+  it("agent requests without a destination are rejected before any query", async () => {
+    const fake = setup([]);
+    const error = await expectContentError(
       publish.requestPostPublish({ postId: POST, expectedVersion: 3 }, { source: "agent", agentTurnId: TURN, workspaceId: WS }),
+      "invalid_input",
+    );
+    expect(error.fieldErrors?.destinationId).toBe("Cần chọn đích xuất bản.");
+    expect(fake.queries).toHaveLength(0);
+  });
+
+  it("a workspace-scoped call refuses a post of another workspace without writing", async () => {
+    const fake = setup([postRef(OTHER_WS)]);
+    await expectContentError(
+      publish.requestPostPublish({ postId: POST, expectedVersion: 3, destinationId: DEST }, { source: "agent", agentTurnId: TURN, workspaceId: WS }),
       "not_found",
     );
     expect(fake.rpcs).toHaveLength(0);
@@ -258,9 +339,10 @@ describe("requestPostPublish", () => {
     ["CP422", "post_published"],
     ["CP423", "archived"],
     ["CP404", "not_found"],
+    ["CP426", "destination_disabled"],
     ["42501", "forbidden"],
   ] as const)("maps database error %s to %s", async (sqlstate, code) => {
-    setup([dbError(sqlstate)]);
+    setup([postRef(), internalDest(), dbError(sqlstate)]);
     const error = await expectContentError(publish.requestPostPublish({ postId: POST, expectedVersion: 3 }), code);
     expect(error.message).toBe(CONTENT_ERROR_MESSAGES[code]);
     expect(JSON.stringify({ ...error, message: error.message })).not.toMatch(/secret/);
@@ -278,8 +360,12 @@ describe("approvePublishRequest", () => {
     expect(fake.queries[1]!.table).toBe("workspace_members");
     expect(fake.queries[1]!.calls).toContainEqual(["eq", ["workspace_id", WS]]);
     expect(fake.queries[1]!.calls).toContainEqual(["eq", ["user_id", USER]]);
+    // Legacy call without expectedDestinationId: the stored destination is sent explicitly.
     expect(fake.rpcs).toEqual([
-      { fn: "approve_publish_request", args: { p_request_id: REQUEST, p_expected_post_version: 3 } },
+      {
+        fn: "approve_publish_request",
+        args: { p_request_id: REQUEST, p_expected_post_version: 3, p_expected_destination_id: DEST },
+      },
     ]);
     expect(result).toEqual({
       id: POST,
@@ -291,6 +377,27 @@ describe("approvePublishRequest", () => {
       publishedAt: "2026-11-20T12:00:00Z",
       updatedBy: USER,
     });
+  });
+
+  it("passes the destination the approver was shown", async () => {
+    const fake = setup([ok(requestRow), role("owner"), ok(publishedRow)]);
+    await publish.approvePublishRequest({ requestId: REQUEST, expectedPostVersion: 3, expectedDestinationId: DEST.toUpperCase() });
+    expect(fake.rpcs[0]!.args.p_expected_destination_id).toBe(DEST);
+  });
+
+  it("a different destination than requested: destination_mismatch, no RPC call", async () => {
+    const fake = setup([ok(requestRow), role("owner")]);
+    const error = await expectContentError(
+      publish.approvePublishRequest({ requestId: REQUEST, expectedPostVersion: 3, expectedDestinationId: EXT }),
+      "destination_mismatch",
+    );
+    expect(error.message).toMatch(/không khớp/);
+    expect(fake.rpcs).toHaveLength(0);
+  });
+
+  it("CP426 from the database (destination disabled meanwhile) -> destination_disabled", async () => {
+    setup([ok(requestRow), role("owner"), dbError("CP426")]);
+    await expectContentError(publish.approvePublishRequest({ requestId: REQUEST, expectedPostVersion: 3 }), "destination_disabled");
   });
 
   it("admin may approve too, including a request they sent themselves", async () => {

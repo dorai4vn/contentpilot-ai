@@ -57,6 +57,8 @@ export type ContentPublishRequestRow = {
   id: string;
   workspace_id: string;
   post_id: string;
+  /** M4.6a: the one destination this request (and its approval) is for. */
+  destination_id: string;
   post_version: number;
   status: PublishRequestStatus;
   request_source: ContentChangeSource;
@@ -308,9 +310,7 @@ export type Database = {
         Relationships: [];
       };
       content_publish_requests: {
-        // M4.6a: destination_id is the one destination this request (and its approval) is for.
-        // ContentPublishRequestRow (used by the M4.2 data layer) is unchanged until M4.6b reads it.
-        Row: ContentPublishRequestRow & { destination_id: string };
+        Row: ContentPublishRequestRow;
         // Written only by the publish RPCs.
         Insert: { [_ in never]: never };
         Update: { [_ in never]: never };

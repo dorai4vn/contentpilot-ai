@@ -135,6 +135,35 @@ describe("PostEditor", () => {
     expect(html).not.toContain('data-testid="save-post"');
   });
 
+  describe("hydration safety (server render = before hydration)", () => {
+    const html = renderToStaticMarkup(<PostEditor post={post} readOnly={false} />);
+
+    it("marks the form as not ready yet", () => {
+      expect(html).toMatch(/data-testid="post-editor-form"[^>]*data-ready="false"/);
+      expect(html).not.toContain('data-ready="true"');
+    });
+
+    it("title and body are read-only (not editable) but still part of the form", () => {
+      expect(html).toMatch(/<input[^>]*id="post-title"[^>]*readOnly=""/);
+      expect(html).toMatch(/<textarea[^>]*id="post-body"[^>]*readOnly=""/);
+      // readOnly, not disabled: the stored values remain in the form.
+      expect(html).not.toMatch(/id="post-title"[^>]*disabled=""/);
+      expect(html).not.toMatch(/<textarea[^>]*disabled=""/);
+      expect(fields(html).body).toBeDefined();
+    });
+
+    it("the save button cannot be pressed before hydration", () => {
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="save-post"/);
+    });
+
+    it("a read-only (archived/published) post stays disabled, with no save button", () => {
+      const ro = renderToStaticMarkup(<PostEditor post={{ ...post, status: "published" }} readOnly />);
+      expect(ro).toMatch(/id="post-title"[^>]*disabled=""/);
+      expect(ro).toMatch(/<textarea[^>]*disabled=""/);
+      expect(ro).not.toContain('data-testid="save-post"');
+    });
+  });
+
   it("has no publish or delete control", () => {
     const html = renderToStaticMarkup(<PostEditor post={post} readOnly={false} />).toLowerCase();
     expect(html).not.toContain("publish");

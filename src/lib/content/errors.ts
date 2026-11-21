@@ -12,6 +12,8 @@ import { z } from "zod";
  *   CP410 publish request no longer pending (decided, cancelled or expired)
  *   CP412 the post already has a pending publish request
  *   CP422 the post is published (read-only)
+ * and by supabase/migrations/20261121120000_publishing_destinations.sql (M4.6a):
+ *   CP426 the publishing destination is disabled
  */
 
 export type ContentErrorCode =
@@ -26,6 +28,8 @@ export type ContentErrorCode =
   | "request_expired"
   | "request_pending_exists"
   | "post_published"
+  | "destination_disabled"
+  | "destination_mismatch"
   | "unknown";
 
 export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
@@ -43,6 +47,9 @@ export const CONTENT_ERROR_MESSAGES: Record<ContentErrorCode, string> = {
     "Yêu cầu xuất bản đã hết hạn sau 7 ngày nên không thể phê duyệt. Hãy gửi yêu cầu mới nếu bài viết vẫn cần xuất bản.",
   request_pending_exists: "Bài viết này đã có một yêu cầu xuất bản đang chờ duyệt.",
   post_published: "Bài viết đã được xuất bản nên không thể chỉnh sửa hoặc gửi yêu cầu xuất bản lại.",
+  destination_disabled: "Đích xuất bản này đang tạm ngừng nên không thể gửi hoặc phê duyệt yêu cầu.",
+  destination_mismatch:
+    "Đích xuất bản không khớp với yêu cầu đang được duyệt. Hãy tải lại trang để xem thông tin mới nhất.",
   unknown: "Đã có lỗi xảy ra. Vui lòng thử lại.",
 };
 
@@ -66,6 +73,7 @@ const SQLSTATE_TO_CODE: Record<string, ContentErrorCode> = {
   CP410: "request_closed",
   CP412: "request_pending_exists",
   CP422: "post_published",
+  CP426: "destination_disabled",
   "42501": "forbidden", // insufficient_privilege, RLS violation, publishing disabled
   "23514": "invalid_input", // check_violation
   "23502": "invalid_input", // not_null_violation
