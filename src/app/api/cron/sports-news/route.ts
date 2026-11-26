@@ -14,8 +14,13 @@ export async function POST(request: Request) {
   }
   try {
     const config = readSportsNewsConfig();
-    const report = new URL(request.url).searchParams.get("mode") === "setup"
-      ? await checkSportsNewsSetup(config)
+    const params = new URL(request.url).searchParams;
+    const channel = params.get("channel");
+    if (params.get("mode") === "setup" && channel !== null && !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(channel)) {
+      return Response.json({ error: "invalid_channel" }, { status: 400 });
+    }
+    const report = params.get("mode") === "setup"
+      ? await checkSportsNewsSetup(config, channel ?? undefined)
       : await runSportsNews(config);
     return Response.json(report, { headers: { "Cache-Control": "no-store" } });
   } catch {
