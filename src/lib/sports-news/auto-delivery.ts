@@ -26,6 +26,7 @@ export async function sendTemporarySportsPost(client: Client, target: Destinatio
 }) {
   // Prepare bytes before reserving the send so a failed crop can still go through human review.
   const image = await readSportsPhoto(client, post.id, 1);
+  if (!image) return false;
   const { data, error } = await client.rpc("claim_sports_auto_publish", {
     ...argsFor(target), p_post_id: post.id,
   });
@@ -42,7 +43,7 @@ export async function sendTemporarySportsPost(client: Client, target: Destinatio
 
   const publisher = getPublisher("telegram");
   const result = allowed ? await publisher.publish(publisher.render({
-    postId: post.id, postVersion: 1, title: post.title, body: post.body, ...(image ? { image } : {}),
+    postId: post.id, postVersion: 1, title: post.title, body: post.body, image,
   }), {
     targetRef: lease.target_ref, credentials: new PublisherSecret(token), idempotencyKey: `rss-auto:${lease.id}`,
   }) : { ok: false as const, code: "window_expired" };
