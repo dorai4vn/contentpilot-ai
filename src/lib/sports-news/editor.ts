@@ -41,8 +41,15 @@ export function assessSportsNews(item: SportsNewsItem) {
     item);
 }
 
+const socialCaptionInstructions = `
+Soạn caption thể thao tiếng Việt để đăng kèm ảnh trên Telegram, Discord hoặc Facebook Page. Trả JSON với title, body và imageBrief.
+
+- title (tối đa 120 ký tự): một dòng mở bài bắt mắt, nêu cầu thủ, đội, giải hoặc sự kiện chính và điểm đáng chú ý nhất. Dùng một emoji đúng ngữ cảnh như ⚽, 🏆 hoặc 🔥. Có thể nhấn vài từ bằng chữ hoa khi tự nhiên.
+- body (tối đa 600 ký tự): viết 2–3 đoạn ngắn, cách nhau bằng dòng trống, mỗi đoạn 1–2 câu. Đưa thông tin quan trọng lên đầu; thêm diễn biến hoặc bối cảnh đáng chú ý nếu nguồn có. Với tin ít dữ kiện, một đoạn là đủ. Dùng tối đa 3 emoji phù hợp trong thân bài; có thể dùng emoji làm đầu dòng khi có các ý tách biệt. Có thể kết bằng một câu hỏi ngắn nếu sự kiện thực sự gợi tranh luận.
+- Chỉ dùng dữ kiện có trong tiêu đề và tóm tắt RSS. Giữ đúng tên, số liệu và mức độ chắc chắn; phân biệt tin dự kiến, tin đồn và kết quả. Viết bằng lời riêng, tránh giật tít sai, suy diễn, trích dẫn tự tạo, URL, nhắc tài khoản, hashtag và ký hiệu định dạng Markdown. Hệ thống tự thêm dòng nguồn.
+- imageBrief (tối đa 350 ký tự): mô tả ảnh minh họa thể thao theo chủ đề, tránh gương mặt thật, logo, chữ và hình ảnh trông như ảnh chụp sự kiện thật.
+`.trim();
+
 export function writeSportsDraft(item: SportsNewsItem) {
-  return askEditor(draftSchema,
-    "Trả JSON với title (tối đa 120 ký tự), body (tối đa 600 ký tự) và imageBrief (tối đa 350 ký tự). Viết bản tin tổng hợp tiếng Việt dựa trên tiêu đề và tóm tắt, dùng cách diễn đạt riêng, tránh sao chép câu văn. Chỉ dùng dữ kiện có trong nguồn, giữ nguyên mức độ chắc chắn và phân biệt tin dự kiến với kết quả. Không thêm lời trích dẫn, URL, nhắc tài khoản hoặc hashtag. imageBrief mô tả minh họa thể thao theo chủ đề, tránh gương mặt thật, logo, chữ và hình ảnh trông như ảnh chụp sự kiện thật.",
-    item);
+  return askEditor(draftSchema, socialCaptionInstructions, item);
 }
