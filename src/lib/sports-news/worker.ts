@@ -16,6 +16,7 @@ import { collectSportsNews } from "./feeds";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
+import { findSourceSportsPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
 import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_SCORING_RUBRIC } from "./scoring";
@@ -194,7 +195,8 @@ export async function runSportsNews(config: Config, testDate?: string) {
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
-      const photo = draft?.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null;
+      const photo = draft ? await findSourceSportsPhoto(item)
+        ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
       if (!testDate && !publishedToday(item.publishedAt)) return null;
       const result = await client.rpc("record_sports_news_assessment", {
         p_workspace_id: config.workspaceId,

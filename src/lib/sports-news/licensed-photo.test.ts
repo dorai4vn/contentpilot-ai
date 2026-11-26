@@ -32,11 +32,12 @@ it.each([
   ["CC BY-NC 4.0", "https://creativecommons.org/licenses/by-nc/4.0/"],
   ["CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"],
   ["CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/"],
-])("rejects unavailable reuse rights (%s)", async (license, url) => {
-  const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(page(license, url)));
+])("accepts a relevant Commons photo regardless of license (%s)", async (license, url) => {
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(page(license, url)))
+    .mockResolvedValueOnce(new Response(Uint8Array.of(255, 216, 255), { headers: { "content-type": "image/jpeg" } }));
   vi.stubGlobal("fetch", fetchMock);
-  await expect(findLicensedSportsPhoto("Bayern München")).resolves.toBeNull();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  await expect(findLicensedSportsPhoto("Bayern München")).resolves.toMatchObject({ metadata: { license } });
 });
 
 it("rejects untrusted image hosts", async () => {

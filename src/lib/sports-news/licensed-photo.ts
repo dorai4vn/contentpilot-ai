@@ -35,13 +35,7 @@ function photoLicense(fields: z.infer<typeof metadata>) {
   const license = plain(fields.LicenseShortName?.value ?? "");
   const url = fields.LicenseUrl?.value ?? "";
   const author = plain(fields.Artist?.value ?? "").slice(0, 100) || null;
-  if (license === "CC0" && /^https?:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0(?:\/(?:deed(?:\.[a-z-]+)?|legalcode)?)?$/.test(url)) {
-    return { license, licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", author };
-  }
-  if (license === "Public domain" && fields.Copyrighted?.value.toLowerCase() === "false") {
-    return { license, licenseUrl: null, author };
-  }
-  return null;
+  return { license: license || null, licenseUrl: /^https:\/\//.test(url) ? url : null, author };
 }
 
 async function downloadJpeg(raw: string) {
@@ -128,7 +122,6 @@ export async function findLicensedSportsPhoto(subject: string, match?: MatchPhot
           filename.some((word) => ["stadium", "arena", "stadion", "estadio"].includes(word))) continue;
       if (filename.some((word) => ["logo", "crest", "icon", "flag", "illustration", "drawing", "render"].includes(word))) continue;
       const license = photoLicense(info.extmetadata);
-      if (!license) continue;
       const image = await downloadJpeg(info.thumburl ?? info.url);
       if (!image) return null;
       const source = `https://commons.wikimedia.org/?curid=${page.pageid}`;
