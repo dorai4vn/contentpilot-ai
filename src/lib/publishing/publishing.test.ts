@@ -7,17 +7,17 @@ import { getPublisher, isSupportedKind, supportedKinds, UnsupportedDestinationKi
 import { PublisherSecret } from "./types";
 
 describe("registry", () => {
-  it("only the internal kind is supported today", () => {
-    expect(supportedKinds()).toEqual(["internal"]);
+  it("supports the platform adapters and rejects unknown kinds", () => {
+    expect(supportedKinds()).toEqual(["internal", "telegram", "discord", "facebook"]);
     expect(isSupportedKind("internal")).toBe(true);
-    for (const kind of ["telegram", "discord", "facebook", "", "__proto__", "constructor", "toString"]) {
+    for (const kind of ["", "__proto__", "constructor", "toString"]) {
       expect(isSupportedKind(kind), kind).toBe(false);
     }
   });
 
   it("returns the adapter for a supported kind and never falls back for others", () => {
     expect(getPublisher("internal")).toBe(internalPublisher);
-    expect(() => getPublisher("telegram")).toThrow(UnsupportedDestinationKindError);
+    expect(getPublisher("telegram").execution).toBe("async");
     expect(() => getPublisher("__proto__")).toThrow(UnsupportedDestinationKindError);
   });
 });

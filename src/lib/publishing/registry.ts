@@ -1,5 +1,6 @@
 import type { PublisherAdapter } from "./adapter";
 import { internalPublisher } from "./adapters/internal";
+import { socialPublisher } from "./adapters/social";
 import type { DestinationKind } from "./types";
 
 /**
@@ -9,6 +10,9 @@ import type { DestinationKind } from "./types";
  */
 const ADAPTERS: Readonly<Record<DestinationKind, PublisherAdapter>> = Object.freeze({
   internal: internalPublisher as PublisherAdapter,
+  telegram: socialPublisher("telegram") as PublisherAdapter,
+  discord: socialPublisher("discord") as PublisherAdapter,
+  facebook: socialPublisher("facebook") as PublisherAdapter,
 });
 
 export class UnsupportedDestinationKindError extends Error {

@@ -11,7 +11,7 @@ import type {
  * Nothing here holds a credential.
  */
 
-/** Destination kinds enabled in the database (CHECK). Future: "telegram" | "discord" | "facebook". */
+/** Destination kinds enabled in the database (CHECK). */
 export type DestinationKind = PublishingDestinationKind;
 
 /** A publishing destination as the app sees it: no credentials, only public data. */
@@ -50,6 +50,7 @@ export type ApprovedSnapshot = {
   postVersion: number;
   title: string;
   body: string;
+  image?: Uint8Array<ArrayBuffer>;
 };
 
 /** Short, safe error codes an adapter may report (stored in publish_deliveries.last_error_code). */
@@ -59,6 +60,7 @@ export type PublisherErrorCode =
   | "unauthorized"
   | "rate_limited"
   | "content_rejected"
+  | "delivery_unconfirmed"
   | "network_error"
   | "platform_error";
 

@@ -106,6 +106,10 @@ export type PublishedPost = {
   updatedBy: string | null;
 };
 
+export type ApprovedPost = PublishedPost | (
+  Omit<PublishedPost, "status" | "publishedAt"> & { status: "draft" | "ready"; publishedAt: null }
+);
+
 type EventRow = {
   id: string;
   request_id: string;
@@ -163,18 +167,23 @@ function toEvent(row: EventRow): PublishRequestAuditEvent {
   };
 }
 
-function toPublishedPost(row: ContentPostRow): PublishedPost {
-  if (row.status !== "published" || row.published_at === null) throw new ContentError("unknown");
-  return {
+function toApprovedPost(row: ContentPostRow, expectedVersion: number): ApprovedPost {
+  const post = {
     id: row.id,
     workspaceId: row.workspace_id,
     projectId: row.project_id,
     title: row.title,
-    status: "published",
     version: row.version,
-    publishedAt: row.published_at,
     updatedBy: row.updated_by,
   };
+  if (row.status === "published" && row.published_at !== null) {
+    return { ...post, status: "published", publishedAt: row.published_at };
+  }
+  if ((row.status === "draft" || row.status === "ready") &&
+      row.published_at === null && row.version === expectedVersion) {
+    return { ...post, status: row.status, publishedAt: null };
+  }
+  throw new ContentError("unknown");
 }
 
 function requestResult(data: ContentPublishRequestRow | null, error: unknown): PublishRequest {
@@ -309,7 +318,7 @@ export async function requestPostPublish(input: unknown, options?: PublishReques
  * version_conflict, destination_mismatch, destination_disabled, archived,
  * post_published, not_found.
  */
-export async function approvePublishRequest(input: unknown): Promise<PublishedPost> {
+export async function approvePublishRequest(input: unknown): Promise<ApprovedPost> {
   const { requestId, expectedPostVersion, expectedDestinationId } = parseContentInput(publishApproveSchema, input);
   const { supabase, user } = await contentClient();
 
@@ -328,7 +337,7 @@ export async function approvePublishRequest(input: unknown): Promise<PublishedPo
   });
   if (error) throw toContentError(error);
   if (!data) throw new ContentError("unknown");
-  return toPublishedPost(data);
+  return toApprovedPost(data, expectedPostVersion);
 }
 
 /** Rejects a pending request (owners/admins); the post is not changed. */

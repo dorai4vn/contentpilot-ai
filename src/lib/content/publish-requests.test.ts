@@ -489,7 +489,13 @@ describe("approvePublishRequest", () => {
     },
   );
 
-  it("a non-published result is treated as an unexpected error", async () => {
+  it("returns the unchanged draft once external delivery is queued", async () => {
+    setup([ok(requestRow), role("owner"), ok({ ...publishedRow, version: 3, status: "draft", published_at: null })]);
+    const result = await publish.approvePublishRequest({ requestId: REQUEST, expectedPostVersion: 3 });
+    expect(result).toMatchObject({ status: "draft", version: 3, publishedAt: null });
+  });
+
+  it("a changed version without internal publication is an unexpected result", async () => {
     setup([ok(requestRow), role("owner"), ok({ ...publishedRow, status: "draft", published_at: null })]);
     await expectContentError(publish.approvePublishRequest({ requestId: REQUEST, expectedPostVersion: 3 }), "unknown");
   });

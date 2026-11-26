@@ -139,5 +139,6 @@ Workflow CI được lưu trong .github/workflows/. Cần cấu hình môi trư�
 - GitHub: https://github.com/dorai4vn/contentpilot-ai
 
 **10. Hướng phát triển tiếp theo**
+Tính năng thử nghiệm RSS thể thao và xuất bản sau khi duyệt được mô tả trong [Tin thể thao từ RSS](docs/architecture/sports-news.md).
 
 M5 — Telegram/Discord/Facebook/Instagram Publisher: thêm điểm xuất bản bên ngoài, lưu thông tin kết nối an toàn, worker xử lý hàng đợi, retry có kiểm soát, chống gửi trùng ở mức khả thi và nhật ký lỗi. Mọi hoạt động gửi ra nền tảng ngoài vẫn phải đi qua Human Approval M4. Do bận đi kiếm tiền nên M5 tạm thời chưa thể triển khai trong phiên bản nộp bài này. Có thời gian em sẽ phát triển tiếp.
