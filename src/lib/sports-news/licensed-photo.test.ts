@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { findLicensedSportsPhoto } from "./licensed-photo";
+import { findLicensedSportsPhoto, findSportsPostPhoto } from "./licensed-photo";
 
 vi.mock("server-only", () => ({}));
 afterEach(() => vi.unstubAllGlobals());
@@ -69,4 +69,20 @@ it("uses a licensed fixture photo only when both teams and the requested date ma
   await expect(findLicensedSportsPhoto("Bayern München", { opponent: "Lille", playedOn: "2026-11-25" })).resolves.toMatchObject({
     attribution: expect.stringContaining("📷 Ảnh trận đấu"),
   });
+});
+
+
+it("uses a licensed prior meeting as archival when there is no image from the exact date", async () => {
+  const result = page("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/");
+  result.query.pages["123"].title = "File:Bayern München vs Lille 2024-10-01.jpg";
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(result))
+    .mockResolvedValueOnce(new Response(Uint8Array.of(255, 216, 255), { headers: { "content-type": "image/jpeg" } }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(findSportsPostPhoto("Bayern München", { opponent: "Lille", playedOn: "2026-11-25" })).resolves.toMatchObject({
+    attribution: expect.stringContaining("📷 Ảnh tư liệu"),
+    metadata: { exactMatch: false },
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
