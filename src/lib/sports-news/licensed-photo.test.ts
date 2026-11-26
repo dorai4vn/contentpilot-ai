@@ -46,3 +46,27 @@ it("rejects untrusted image hosts", async () => {
   await expect(findLicensedSportsPhoto("Bayern München")).resolves.toBeNull();
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+it("rejects a stadium photo for a fixture even when the file has a reusable license", async () => {
+  const result = page("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/");
+  result.query.pages["123"].title = "File:Bayern München Allianz Arena.jpg";
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(result));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(findLicensedSportsPhoto("Bayern München", { opponent: "Lille", playedOn: "2026-11-25" })).resolves.toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("uses a licensed fixture photo only when both teams and the requested date match", async () => {
+  const result = page("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/");
+  result.query.pages["123"].title = "File:Bayern München vs Lille 2026-11-25.jpg";
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(result))
+    .mockResolvedValueOnce(Response.json(result))
+    .mockResolvedValueOnce(new Response(Uint8Array.of(255, 216, 255), { headers: { "content-type": "image/jpeg" } }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(findLicensedSportsPhoto("Bayern München", { opponent: "Lille", playedOn: "2026-11-26" })).resolves.toBeNull();
+  await expect(findLicensedSportsPhoto("Bayern München", { opponent: "Lille", playedOn: "2026-11-25" })).resolves.toMatchObject({
+    attribution: expect.stringContaining("📷 Ảnh trận đấu"),
+  });
+});

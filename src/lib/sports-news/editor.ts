@@ -13,9 +13,13 @@ const assessmentSchema = z.strictObject({
   reason: z.string().trim().min(1).max(500),
 });
 const draftSchema = z.strictObject({
-  title: z.string().trim().min(1).max(120),
-  body: z.string().trim().min(1).max(600),
+  title: z.string().trim().min(1).max(80),
+  body: z.string().trim().min(1).max(520),
   photoSubject: z.string().trim().min(1).max(80).nullable(),
+  matchPhoto: z.object({
+    opponent: z.string().trim().min(1).max(80),
+    playedOn: z.iso.date(),
+  }).nullable(),
 });
 
 async function askEditor<T>(schema: z.ZodType<T>, instructions: string, item: SportsNewsItem): Promise<T> {
@@ -42,14 +46,23 @@ export function assessSportsNews(item: SportsNewsItem) {
 }
 
 const socialCaptionInstructions = `
-Soạn caption thể thao tiếng Việt để đăng kèm ảnh trên Telegram, Discord hoặc Facebook Page. Trả JSON với title, body và photoSubject.
+Soạn caption thể thao tiếng Việt để đăng kèm ảnh trên Telegram, Discord hoặc Facebook Page. Trả JSON với title, body, photoSubject và matchPhoto.
 
-- title (tối đa 120 ký tự): một dòng mở bài bắt mắt, nêu cầu thủ, đội, giải hoặc sự kiện chính và điểm đáng chú ý nhất. Dùng một emoji đúng ngữ cảnh như ⚽, 🏆 hoặc 🔥. Có thể nhấn vài từ bằng chữ hoa khi tự nhiên.
-- body (tối đa 600 ký tự): viết 2–3 đoạn ngắn, cách nhau bằng dòng trống, mỗi đoạn 1–2 câu. Đưa thông tin quan trọng lên đầu; thêm diễn biến hoặc bối cảnh đáng chú ý nếu nguồn có. Với tin ít dữ kiện, một đoạn là đủ. Dùng tối đa 3 emoji phù hợp trong thân bài; có thể dùng emoji làm đầu dòng khi có các ý tách biệt. Có thể kết bằng một câu hỏi ngắn nếu sự kiện thực sự gợi tranh luận.
+- title (tối đa 80 ký tự, nên 4–8 từ): headline MXH, một điểm đáng chú ý và một emoji mở đầu. Ví dụ về nhịp câu: “🚨 CÚ SỐC Ở C1!” hoặc “🔥 LILLE QUẬT NGÃ BAYERN!”. Ưu tiên động từ mạnh và tên đội khi phù hợp. Để tỷ số và bối cảnh xuống thân bài nếu tiêu đề đã rõ.
+- body (tối đa 520 ký tự): 1–3 đoạn ngắn, mỗi đoạn 1–2 câu, cách bằng một dòng trống. **Mỗi đoạn bắt đầu bằng đúng một emoji có ý nghĩa**: ⚡ cho diễn biến, 📉 cho hệ quả, 👀 cho điều đáng chú ý. Viết gần gũi như fan bóng đá đang kể tin, dùng câu ngắn, tránh giọng báo cáo hoặc câu sáo. Có thể dùng câu hỏi nếu có điều đáng bàn.
 - Chỉ dùng dữ kiện có trong tiêu đề và tóm tắt RSS. Giữ đúng tên, số liệu và mức độ chắc chắn; phân biệt tin dự kiến, tin đồn và kết quả. Viết bằng lời riêng, tránh giật tít sai, suy diễn, trích dẫn tự tạo, URL, nhắc tài khoản, hashtag và ký hiệu định dạng Markdown. Link bài gốc hiển thị riêng trong webapp.
-- photoSubject (tối đa 80 ký tự): chỉ ghi tên riêng ngắn gọn của đội, cầu thủ hoặc địa điểm chính có thật trong nguồn để tìm ảnh tư liệu trên Wikimedia Commons. Dùng cách viết quốc tế nếu biết (ví dụ Bayern München). Trả null nếu không xác định được chủ thể cụ thể.
+- photoSubject (tối đa 80 ký tự): chỉ ghi tên riêng ngắn gọn của đội hoặc cầu thủ chính có thật trong nguồn để tìm ảnh tư liệu trên Wikimedia Commons. Dùng cách viết quốc tế nếu biết (ví dụ Bayern München). Trả null nếu không xác định được chủ thể cụ thể.
+- matchPhoto: với tin về một trận đã diễn ra, trả { "opponent": tên đội còn lại, "playedOn": ngày thi đấu YYYY-MM-DD theo lịch địa phương nếu dữ kiện đủ rõ }. Trả null khi không xác định được ngày hoặc đối thủ. Với tin ngoài sân đấu cũng trả null.
 `.trim();
 
-export function writeSportsDraft(item: SportsNewsItem) {
-  return askEditor(draftSchema, socialCaptionInstructions, item);
+export async function writeSportsDraft(item: SportsNewsItem) {
+  const draft = await askEditor(draftSchema, socialCaptionInstructions, item);
+  const starters = ["⚡", "👀", "💬"];
+  const body = draft.body.split(/\n[ \t]*\n+/).map((part, index) => {
+    const text = part.trim();
+    return /^\p{Extended_Pictographic}/u.test(text) ? text : `${starters[index % starters.length]} ${text}`;
+  }).join("\n\n");
+  const title = /^\p{Extended_Pictographic}/u.test(draft.title) ? draft.title : `🔥 ${draft.title}`;
+  const describesResult = /\b\d{1,2}\s*[-–:]\s*\d{1,2}\b/.test(`${item.title} ${item.summary} ${body}`);
+  return { ...draft, title, body, photoSubject: describesResult && !draft.matchPhoto ? null : draft.photoSubject };
 }
