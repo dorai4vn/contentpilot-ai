@@ -112,3 +112,12 @@ select pg_temp.check_news(
    from public.sports_news_items where project_id = :'project' and source_url = 'https://tuoitre.vn/scored.htm'),
   'unselected sports news retains its rubric version and assessment');
 reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_assessment(:'ws', :'project', 'https://tuoitre.vn/text-only.htm', repeat('c',64),
+  8, 'Tin không có ảnh', 'Caption thể thao', null, 'Kiểm thử', array[:'channel'::uuid], '{"photo":null}'::jsonb) as text_only_post \gset
+select pg_temp.check_news(
+  (select not has_image and image_base64 is null from public.sports_news_items where post_id = :'text_only_post'),
+  'a sports draft can be recorded with no licensed photo');
+reset role;

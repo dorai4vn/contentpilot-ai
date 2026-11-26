@@ -142,6 +142,19 @@ export type Database = {
           },
         ];
       };
+      sports_news_revision_photos: {
+        Row: {
+          post_id: string;
+          post_version: number;
+          image_base64: string;
+          source_url: string;
+          license: string;
+          author: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       sports_news_items: {
         Row: {
           workspace_id: string;
@@ -151,6 +164,7 @@ export type Database = {
           score: number;
           post_id: string | null;
           image_base64: string | null;
+          has_image: boolean;
           assessment: Json | null;
           review_notice_sent_at: string | null;
           review_notice_claim: string | null;
