@@ -151,6 +151,7 @@ export type Database = {
           score: number;
           post_id: string | null;
           image_base64: string | null;
+          assessment: Json | null;
           review_notice_sent_at: string | null;
           review_notice_claim: string | null;
           review_notice_claimed_at: string | null;
@@ -381,6 +382,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      record_sports_news_assessment: {
+        Args: Database["public"]["Functions"]["record_sports_news"]["Args"] & { p_assessment: Json };
+        Returns: string | null;
+      };
       record_sports_news: {
         Args: {
           p_workspace_id: string;

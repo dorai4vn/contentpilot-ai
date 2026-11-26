@@ -102,3 +102,13 @@ select pg_temp.check_news(
   (select count(*) = 0 from public.claim_sports_news_review_notices(:'ws', :'project')),
   'a successful notice is sent only once across scans');
 reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_assessment(:'ws', :'project', 'https://tuoitre.vn/scored.htm', repeat('b',64),
+  7, null, null, null, null, array[:'channel'::uuid], '{"rubricVersion":"sports-v1","reason":"Kiểm thử"}'::jsonb);
+select pg_temp.check_news(
+  (select post_id is null and assessment->>'rubricVersion' = 'sports-v1' and assessment->>'reason' = 'Kiểm thử'
+   from public.sports_news_items where project_id = :'project' and source_url = 'https://tuoitre.vn/scored.htm'),
+  'unselected sports news retains its rubric version and assessment');
+reset role;
