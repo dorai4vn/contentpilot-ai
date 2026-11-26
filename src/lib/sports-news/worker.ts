@@ -152,7 +152,7 @@ export async function runSportsNews(config: Config) {
   if (seen.error) throw new Error("sports_news_history_failed");
   const urls = new Set(seen.data.map((item) => item.source_url));
   const headlines = new Set(seen.data.map((item) => item.headline_key));
-  const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, item.summary) }))
+  const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, [item.summary, item.categories].filter(Boolean).join(" ")) }))
     .sort((a, b) => a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const candidates = [];
   for (const { item, priority } of prioritized) {

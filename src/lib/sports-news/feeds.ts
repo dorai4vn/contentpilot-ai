@@ -1,10 +1,7 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import he from "he";
 
-const feeds = [
-  { name: "Tuổi Trẻ", url: "https://tuoitre.vn/rss/the-thao.rss" },
-  { name: "Thanh Niên", url: "https://thanhnien.vn/rss/the-thao.rss" },
-] as const;
+import { sportsFeeds, type SportsFeedSource } from "./sources";
 
 export type SportsNewsItem = {
   source: string;
@@ -12,6 +9,7 @@ export type SportsNewsItem = {
   title: string;
   summary: string;
   publishedAt: number;
+  categories?: string;
 };
 
 const parser = new XMLParser({ parseTagValue: false, processEntities: false });
@@ -23,9 +21,16 @@ function plainText(value: unknown, limit: number): string {
   return he.decode(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
-function dateInVietnam(value: unknown): number {
+function dateInVietnam(value: unknown, localDateFormat?: SportsFeedSource["localDateFormat"]): number {
   if (typeof value !== "string") return NaN;
   const date = value.replace(/\s/g, " ").trim();
+  if (localDateFormat === "year-first") {
+    const localTime = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(date);
+    if (localTime) {
+      const [, year, month, dayOfMonth, time] = localTime;
+      return Date.parse(`${year}-${month}-${dayOfMonth}T${time}+07:00`);
+    }
+  }
   const local = /^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ?(AM|PM)$/i.exec(date);
   if (local) {
     const [, month, dayOfMonth, year, hour, minute, second, period] = local;
@@ -51,7 +56,7 @@ function sourceUrl(value: unknown, host: string): string | null {
   }
 }
 
-export function parseSportsFeed(xml: string, source: { name: string; url: string }, now: number): SportsNewsItem[] {
+export function parseSportsFeed(xml: string, source: SportsFeedSource, now: number): SportsNewsItem[] {
   if (/<!\s*(DOCTYPE|ENTITY)\b/i.test(xml) || XMLValidator.validate(xml) !== true) {
     throw new Error("invalid_sports_feed");
   }
@@ -65,14 +70,16 @@ export function parseSportsFeed(xml: string, source: { name: string; url: string
     const url = sourceUrl(fields.link, host);
     const title = plainText(fields.title, 300);
     const summary = plainText(fields.description, 2000);
-    const publishedAt = dateInVietnam(fields.pubDate);
+    const publishedAt = dateInVietnam(fields.pubDate, source.localDateFormat);
+    const categories = [fields.category ?? []].flat().map((value) => plainText(value, 150))
+      .filter(Boolean).join(", ").slice(0, 300);
     if (!url || !title || !summary || !Number.isFinite(publishedAt) ||
       publishedAt < now - 2 * day || publishedAt > now + 5 * 60 * 1000) return [];
-    return [{ source: source.name, url, title, summary, publishedAt }];
+    return [{ source: source.name, url, title, summary, publishedAt, ...(categories ? { categories } : {}) }];
   });
 }
 
-async function loadFeed(source: (typeof feeds)[number], now: number): Promise<SportsNewsItem[]> {
+async function loadFeed(source: SportsFeedSource, now: number): Promise<SportsNewsItem[]> {
   const response = await fetch(source.url, {
     cache: "no-store",
     redirect: "error",
@@ -102,7 +109,7 @@ async function loadFeed(source: (typeof feeds)[number], now: number): Promise<Sp
 }
 
 export async function collectSportsNews(now = Date.now()) {
-  const results = await Promise.allSettled(feeds.map((source) => loadFeed(source, now)));
+  const results = await Promise.allSettled(sportsFeeds.map((source) => loadFeed(source, now)));
   const available = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
   available.sort((first, second) => second.publishedAt - first.publishedAt);
   const seen = new Set<string>();
@@ -111,6 +118,6 @@ export async function collectSportsNews(now = Date.now()) {
     seen.add(item.url);
     return true;
   });
-  const unavailableSources = feeds.filter((_, index) => results[index].status === "rejected").map(({ name }) => name);
+  const unavailableSources = sportsFeeds.filter((_, index) => results[index].status === "rejected").map(({ name, section }) => section ? `${name} · ${section}` : name);
   return { articles, unavailableSources };
 }

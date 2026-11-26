@@ -38,3 +38,14 @@ describe("sports news scoring", () => {
     expect(calculateNewsScore({ ...assessment, eventImportance: 3 }, now, now)).toBeLessThan(8);
   });
 });
+
+it("parses Vietnam-local RSS timestamps and reads competition categories on Bong Da 24h", () => {
+  const source = { name: "Bóng Đá 24h", url: "https://bongda24h.vn/RSS/488.rss", localDateFormat: "year-first" as const };
+  const xml = `<rss><channel><item>
+  <title>Tin bóng đá</title><link>https://bongda24h.vn/tin-bong-da.html</link>
+  <description>Tóm tắt</description><category>Ngoại hạng Anh</category><category>Cúp C1</category>
+  <pubDate>2026/11/26 19:00:00</pubDate></item></channel></rss>`;
+  expect(parseSportsFeed(xml, source, now)).toMatchObject([{
+    categories: "Ngoại hạng Anh, Cúp C1", publishedAt: Date.parse("2026-11-26T19:00:00+07:00"),
+  }]);
+});
