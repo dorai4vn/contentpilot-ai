@@ -7,6 +7,7 @@ import { contentPaths } from "@/lib/content/paths";
 import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getPublishRequest } from "@/lib/content/publish-requests";
+import { isSportsNewsSourceUrl } from "@/lib/sports-news/sources";
 import { sportsArticleIsCurrent } from "@/lib/sports-news/publication-day";
 import { findSportsNewsReview } from "@/lib/sports-news/review";
 import { listDisplayNames } from "@/lib/profiles/profiles";
@@ -187,7 +188,7 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 >
                   {requested.body || "(trống)"}
                 </pre>
-                {news && /^https:\/\/(tuoitre\.vn|thanhnien\.vn)\//.test(news.source_url) ? (
+                {news && isSportsNewsSourceUrl(news.source_url) ? (
                   <figure className="space-y-2">
                     {news.has_image ? <Image
                       src={`/api/sports-news/image/${post.id}?version=${request.postVersion}`}
