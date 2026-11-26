@@ -76,18 +76,21 @@ async function downloadJpeg(raw: string) {
   return image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff ? image.toString("base64") : null;
 }
 
-export async function findLicensedSportsPhoto(subject: string) {
+export async function findLicensedSportsPhoto(subject: string, match?: { opponent: string; playedOn: string }) {
   const terms = words(subject).filter((word) => word.length > 2);
+  const opponentTerms = match ? words(match.opponent).filter((word) => word.length > 2) : [];
+  if (match && opponentTerms.length === 0) return null;
   if (terms.length === 0) return null;
   try {
     const query = subject.replace(/[^\p{L}\p{N} .'-]/gu, "").trim();
-    if (!query) return null;
+    const opponent = match?.opponent.replace(/[^\p{L}\p{N} .'-]/gu, "").trim();
+    if (!query || (match && !opponent)) return null;
     const url = new URL("https://commons.wikimedia.org/w/api.php");
     url.search = new URLSearchParams({
       action: "query", generator: "search", gsrnamespace: "6", gsrlimit: "8",
-      gsrsearch: `"${query}" filetype:bitmap`, prop: "imageinfo",
+      gsrsearch: match ? `intitle:"${query}" intitle:"${opponent}" filetype:bitmap` : `"${query}" filetype:bitmap`, prop: "imageinfo",
       iiprop: "url|mime|extmetadata", iiurlwidth: "960",
-      iiextmetadatafilter: "LicenseShortName|LicenseUrl|Artist|Copyrighted",
+      iiextmetadatafilter: "LicenseShortName|LicenseUrl|Artist|Copyrighted|DateTimeOriginal",
       format: "json",
     }).toString();
     const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(8000), headers: { "User-Agent": userAgent } });
@@ -99,16 +102,21 @@ export async function findLicensedSportsPhoto(subject: string) {
       const info = page.imageinfo?.[0];
       if (!info || info.mime !== "image/jpeg") continue;
       const filename = words(page.title);
-      if (!terms.every((term) => filename.includes(term))) continue;
+      if (![...terms, ...opponentTerms].every((term) => filename.includes(term))) continue;
+      if (match) {
+        const takenOn = info.extmetadata.DateTimeOriginal?.value.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3").slice(0, 10);
+        if (takenOn !== match.playedOn && !page.title.includes(match.playedOn)) continue;
+      } else if (filename.some((word) => ["stadium", "arena", "stadion", "estadio"].includes(word))) continue;
       if (filename.some((word) => ["logo", "crest", "icon", "flag", "illustration", "drawing", "render"].includes(word))) continue;
       const license = photoLicense(info.extmetadata);
       if (!license) continue;
       const image = await downloadJpeg(info.thumburl ?? info.url);
       if (!image) return null;
       const source = `https://commons.wikimedia.org/?curid=${page.pageid}`;
+      const label = match ? "Ảnh trận đấu" : "Ảnh tư liệu";
       const attribution = license.author
-        ? `📷 Ảnh tư liệu: ${license.author} · ${license.license}\n${source}\n${license.licenseUrl}`
-        : "📷 Ảnh tư liệu";
+        ? `📷 ${label}: ${license.author} · ${license.license}\n${source}\n${license.licenseUrl}`
+        : `📷 ${label}`;
       return { image, attribution, metadata: { source, title: page.title, ...license } };
     }
   } catch {

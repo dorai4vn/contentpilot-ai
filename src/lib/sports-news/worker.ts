@@ -170,7 +170,7 @@ export async function runSportsNews(config: Config) {
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
-      const candidatePhoto = draft?.photoSubject ? await findLicensedSportsPhoto(draft.photoSubject) : null;
+      const candidatePhoto = draft?.photoSubject ? await findLicensedSportsPhoto(draft.photoSubject, draft.matchPhoto ?? undefined) : null;
       const photo = candidatePhoto && draft &&
         draft.title.length + draft.body.length + candidatePhoto.attribution.length + 4 <= 1024
         ? candidatePhoto : null;
