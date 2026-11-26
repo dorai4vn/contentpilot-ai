@@ -9,3 +9,9 @@ it("rejects old or future items and changes dates at Dubai midnight", () => {
   expect(sportsArticleIsCurrent(null, now)).toBe(false);
   expect(sportsArticleIsCurrent({ publishedAt: "2026-11-26T20:00:00Z" }, now)).toBe(true);
 });
+
+it("allows a dated test draft until its explicit cutoff", () => {
+  const assessment = { publishedAt: "2026-11-26T09:00:00Z", testPublishUntil: "2026-11-27T20:30:00Z" };
+  expect(sportsArticleIsCurrent(assessment, Date.parse("2026-11-27T20:29:59Z"))).toBe(true);
+  expect(sportsArticleIsCurrent(assessment, Date.parse("2026-11-27T20:30:00Z"))).toBe(false);
+});
