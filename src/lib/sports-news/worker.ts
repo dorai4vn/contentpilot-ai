@@ -9,6 +9,8 @@ import { AGENT_ACTOR_HEADER } from "@/lib/supabase/server";
 import { getPublisher } from "@/lib/publishing/registry";
 import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database } from "@/types/database";
+import { getTemporaryAutoWindow, sendTemporarySportsPost } from "./auto-delivery";
+import { AUTO_PUBLISH_MAX_PER_RUN } from "./temporary-auto-publish";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
@@ -88,7 +90,7 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
     return stale ? "stale" : outcome.ok;
   }));
 
-  const delivered = results.filter((result) => result.status === "fulfilled" && result.value).length;
+  const delivered = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
   const staleSkipped = results.filter((result) => result.status === "fulfilled" && result.value === "stale").length;
   return { delivered, staleSkipped, deliveryFailures: results.length - delivered - staleSkipped };
 }
@@ -135,7 +137,13 @@ export async function runSportsNews(config: Config, testDate?: string) {
     ? Object.keys(tokens).filter((id) => id === config.telegramDestinationId)
     : Object.keys(tokens);
   if (testDate && destinations.length !== 1) throw new Error("sports_news_test_destination_required");
-  const delivery = await sendApproved(client, config, testDate ? {} : tokens);
+  const telegramId = config.telegramDestinationId;
+  const autoTarget = !testDate && telegramId && tokens[telegramId]
+    ? { workspaceId: config.workspaceId, projectId: config.projectId, destinationId: telegramId } : null;
+  const autoWindow = autoTarget ? await getTemporaryAutoWindow(client, autoTarget) : null;
+  const approvedTokens = { ...tokens };
+  if (autoWindow && autoTarget) delete approvedTokens[autoTarget.destinationId];
+  const delivery = await sendApproved(client, config, testDate ? {} : approvedTokens);
   const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
   const feed = await collectSportsNews(now);
@@ -143,7 +151,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const articles = feed.articles.filter((item) => testDate
     ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
     : publishedToday(item.publishedAt, now));
-  const report = { ...delivery, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
+  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
@@ -206,11 +214,19 @@ export async function runSportsNews(config: Config, testDate?: string) {
         p_destinations: destinations,
       });
       if (result.error) throw new Error("sports_news_record_failed");
-      return result.data;
+      return result.data && draft
+        ? { id: result.data, title: draft.title, body: draft.body, publishedAt: item.publishedAt } : null;
     }),
   );
 
-  report.drafted = saved.filter((item) => item.status === "fulfilled" && item.value !== null).length;
+  const drafts = saved.flatMap((item) => item.status === "fulfilled" && item.value ? [item.value] : []);
+  report.drafted = drafts.length;
+  if (autoWindow && autoTarget) {
+    const sent = await Promise.allSettled(drafts.slice(0, AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
+      sendTemporarySportsPost(client, autoTarget, tokens[autoTarget.destinationId], draft)));
+    report.autoPublished = sent.filter((item) => item.status === "fulfilled" && item.value).length;
+    report.autoPublishFailures = sent.length - report.autoPublished;
+  }
   report.itemFailures += saved.filter((item) => item.status === "rejected").length;
   return { ...report, ...await alert() };
 }
