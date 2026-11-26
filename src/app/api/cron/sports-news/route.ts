@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { readSportsNewsConfig, runSportsNews } from "@/lib/sports-news/worker";
+import { checkSportsNewsSetup, readSportsNewsConfig, runSportsNews } from "@/lib/sports-news/worker";
 
 export const maxDuration = 180;
 
@@ -13,8 +13,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
-    const report = await runSportsNews(readSportsNewsConfig());
-    return Response.json(report);
+    const config = readSportsNewsConfig();
+    const report = new URL(request.url).searchParams.get("mode") === "setup"
+      ? await checkSportsNewsSetup(config)
+      : await runSportsNews(config);
+    return Response.json(report, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "sports_news_run_failed" }, { status: 503 });
   }
