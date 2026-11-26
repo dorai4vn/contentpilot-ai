@@ -76,3 +76,29 @@ exception when insufficient_privilege then null;
 end
 $$;
 reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select claim_id as notice_claim_id
+from public.claim_sports_news_review_notices(:'ws', :'project')
+where post_id = :'post_id' and score = 8 and title = 'Bản tin'
+  and cardinality(request_ids) = 1 and not (:'request_id'::uuid = any(request_ids)) \gset
+select pg_temp.check_news(
+  (select count(*) = 0 from public.claim_sports_news_review_notices(:'ws', :'project')),
+  'a claimed notice is not sent by a concurrent worker');
+select pg_temp.check_news(
+  public.finish_sports_news_review_notice(:'ws', :'post_id', :'notice_claim_id', false),
+  'a failed notice can be retried');
+select claim_id as retry_claim_id
+from public.claim_sports_news_review_notices(:'ws', :'project')
+where post_id = :'post_id' \gset
+select pg_temp.check_news(
+  not public.finish_sports_news_review_notice(:'ws', :'post_id', :'notice_claim_id', true),
+  'a stale worker cannot complete a new claim');
+select pg_temp.check_news(
+  public.finish_sports_news_review_notice(:'ws', :'post_id', :'retry_claim_id', true),
+  'a successful notice records its send time');
+select pg_temp.check_news(
+  (select count(*) = 0 from public.claim_sports_news_review_notices(:'ws', :'project')),
+  'a successful notice is sent only once across scans');
+reset role;

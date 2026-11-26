@@ -151,6 +151,9 @@ export type Database = {
           score: number;
           post_id: string | null;
           image_base64: string | null;
+          review_notice_sent_at: string | null;
+          review_notice_claim: string | null;
+          review_notice_claimed_at: string | null;
           created_at: string;
         };
         Insert: never;
@@ -392,6 +395,14 @@ export type Database = {
           p_destinations: string[];
         };
         Returns: string | null;
+      };
+      claim_sports_news_review_notices: {
+        Args: { p_workspace_id: string; p_project_id: string };
+        Returns: Array<{ post_id: string; claim_id: string; title: string; score: number; request_ids: string[] }>;
+      };
+      finish_sports_news_review_notice: {
+        Args: { p_workspace_id: string; p_post_id: string; p_claim_id: string; p_sent: boolean };
+        Returns: boolean;
       };
       claim_social_deliveries: {
         Args: { p_workspace_id: string; p_destinations: string[] };

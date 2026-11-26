@@ -12,6 +12,7 @@ import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database } from "@/types/database";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
+import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { calculateNewsScore } from "./scoring";
 
 const configSchema = z.object({
@@ -105,6 +106,7 @@ async function sendApproved(client: Client, config: Config, destinations: string
 }
 
 export async function runSportsNews(config: Config) {
+  const notices = readReviewNoticeConfig();
   const env = getSupabaseEnv();
   const client = createClient<Database>(env.url, env.key, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -118,10 +120,11 @@ export async function runSportsNews(config: Config) {
 
   const destinations = Object.keys(config.tokens);
   const delivery = await sendApproved(client, config, destinations);
+  const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
   const { articles, unavailableSources } = await collectSportsNews(now);
   const report = { ...delivery, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
-  if (!articles.length) return report;
+  if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
     .from("sports_news_items")
@@ -178,5 +181,5 @@ export async function runSportsNews(config: Config) {
 
   report.drafted = saved.filter((item) => item.status === "fulfilled" && item.value !== null).length;
   report.itemFailures += saved.filter((item) => item.status === "rejected").length;
-  return report;
+  return { ...report, ...await alert() };
 }
