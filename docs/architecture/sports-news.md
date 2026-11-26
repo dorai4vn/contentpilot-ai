@@ -8,11 +8,36 @@ Tin được đưa vào chấm theo thứ tự Ngoại hạng Anh → Cúp C1 �
 
 Với tin được chọn, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có tiêu đề ngắn, bắt mắt và emoji mở đầu mỗi đoạn, với giọng văn gần gũi trên mạng xã hội. Link bài báo hiển thị trong màn hình duyệt. Hệ thống tìm ảnh JPEG tư liệu phù hợp trên Wikimedia Commons, ưu tiên ảnh đúng hai đội và ngày. Nếu thiếu, thử ảnh hai đội từng gặp hoặc ảnh thi đấu của một đội, lưu trạng thái ảnh tư liệu trong dữ liệu nội bộ. Bỏ qua ảnh sân vận động chung và chỉ dùng giấy phép CC0 hoặc Public Domain đã xác minh. Nguồn ảnh và giấy phép được lưu nội bộ, caption công khai chỉ chứa nội dung bài. Khi không có ảnh phù hợp, bài chỉ có caption. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Mỗi tin đã có quyết định lưu phiên bản barem, điểm thành phần, lý do AI, ngưỡng và kết quả chọn. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng. Tin đạt ngưỡng nhưng vượt giới hạn hai bài được xét lại ở lượt sau.
 
-Ảnh được crop tự động thành JPEG vuông 1080 × 1080 cho màn hình duyệt và khi gửi. Telegram và Discord in đậm dòng tiêu đề. Facebook Page dùng tiêu đề dạng văn bản thường. Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của phiên bản đầu. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa chỉ gửi nội dung văn bản.
+Ảnh được crop tự động thành JPEG vuông 1080 × 1080 cho màn hình duyệt và khi gửi. Telegram và Discord in đậm dòng tiêu đề. Facebook Page dùng tiêu đề dạng văn bản thường. Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của đúng phiên bản xin duyệt. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa gửi ảnh nếu có ảnh gắn riêng với phiên bản đó.
 
 Owner/Admin phải duyệt từng yêu cầu. Worker gửi phiên bản đã duyệt đến từng đích vào lượt tiếp theo. Sau lỗi HTTP 429, worker thử lại tối đa ba lần với khoảng chờ tăng dần. Nếu kết quả gửi không rõ, màn hình duyệt báo cần kiểm tra trực tiếp trên kênh. Worker giữ nguyên bài đã duyệt và ghi mã bài do nền tảng trả về khi gửi thành công.
 
-GitHub Actions gọi pipeline mỗi 2 giờ khi đã cấu hình. Worker chỉ xét và gửi tin được xuất bản cùng ngày theo múi giờ Asia/Dubai. Tin đã duyệt nhưng qua ngày trước khi gửi sẽ được bỏ qua. Khi bản tin có yêu cầu mới chờ duyệt, bot gửi một tin nhắn Telegram riêng gồm tiêu đề, độ hot và link mở từng yêu cầu. Nếu gửi lỗi, worker thử lại ở lượt kế tiếp khi yêu cầu vẫn còn hiệu lực.
+Production dùng Supabase Cron để gọi pipeline mỗi 2 giờ. GitHub Actions là một cách đặt lịch cho môi trường thử nghiệm. Worker chỉ xét và gửi tin được xuất bản cùng ngày theo múi giờ Asia/Dubai. Tin đã duyệt nhưng qua ngày trước khi gửi sẽ được bỏ qua. Khi bản tin có yêu cầu mới chờ duyệt, bot gửi một tin nhắn Telegram riêng gồm tiêu đề, độ hot và link mở từng yêu cầu. Nếu gửi lỗi, worker thử lại ở lượt kế tiếp khi yêu cầu vẫn còn hiệu lực.
+
+## Khôi phục lịch production
+
+Production dùng Supabase Cron và `pg_net`. Trên Vercel Production, lưu bearer vào `CRON_SECRET`. Trong Supabase Vault, lưu cùng giá trị dưới tên `contentpilot_sports_news_cron_bearer`. Sau khi migration, worker, đích Telegram và biến môi trường đã sẵn sàng, đăng ký lịch sau bằng SQL Editor:
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net with schema extensions;
+
+select cron.schedule('contentpilot-sports-news', '0 */2 * * *', $job$
+  select net.http_post(
+    url := 'https://contentpilot-social.vercel.app/api/cron/sports-news',
+    params := '{"source":"supabase-cron"}'::jsonb,
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || decrypted_secret
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 190000
+  )
+  from vault.decrypted_secrets where name = 'contentpilot_sports_news_cron_bearer';
+$job$);
+```
+
+Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch cho cùng môi trường. Để thử một tin từ ngày trước, worker có chế độ POST có xác thực với `mode=test&date=YYYY-MM-DD`. Chế độ này chọn tối đa một tin đạt ngưỡng cho đích Telegram đã cấu hình và cho phép đăng trong 24 giờ sau khi duyệt.
 
 ## Cấu hình trên môi trường thử nghiệm
 
