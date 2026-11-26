@@ -14,7 +14,7 @@ import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
-import { calculateNewsScore } from "./scoring";
+import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_SCORING_RUBRIC } from "./scoring";
 
 const configSchema = z.object({
   workspaceId: z.uuid(),
@@ -166,32 +166,35 @@ export async function runSportsNews(config: Config) {
   if (seen.error) throw new Error("sports_news_history_failed");
   const urls = new Set(seen.data.map((item) => item.source_url));
   const headlines = new Set(seen.data.map((item) => item.headline_key));
+  const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, item.summary) }))
+    .sort((a, b) => a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const candidates = [];
-  for (const item of articles) {
+  for (const { item, priority } of prioritized) {
     const key = headlineKey(item.title);
     if (urls.has(item.url) || headlines.has(key)) continue;
     urls.add(item.url);
     headlines.add(key);
-    candidates.push({ item, key });
+    candidates.push({ item, key, priority });
     if (candidates.length === 8) break;
   }
 
-  const assessments = await Promise.allSettled(candidates.map(async ({ item, key }) => {
+  const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority }) => {
     const assessment = await assessSportsNews(item);
-    return { item, key, assessment, score: calculateNewsScore(assessment, item.publishedAt, now) };
+    return { item, key, priority, assessment, ...scoreSportsNews(assessment, item.publishedAt, now) };
   }));
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
   report.itemFailures = assessments.length - assessed.length;
-  const selected = assessed.filter((entry) => entry.score >= config.threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 2);
+  const { selected, fallback } = selectSportsNews(assessed, config.threshold);
+  const selectedKeys = new Set(selected.map((entry) => entry.key));
+  const decided = assessed.filter((entry) => entry.score < config.threshold || selectedKeys.has(entry.key));
 
   const saved = await Promise.allSettled(
-    [...assessed.filter((entry) => entry.score < config.threshold), ...selected].map(async ({ item, key, assessment, score }) => {
-      const draft = score >= config.threshold ? await writeSportsDraft(item) : null;
+    decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
+      const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
+      const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
       const image = draft ? await generateIllustration(draft.imageBrief) : null;
-      const result = await client.rpc("record_sports_news", {
+      const result = await client.rpc("record_sports_news_assessment", {
         p_workspace_id: config.workspaceId,
         p_project_id: config.projectId,
         p_source_url: item.url,
@@ -200,7 +203,11 @@ export async function runSportsNews(config: Config) {
         p_title: draft?.title ?? null,
         p_body: draft ? `${draft.body}\n\nNguồn: ${item.source} — ${item.url}\nẢnh minh họa do AI tạo.` : null,
         p_image: image,
-        p_reason: draft ? `RSS · ${score}/10 · ${assessment.reason}`.slice(0, 500) : null,
+        p_reason: draft ? `RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
+        p_assessment: {
+          ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
+          threshold: config.threshold, title: item.title, publishedAt: new Date(item.publishedAt).toISOString(),
+        },
         p_destinations: destinations,
       });
       if (result.error) throw new Error("sports_news_record_failed");

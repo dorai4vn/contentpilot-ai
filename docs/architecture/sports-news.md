@@ -2,7 +2,11 @@
 
 ContentPilot AI lấy tin thể thao từ Tuổi Trẻ và Thanh Niên. Mỗi lượt chỉ xét tin trong 48 giờ, bỏ qua URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án. Điểm từ 0 đến 10 kết hợp độ nhận diện cao nhất của cầu thủ, đội hoặc giải (45%), tầm quan trọng của sự kiện (40%) và độ mới (15%). Mô hình ước lượng độ nhận diện theo độc giả Việt Nam. Điểm tự giảm khi tin cũ đi.
 
-Với tin đạt ngưỡng mặc định 8/10, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có một dòng mở bài bắt mắt, các đoạn ngắn và emoji hợp ngữ cảnh. Hệ thống gắn link nguồn và tạo ảnh minh họa JPEG. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng.
+Barem `sports-v1` được dùng lại giữa các lượt. Độ nhận diện lấy điểm cao nhất trong ba mục cầu thủ, đội và giải. Sự kiện từ 9–10 là chung kết, chức vô địch hoặc kết quả lớn; 6–8 là diễn biến đáng chú ý; 0–5 là tin thường kỳ hoặc đồn đoán. Độ mới bắt đầu ở 10 điểm, giảm 1 điểm mỗi 4,8 giờ.
+
+Tin được đưa vào chấm theo thứ tự Ngoại hạng Anh → Cúp C1 → các giải lớn như World Cup, EURO, Copa América và các giải VĐQG lớn châu Âu → bóng đá Việt Nam → bóng đá khác → môn khác. Khi chọn bài, xếp theo điểm tổng trước. Ưu tiên giải đấu và sau đó là độ mới để phân định khi bằng điểm. Nếu không có tin từ ngưỡng trở lên, hệ thống chọn đúng một tin có điểm cao nhất và ghi rõ lý do chọn trong yêu cầu duyệt.
+
+Với tin được chọn, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có một dòng mở bài bắt mắt, các đoạn ngắn và emoji hợp ngữ cảnh. Hệ thống gắn link nguồn và tạo ảnh minh họa JPEG. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Mỗi tin đã có quyết định lưu phiên bản barem, điểm thành phần, lý do AI, ngưỡng và kết quả chọn. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng. Tin đạt ngưỡng nhưng vượt giới hạn hai bài được xét lại ở lượt sau.
 
 Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của phiên bản đầu. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa chỉ gửi nội dung văn bản.
 
