@@ -11,7 +11,7 @@ import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database } from "@/types/database";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
-import { publishedToday, sportsArticleIsCurrent } from "./publication-day";
+import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
@@ -120,7 +120,7 @@ export async function checkSportsNewsSetup(config: Config, channelUsername?: str
   };
 }
 
-export async function runSportsNews(config: Config) {
+export async function runSportsNews(config: Config, testDate?: string) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
   const tokens = { ...config.tokens };
@@ -131,13 +131,18 @@ export async function runSportsNews(config: Config) {
     if (error || !data || !notices) throw new Error("sports_news_telegram_destination_unavailable");
     tokens[data.id] = notices.botToken;
   }
-  const destinations = Object.keys(tokens);
-  const delivery = await sendApproved(client, config, tokens);
+  const destinations = testDate
+    ? Object.keys(tokens).filter((id) => id === config.telegramDestinationId)
+    : Object.keys(tokens);
+  if (testDate && destinations.length !== 1) throw new Error("sports_news_test_destination_required");
+  const delivery = await sendApproved(client, config, testDate ? {} : tokens);
   const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
   const feed = await collectSportsNews(now);
   const { unavailableSources } = feed;
-  const articles = feed.articles.filter((item) => publishedToday(item.publishedAt, now));
+  const articles = feed.articles.filter((item) => testDate
+    ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
+    : publishedToday(item.publishedAt, now));
   const report = { ...delivery, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
@@ -161,7 +166,7 @@ export async function runSportsNews(config: Config) {
     urls.add(item.url);
     headlines.add(key);
     candidates.push({ item, key, priority });
-    if (candidates.length === 8) break;
+    if (candidates.length === (testDate ? 16 : 8)) break;
   }
 
   const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority }) => {
@@ -171,16 +176,18 @@ export async function runSportsNews(config: Config) {
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
   report.itemFailures = assessments.length - assessed.length;
-  const { selected, fallback } = selectSportsNews(assessed, config.threshold);
+  const selection = selectSportsNews(assessed, config.threshold);
+  const fallback = !testDate && selection.fallback;
+  const selected = testDate ? (selection.fallback ? [] : selection.selected.slice(0, 1)) : selection.selected;
   const selectedKeys = new Set(selected.map((entry) => entry.key));
-  const decided = assessed.filter((entry) => entry.score < config.threshold || selectedKeys.has(entry.key));
+  const decided = testDate ? selected : assessed.filter((entry) => entry.score < config.threshold || selectedKeys.has(entry.key));
 
   const saved = await Promise.allSettled(
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
       const photo = draft?.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null;
-      if (!publishedToday(item.publishedAt)) return null;
+      if (!testDate && !publishedToday(item.publishedAt)) return null;
       const result = await client.rpc("record_sports_news_assessment", {
         p_workspace_id: config.workspaceId,
         p_project_id: config.projectId,
@@ -190,9 +197,10 @@ export async function runSportsNews(config: Config) {
         p_title: draft?.title ?? null,
         p_body: draft?.body ?? null,
         p_image: photo?.image ?? null,
-        p_reason: draft ? `RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
+        p_reason: draft ? `${testDate ? "Đăng thử Telegram · " : ""}RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
         p_assessment: {
           ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
+          ...(testDate ? { testPublishUntil: new Date(now + 24 * 60 * 60 * 1000).toISOString() } : {}),
           threshold: config.threshold, title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
         },
         p_destinations: destinations,
