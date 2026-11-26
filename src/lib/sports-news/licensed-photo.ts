@@ -34,19 +34,14 @@ function words(value: string): string[] {
 function photoLicense(fields: z.infer<typeof metadata>) {
   const license = plain(fields.LicenseShortName?.value ?? "");
   const url = fields.LicenseUrl?.value ?? "";
-  if (license === "CC0" && /^https?:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0\/?$/.test(url)) {
-    return { license, licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", author: null };
+  const author = plain(fields.Artist?.value ?? "").slice(0, 100) || null;
+  if (license === "CC0" && /^https?:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0(?:\/(?:deed(?:\.[a-z-]+)?|legalcode)?)?$/.test(url)) {
+    return { license, licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", author };
   }
   if (license === "Public domain" && fields.Copyrighted?.value.toLowerCase() === "false") {
-    return { license, licenseUrl: null, author: null };
+    return { license, licenseUrl: null, author };
   }
-  const match = /^CC BY(-SA)? (3\.0|4\.0)$/.exec(license);
-  if (!match) return null;
-  const path = `/licenses/by${match[1] ? "-sa" : ""}/${match[2]}/`;
-  if (url.replace(/^http:/, "https:").replace(/\/?$/, "/") !== `https://creativecommons.org${path}`) return null;
-  const author = plain(fields.Artist?.value ?? "");
-  if (!author || author.length > 100) return null;
-  return { license, licenseUrl: `https://creativecommons.org${path}`, author };
+  return null;
 }
 
 async function downloadJpeg(raw: string) {
@@ -95,7 +90,7 @@ export async function findLicensedSportsPhoto(subject: string, match?: MatchPhot
     if (!query || (match && !opponent)) return null;
     const queries = match ? [`intitle:"${query}" intitle:"${opponent}" filetype:bitmap`]
       : mode === "team-action"
-        ? ["Fußball", "match"].map((term) => `intitle:"${query}" intitle:${term} filetype:bitmap -basketball`)
+        ? ["Fußball", "match", "tegen"].map((term) => `intitle:"${query}" intitle:${term} filetype:bitmap -basketball`)
         : [`"${query}" filetype:bitmap`];
     const results = await Promise.allSettled(queries.map(async (search) => {
       const url = new URL("https://commons.wikimedia.org/w/api.php");
@@ -125,7 +120,7 @@ export async function findLicensedSportsPhoto(subject: string, match?: MatchPhot
       if (![...terms, ...opponentTerms].every((term) => filename.includes(term))) continue;
       const takenOn = photoDate(page.title, info.extmetadata.DateTimeOriginal?.value);
       const exact = !!match && takenOn === match.playedOn;
-      const action = filename.some((word) => ["vs", "gegen", "match", "spiel", "supercup", "bundesliga"].includes(word));
+      const action = filename.some((word) => ["vs", "gegen", "tegen", "match", "spiel", "supercup", "bundesliga"].includes(word));
       if (match && !exact && (mode !== "past-meeting" || !takenOn || takenOn >= match.playedOn || !action)) continue;
       if (mode === "team-action" && (!action || filename.some((word) =>
         ["basketball", "feminin", "frauen", "women", "futsal", "alzenau", "training", "women's"].includes(word)))) continue;
@@ -137,11 +132,7 @@ export async function findLicensedSportsPhoto(subject: string, match?: MatchPhot
       const image = await downloadJpeg(info.thumburl ?? info.url);
       if (!image) return null;
       const source = `https://commons.wikimedia.org/?curid=${page.pageid}`;
-      const label = exact ? "Ảnh trận đấu" : "Ảnh tư liệu";
-      const attribution = license.author
-        ? `📷 ${label}: ${license.author} · ${license.license}\n${source}\n${license.licenseUrl}`
-        : `📷 ${label}`;
-      return { image, attribution, metadata: { source, title: page.title, ...license, exactMatch: exact } };
+      return { image, metadata: { source, title: page.title, ...license, exactMatch: exact } };
     }
   } catch {
     // The original article can still be drafted when Commons is unavailable.
