@@ -13,6 +13,7 @@ import type { Database } from "@/types/database";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
+import { inspectTelegramSetup } from "./telegram-setup";
 import { calculateNewsScore } from "./scoring";
 
 const configSchema = z.object({
@@ -21,6 +22,7 @@ const configSchema = z.object({
   email: z.email(),
   password: z.string().min(1),
   threshold: z.coerce.number().min(0).max(10),
+  telegramDestinationId: z.uuid().optional(),
   tokens: z.record(z.uuid(), z.string().trim().min(1).regex(/^[!-~]+$/))
     .refine((tokens) => Object.keys(tokens).length <= 12),
 });
@@ -34,6 +36,7 @@ export function readSportsNewsConfig(): Config {
     projectId: process.env.SPORTS_NEWS_PROJECT_ID,
     email: process.env.SPORTS_NEWS_WORKER_EMAIL,
     password: process.env.SPORTS_NEWS_WORKER_PASSWORD,
+    telegramDestinationId: process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID?.trim() || undefined,
     threshold: process.env.SPORTS_NEWS_MIN_SCORE?.trim() || "8",
     tokens: JSON.parse(process.env.SPORTS_NEWS_SOCIAL_TOKENS || "{}"),
   });
@@ -61,7 +64,8 @@ async function generateIllustration(brief: string): Promise<string> {
   return image;
 }
 
-async function sendApproved(client: Client, config: Config, destinations: string[]) {
+async function sendApproved(client: Client, config: Config, tokens: Config["tokens"]) {
+  const destinations = Object.keys(tokens);
   if (!destinations.length) return { delivered: 0, deliveryFailures: 0 };
   const { data, error } = await client.rpc("claim_social_deliveries", {
     p_workspace_id: config.workspaceId,
@@ -87,7 +91,7 @@ async function sendApproved(client: Client, config: Config, destinations: string
       ...(image ? { image: Uint8Array.from(Buffer.from(image, "base64")) } : {}),
     };
     const outcome = await adapter.publish(adapter.render(snapshot), {
-      credentials: new PublisherSecret(config.tokens[delivery.destination_id]),
+      credentials: new PublisherSecret(tokens[delivery.destination_id]),
       targetRef: delivery.target_ref,
       idempotencyKey: delivery.idempotency_key,
     });
@@ -105,8 +109,7 @@ async function sendApproved(client: Client, config: Config, destinations: string
   return { delivered, deliveryFailures: results.length - delivered };
 }
 
-export async function runSportsNews(config: Config) {
-  const notices = readReviewNoticeConfig();
+async function connectWorker(config: Config) {
   const env = getSupabaseEnv();
   const client = createClient<Database>(env.url, env.key, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -118,8 +121,34 @@ export async function runSportsNews(config: Config) {
   const { error } = await client.auth.signInWithPassword({ email: config.email, password: config.password });
   if (error) throw new Error("sports_news_worker_auth_failed");
 
-  const destinations = Object.keys(config.tokens);
-  const delivery = await sendApproved(client, config, destinations);
+  return client;
+}
+
+export async function checkSportsNewsSetup(config: Config) {
+  const client = await connectWorker(config);
+  const notices = readReviewNoticeConfig();
+  const { data, error } = await client.from("content_projects").select("id")
+    .eq("workspace_id", config.workspaceId).eq("id", config.projectId).is("archived_at", null).maybeSingle();
+  if (error || !data) throw new Error("sports_news_project_unavailable");
+  return {
+    workerReady: true,
+    telegram: notices ? await inspectTelegramSetup(notices.botToken, notices.chatId) : null,
+  };
+}
+
+export async function runSportsNews(config: Config) {
+  const notices = readReviewNoticeConfig();
+  const client = await connectWorker(config);
+  const tokens = { ...config.tokens };
+  if (config.telegramDestinationId && !tokens[config.telegramDestinationId]) {
+    const { data, error } = await client.from("publishing_destinations").select("id")
+      .eq("workspace_id", config.workspaceId).eq("id", config.telegramDestinationId)
+      .eq("kind", "telegram").eq("status", "active").maybeSingle();
+    if (error || !data || !notices) throw new Error("sports_news_telegram_destination_unavailable");
+    tokens[data.id] = notices.botToken;
+  }
+  const destinations = Object.keys(tokens);
+  const delivery = await sendApproved(client, config, tokens);
   const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
   const { articles, unavailableSources } = await collectSportsNews(now);
