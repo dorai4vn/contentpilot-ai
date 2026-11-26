@@ -14,7 +14,7 @@ const assessmentSchema = z.strictObject({
 });
 const draftSchema = z.strictObject({
   title: z.string().trim().min(1).max(80),
-  body: z.string().trim().min(1).max(520),
+  body: z.string().trim().min(1).max(620),
   photoSubject: z.string().trim().min(1).max(80).nullable(),
   matchPhoto: z.object({
     opponent: z.string().trim().min(1).max(80),
@@ -49,7 +49,7 @@ const socialCaptionInstructions = `
 Soạn caption thể thao tiếng Việt để đăng kèm ảnh trên Telegram, Discord hoặc Facebook Page. Trả JSON với title, body, photoSubject và matchPhoto.
 
 - title (tối đa 80 ký tự, nên 4–8 từ): headline MXH, một điểm đáng chú ý và một emoji mở đầu. Ví dụ về nhịp câu: “🚨 CÚ SỐC Ở C1!” hoặc “🔥 LILLE QUẬT NGÃ BAYERN!”. Ưu tiên động từ mạnh và tên đội khi phù hợp. Để tỷ số và bối cảnh xuống thân bài nếu tiêu đề đã rõ.
-- body (tối đa 520 ký tự): 1–3 đoạn ngắn, mỗi đoạn 1–2 câu, cách bằng một dòng trống. **Mỗi đoạn bắt đầu bằng đúng một emoji có ý nghĩa**: ⚡ cho diễn biến, 📉 cho hệ quả, 👀 cho điều đáng chú ý. Viết gần gũi như fan bóng đá đang kể tin, dùng câu ngắn, tránh giọng báo cáo hoặc câu sáo. Có thể dùng câu hỏi nếu có điều đáng bàn.
+- body (tối đa 620 ký tự): thường 2–3 đoạn ngắn, mỗi đoạn 1–2 câu. Nếu nguồn có thêm dữ kiện, thêm một chi tiết hoặc hệ quả cụ thể thay vì chỉ nhắc lại tỷ số, cách bằng một dòng trống. **Mỗi đoạn bắt đầu bằng đúng một emoji có ý nghĩa**: ⚡ cho diễn biến, 📉 cho hệ quả, 👀 cho điều đáng chú ý. Viết gần gũi như fan bóng đá đang kể tin, dùng câu ngắn, tránh giọng báo cáo hoặc câu sáo. Có thể dùng câu hỏi nếu có điều đáng bàn.
 - Chỉ dùng dữ kiện có trong tiêu đề và tóm tắt RSS. Giữ đúng tên, số liệu và mức độ chắc chắn; phân biệt tin dự kiến, tin đồn và kết quả. Viết bằng lời riêng, tránh giật tít sai, suy diễn, trích dẫn tự tạo, URL, nhắc tài khoản, hashtag và ký hiệu định dạng Markdown. Link bài gốc hiển thị riêng trong webapp.
 - photoSubject (tối đa 80 ký tự): chỉ ghi tên riêng ngắn gọn của đội hoặc cầu thủ chính có thật trong nguồn để tìm ảnh tư liệu trên Wikimedia Commons. Dùng cách viết quốc tế nếu biết (ví dụ Bayern München). Trả null nếu không xác định được chủ thể cụ thể.
 - matchPhoto: với tin về một trận đã diễn ra, trả { "opponent": tên đội còn lại, "playedOn": ngày thi đấu YYYY-MM-DD theo lịch địa phương nếu dữ kiện đủ rõ }. Trả null khi không xác định được ngày hoặc đối thủ. Với tin ngoài sân đấu cũng trả null.
@@ -64,5 +64,5 @@ export async function writeSportsDraft(item: SportsNewsItem) {
   }).join("\n\n");
   const title = /^\p{Extended_Pictographic}/u.test(draft.title) ? draft.title : `🔥 ${draft.title}`;
   const describesResult = /\b\d{1,2}\s*[-–:]\s*\d{1,2}\b/.test(`${item.title} ${item.summary} ${body}`);
-  return { ...draft, title, body, photoSubject: describesResult && !draft.matchPhoto ? null : draft.photoSubject };
+  return { ...draft, title, body, photoNeedsAction: describesResult };
 }

@@ -21,7 +21,7 @@ it("requests a compact, source-grounded social caption and preserves emojis and 
     title: "Hà Nội FC vào chung kết", summary: "Thắng 2–1 nhờ bàn ở phút 88.", publishedAt: 0,
   };
 
-  await expect(writeSportsDraft(item)).resolves.toEqual(caption);
+  await expect(writeSportsDraft(item)).resolves.toEqual({ ...caption, photoNeedsAction: true });
 
   const messages = complete.mock.calls[0][0].messages;
   expect(messages[0].content).toContain("Mỗi đoạn bắt đầu");
