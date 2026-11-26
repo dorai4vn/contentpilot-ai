@@ -17,7 +17,7 @@ describe("social adapters", () => {
     const approved = adapter.render({
       postId: "example",
       postVersion: 1,
-      title: "Bản tin",
+      title: "🚨 Bản tin",
       body: "Nguồn: Báo",
       image: new Uint8Array([255, 216, 255]),
     });
@@ -27,8 +27,30 @@ describe("social adapters", () => {
     expect(url).toEqual(expect.stringContaining(endpoint));
     const form = init?.body as FormData;
     expect(form.get(photoField)).toBeInstanceOf(Blob);
-    expect(form.get(kind === "telegram" ? "caption" : kind === "discord" ? "payload_json" : "message"))
-      .toContain(kind === "discord" ? "Bản tin\\n\\nNguồn: Báo" : "Bản tin\n\nNguồn: Báo");
+    if (kind === "telegram") {
+      expect(form.get("caption")).toBe("🚨 Bản tin\n\nNguồn: Báo");
+      expect(JSON.parse(String(form.get("caption_entities")))).toEqual([
+        { type: "bold", offset: 0, length: "🚨 Bản tin".length },
+      ]);
+    } else if (kind === "discord") {
+      expect(JSON.parse(String(form.get("payload_json"))).content).toBe("**🚨 Bản tin**\n\nNguồn: Báo");
+    } else {
+      expect(form.get("message")).toBe("🚨 Bản tin\n\nNguồn: Báo");
+    }
+  });
+
+  it("formats the headline in a text-only Telegram post", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true, result: { message_id: 5 } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = socialPublisher("telegram");
+    const snapshot = { postId: "post", postVersion: 1, title: "  ⚽ Tin mới  ", body: "Nội dung" };
+    await adapter.publish(adapter.render(snapshot), {
+      credentials: new PublisherSecret("123:token"), targetRef: "-100123456789", idempotencyKey: "request:test",
+    });
+    const form = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(form.get("text")).toBe("⚽ Tin mới\n\nNội dung");
+    expect(JSON.parse(String(form.get("entities")))).toEqual([{ type: "bold", offset: 0, length: "⚽ Tin mới".length }]);
+    expect(form.has("caption_entities")).toBe(false);
   });
 
   it("retries rate limits but treats ambiguous timeouts as final until reviewed", async () => {
@@ -38,9 +60,9 @@ describe("social adapters", () => {
     vi.stubGlobal("fetch", fetchMock);
     const adapter = socialPublisher("telegram");
     const context = { credentials: new PublisherSecret("123:token"), targetRef: "-100123456789", idempotencyKey: "request:xyz" };
-    await expect(adapter.publish({ text: "Hi", image: undefined }, context))
+    await expect(adapter.publish({ text: "Hi", titleLength: 2, image: undefined }, context))
       .resolves.toEqual({ ok: false, code: "rate_limited", retryable: true });
-    await expect(adapter.publish({ text: "Hi", image: undefined }, context))
+    await expect(adapter.publish({ text: "Hi", titleLength: 2, image: undefined }, context))
       .resolves.toEqual({ ok: false, code: "delivery_unconfirmed", retryable: false });
   });
 });

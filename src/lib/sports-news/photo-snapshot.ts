@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import { squareSportsPhoto } from "./square-photo";
 
 export async function readSportsPhoto(client: SupabaseClient<Database>, postId: string, version: number) {
   const result = version === 1
@@ -8,5 +9,6 @@ export async function readSportsPhoto(client: SupabaseClient<Database>, postId: 
     : await client.from("sports_news_revision_photos").select("image_base64")
       .eq("post_id", postId).eq("post_version", version).maybeSingle();
   if (result.error) throw new Error("sports_news_image_read_failed");
-  return result.data?.image_base64 ?? null;
+  const image = result.data?.image_base64;
+  return image ? squareSportsPhoto(Buffer.from(image, "base64")) : null;
 }
