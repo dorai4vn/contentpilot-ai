@@ -124,7 +124,7 @@ async function connectWorker(config: Config) {
   return client;
 }
 
-export async function checkSportsNewsSetup(config: Config) {
+export async function checkSportsNewsSetup(config: Config, channelUsername?: string) {
   const client = await connectWorker(config);
   const notices = readReviewNoticeConfig();
   const { data, error } = await client.from("content_projects").select("id")
@@ -132,7 +132,7 @@ export async function checkSportsNewsSetup(config: Config) {
   if (error || !data) throw new Error("sports_news_project_unavailable");
   return {
     workerReady: true,
-    telegram: notices ? await inspectTelegramSetup(notices.botToken, notices.chatId) : null,
+    telegram: notices ? await inspectTelegramSetup(notices.botToken, notices.chatId, channelUsername) : null,
   };
 }
 

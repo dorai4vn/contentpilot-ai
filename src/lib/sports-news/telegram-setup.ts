@@ -26,16 +26,17 @@ async function telegram<T>(token: string, method: string, schema: z.ZodType<T>, 
   }
 }
 
-export async function inspectTelegramSetup(token: string, reviewChatId: string) {
+export async function inspectTelegramSetup(token: string, reviewChatId: string, channelUsername?: string) {
   const updatesSchema = z.array(z.object({
     my_chat_member: z.object({ chat: chatSchema }).optional(),
     channel_post: z.object({ chat: chatSchema }).optional(),
     edited_channel_post: z.object({ chat: chatSchema }).optional(),
   }));
-  const [bot, reviewChat, updates] = await Promise.all([
+  const [bot, reviewChat, updates, namedChannel] = await Promise.all([
     telegram(token, "getMe", z.object({ id: z.number().int() })),
     telegram(token, "getChat", chatSchema, { chat_id: reviewChatId }),
-    telegram(token, "getUpdates", updatesSchema, { limit: 100, timeout: 0 }),
+    channelUsername ? null : telegram(token, "getUpdates", updatesSchema, { limit: 100, timeout: 0 }),
+    channelUsername ? telegram(token, "getChat", chatSchema, { chat_id: channelUsername }) : null,
   ]);
 
   const channels = new Map<number, z.infer<typeof chatSchema>>();
@@ -43,6 +44,7 @@ export async function inspectTelegramSetup(token: string, reviewChatId: string) 
     const chat = update.channel_post?.chat ?? update.edited_channel_post?.chat ?? update.my_chat_member?.chat;
     if (chat?.type === "channel") channels.set(chat.id, chat);
   }
+  if (namedChannel?.type === "channel") channels.set(namedChannel.id, namedChannel);
   const allowed = bot ? await Promise.all([...channels.values()].map(async (channel) => {
     const membership = await telegram(token, "getChatMember",
       z.object({ status: z.string(), can_post_messages: z.boolean().optional() }),
@@ -56,7 +58,7 @@ export async function inspectTelegramSetup(token: string, reviewChatId: string) 
   return {
     botValid: bot !== null,
     reviewChatReachable: reviewChat?.type === "private",
-    discoveryAvailable: updates !== null,
+    discoveryAvailable: channelUsername ? namedChannel !== null : updates !== null,
     channels: allowed.filter((channel) => channel !== null),
   };
 }
