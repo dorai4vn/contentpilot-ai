@@ -151,7 +151,7 @@ begin
       '6c000000-0000-0000-0000-000000000001'::uuid,
       '6c100000-0000-0000-0000-000000000001'::uuid,
       'https://tuoitre.vn/auto' || i || '.htm',
-      repeat(i::text,64), 8, 'Auto ' || i, 'Caption', null, 'Test',
+      md5(i::text) || md5(i::text), 8, 'Auto ' || i, 'Caption', null, 'Test',
       array['60000000-0000-4000-8000-000000000080'::uuid],
       jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met'));
     perform public.claim_sports_auto_publish(
@@ -160,9 +160,12 @@ begin
       '60000000-0000-4000-8000-000000000080'::uuid, post_id);
   end loop;
 end $$;
+reset role;
 select pg_temp.check_news(
   (select count(*)=10 from contentpilot_private.sports_auto_publish_deliveries),
   'ten reservations fit this two-hour slot');
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
 select pg_temp.check_news((select count(*)=0 from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_three')),
   'ten reservations exhaust this two-hour slot even across worker retries');
 select pg_temp.check_news(public.finish_sports_auto_publish(:'ws',:'first_auto','639',null),
