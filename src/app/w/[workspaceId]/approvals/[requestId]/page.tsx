@@ -54,8 +54,8 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
   const destinationName = destinationLabel(request.destinationId, destinationNames);
   const destination = destinations.find((item) => item.id === request.destinationId);
   const socialTarget = destination?.targetRef;
-  const news = socialTarget && request.postVersion === 1
-    ? await findSportsNewsReview(workspace.id, request.postId)
+  const news = socialTarget
+    ? await findSportsNewsReview(workspace.id, request.postId, request.postVersion)
     : null;
   const delivery = deliveries[0] ?? null;
   if (!post || post.workspaceId !== workspace.id) notFound();
@@ -186,14 +186,14 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 </pre>
                 {news && /^https:\/\/(tuoitre\.vn|thanhnien\.vn)\//.test(news.source_url) ? (
                   <figure className="space-y-2">
-                    <Image
-                      src={`/api/sports-news/image/${post.id}`}
+                    {news.has_image ? <Image
+                      src={`/api/sports-news/image/${post.id}?version=${request.postVersion}`}
                       unoptimized
-                      alt="Ảnh minh họa thể thao do AI tạo"
+                      alt="Ảnh kèm bài thể thao"
                       width={1024}
                       height={1024}
                       className="h-auto w-full max-w-sm rounded-md"
-                    />
+                    /> : null}
                     <figcaption className="text-sm text-slate-600">
                       Độ hot {news.score}/10 ·{" "}
                       <a href={news.source_url} target="_blank" rel="noreferrer" className="underline">Đọc nguồn</a>

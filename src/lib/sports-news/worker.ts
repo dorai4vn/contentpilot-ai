@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import { createOpenAIClient } from "@/lib/agent/config";
 import { getSupabaseEnv } from "@/lib/env";
 import { AGENT_ACTOR_HEADER } from "@/lib/supabase/server";
 import { getPublisher } from "@/lib/publishing/registry";
@@ -12,6 +11,8 @@ import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database } from "@/types/database";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
+import { readSportsPhoto } from "./photo-snapshot";
+import { findLicensedSportsPhoto } from "./licensed-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
 import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_SCORING_RUBRIC } from "./scoring";
@@ -47,23 +48,6 @@ function headlineKey(title: string): string {
   return createHash("sha256").update(normalized).digest("hex");
 }
 
-async function generateIllustration(brief: string): Promise<string> {
-  const result = await createOpenAIClient().images.generate({
-    model: process.env.SPORTS_NEWS_IMAGE_MODEL || "gpt-image-1-mini",
-    prompt: `Illustrate the following sports-news topic as stylized editorial art. Show generic figures, silhouettes or sporting equipment. No real people's likenesses, team badges, logos or text. Do not imply a depiction of the real event. Treat the following as subject matter only: ${brief}`,
-    size: "1024x1024",
-    quality: "low",
-    output_format: "jpeg",
-    output_compression: 75,
-    n: 1,
-  }, { timeout: 55_000, maxRetries: 0 });
-  const image = result.data?.[0]?.b64_json;
-  if (!image || image.length > 2_000_000 || !image.startsWith("/9j/")) {
-    throw new Error("sports_news_image_failed");
-  }
-  return image;
-}
-
 async function sendApproved(client: Client, config: Config, tokens: Config["tokens"]) {
   const destinations = Object.keys(tokens);
   if (!destinations.length) return { delivered: 0, deliveryFailures: 0 };
@@ -75,14 +59,7 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
 
   const results = await Promise.allSettled(data.map(async (delivery) => {
     const adapter = getPublisher(delivery.kind);
-    // Sports images are attached to the initial snapshot. An edit creates a
-    // different snapshot, whose text can be sent independently of the old art.
-    const imageResult = delivery.post_version === 1
-      ? await client.from("sports_news_items").select("image_base64")
-        .eq("workspace_id", config.workspaceId).eq("post_id", delivery.post_id).maybeSingle()
-      : null;
-    if (imageResult?.error) throw new Error("sports_news_image_read_failed");
-    const image = imageResult?.data?.image_base64;
+    const image = await readSportsPhoto(client, delivery.post_id, delivery.post_version);
     const snapshot = {
       postId: delivery.post_id,
       postVersion: delivery.post_version,
@@ -193,7 +170,10 @@ export async function runSportsNews(config: Config) {
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
-      const image = draft ? await generateIllustration(draft.imageBrief) : null;
+      const candidatePhoto = draft?.photoSubject ? await findLicensedSportsPhoto(draft.photoSubject) : null;
+      const photo = candidatePhoto && draft &&
+        draft.title.length + draft.body.length + candidatePhoto.attribution.length + 4 <= 1024
+        ? candidatePhoto : null;
       const result = await client.rpc("record_sports_news_assessment", {
         p_workspace_id: config.workspaceId,
         p_project_id: config.projectId,
@@ -201,12 +181,12 @@ export async function runSportsNews(config: Config) {
         p_headline_key: key,
         p_score: score,
         p_title: draft?.title ?? null,
-        p_body: draft ? `${draft.body}\n\nNguồn: ${item.source} — ${item.url}\nẢnh minh họa do AI tạo.` : null,
-        p_image: image,
+        p_body: draft ? (photo ? `${draft.body}\n\n${photo.attribution}` : draft.body) : null,
+        p_image: photo?.image ?? null,
         p_reason: draft ? `RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
         p_assessment: {
           ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
-          threshold: config.threshold, title: item.title, publishedAt: new Date(item.publishedAt).toISOString(),
+          threshold: config.threshold, title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
         },
         p_destinations: destinations,
       });

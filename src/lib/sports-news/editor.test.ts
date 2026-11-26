@@ -12,7 +12,7 @@ it("requests a compact, source-grounded social caption and preserves emojis and 
   const caption = {
     title: "🏆 Hà Nội FC vào chung kết",
     body: "Hà Nội FC thắng 2–1 ở bán kết. ⚽\n\nBàn quyết định đến ở phút 88.",
-    imageBrief: "Minh họa bóng đá dưới ánh đèn sân vận động.",
+    photoSubject: "Hà Nội FC",
   };
   complete.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(caption) } }] });
   const item = {

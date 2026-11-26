@@ -1,15 +1,17 @@
 import { z } from "zod";
+import { readSportsPhoto } from "@/lib/sports-news/photo-snapshot";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET(_request: Request, { params }: RouteContext<"/api/sports-news/image/[postId]">) {
+export async function GET(request: Request, { params }: RouteContext<"/api/sports-news/image/[postId]">) {
   const postId = z.uuid().safeParse((await params).postId);
   if (!postId.success) return new Response(null, { status: 404 });
 
+  const version = z.coerce.number().int().positive().safeParse(new URL(request.url).searchParams.get("version") ?? "1");
+  if (!version.success) return new Response(null, { status: 404 });
   const supabase = await createClient();
-  const { data, error } = await supabase.from("sports_news_items")
-    .select("image_base64").eq("post_id", postId.data).maybeSingle();
-  if (error || !data?.image_base64) return new Response(null, { status: 404 });
-  return new Response(Uint8Array.from(Buffer.from(data.image_base64, "base64")), {
+  const image = await readSportsPhoto(supabase, postId.data, version.data).catch(() => null);
+  if (!image) return new Response(null, { status: 404 });
+  return new Response(Uint8Array.from(Buffer.from(image, "base64")), {
     headers: {
       "Content-Type": "image/jpeg",
       "Cache-Control": "private, no-store",
