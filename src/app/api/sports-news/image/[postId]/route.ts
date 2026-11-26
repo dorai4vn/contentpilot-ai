@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: RouteContext<"/api/sport
   const supabase = await createClient();
   const image = await readSportsPhoto(supabase, postId.data, version.data).catch(() => null);
   if (!image) return new Response(null, { status: 404 });
-  return new Response(Uint8Array.from(Buffer.from(image, "base64")), {
+  return new Response(image, {
     headers: {
       "Content-Type": "image/jpeg",
       "Cache-Control": "private, no-store",

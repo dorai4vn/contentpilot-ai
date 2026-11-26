@@ -4,7 +4,7 @@ import type { PublisherAdapter, PublishContext, PublishOutcome } from "../adapte
 import type { ApprovedSnapshot } from "../types";
 
 type SocialKind = "telegram" | "discord" | "facebook";
-type Payload = { text: string; image: Uint8Array<ArrayBuffer> | undefined };
+type Payload = { text: string; titleLength: number; image: Uint8Array<ArrayBuffer> | undefined };
 
 const targetPatterns = {
   telegram: /^-100[0-9]{5,18}$/,
@@ -21,6 +21,11 @@ function requestFor(kind: SocialKind, target: string, token: string, payload: Pa
   if (kind === "telegram") {
     if (!/^\d+:[\w-]+$/.test(token)) return null;
     form.set("chat_id", target);
+    if (payload.titleLength > 0) {
+      // Telegram entities use UTF-16 code units, as does JavaScript length.
+      form.set(payload.image ? "caption_entities" : "entities",
+        JSON.stringify([{ type: "bold", offset: 0, length: payload.titleLength }]));
+    }
     if (payload.image) {
       form.set("caption", payload.text);
       attachImage(form, "photo", payload.image);
@@ -82,7 +87,14 @@ export function socialPublisher(kind: SocialKind): PublisherAdapter<Payload> {
       return target && targetPatterns[kind].test(target) ? { ok: true } : { ok: false, code: "invalid_target" };
     },
     render(snapshot: ApprovedSnapshot) {
-      return { text: `${snapshot.title}\n\n${snapshot.body}`.trim(), image: snapshot.image };
+      const title = snapshot.title.trim();
+      const body = snapshot.body.trim();
+      const headline = kind === "discord" && title ? `**${title.replace(/[\\*_~`|]/g, "\\$&")}**` : title;
+      return {
+        text: [headline, body].filter(Boolean).join("\n\n"),
+        titleLength: title.length,
+        image: snapshot.image,
+      };
     },
     async publish(payload: Payload, context: PublishContext) {
       const { targetRef, credentials } = context;

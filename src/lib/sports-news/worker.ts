@@ -69,7 +69,7 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
       postVersion: delivery.post_version,
       title: delivery.title,
       body: delivery.body,
-      ...(image ? { image: Uint8Array.from(Buffer.from(image, "base64")) } : {}),
+      ...(image ? { image } : {}),
     };
     const stale = article.data !== null && !sportsArticleIsCurrent(article.data.assessment);
     const outcome = stale ? { ok: false as const, code: "stale_article" }
