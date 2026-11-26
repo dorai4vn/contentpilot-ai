@@ -143,8 +143,28 @@ select public.record_sports_news_assessment(:'ws',:'project','https://tuoitre.vn
   jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met')) as auto_three \gset
 select id as first_auto from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_one') \gset
 select id as second_auto from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_two') \gset
+do $$
+declare i integer; post_id uuid;
+begin
+  for i in 4..11 loop
+    post_id := public.record_sports_news_assessment(
+      '6c000000-0000-0000-0000-000000000001'::uuid,
+      '6c100000-0000-0000-0000-000000000001'::uuid,
+      'https://tuoitre.vn/auto' || i || '.htm',
+      repeat(i::text,64), 8, 'Auto ' || i, 'Caption', null, 'Test',
+      array['60000000-0000-4000-8000-000000000080'::uuid],
+      jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met'));
+    perform public.claim_sports_auto_publish(
+      '6c000000-0000-0000-0000-000000000001'::uuid,
+      '6c100000-0000-0000-0000-000000000001'::uuid,
+      '60000000-0000-4000-8000-000000000080'::uuid, post_id);
+  end loop;
+end $$;
+select pg_temp.check_news(
+  (select count(*)=10 from contentpilot_private.sports_auto_publish_deliveries),
+  'ten reservations fit this two-hour slot');
 select pg_temp.check_news((select count(*)=0 from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_three')),
-  'two reservations exhaust this two-hour slot even across worker retries');
+  'ten reservations exhaust this two-hour slot even across worker retries');
 select pg_temp.check_news(public.finish_sports_auto_publish(:'ws',:'first_auto','639',null),
   'automatic success records the Telegram message ID');
 select pg_temp.check_news(public.finish_sports_auto_publish(:'ws',:'second_auto',null,'content_rejected'),

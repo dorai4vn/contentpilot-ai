@@ -175,7 +175,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     urls.add(item.url);
     headlines.add(key);
     candidates.push({ item, key, priority });
-    if (candidates.length === (testDate ? 16 : 8)) break;
+    if (candidates.length === (testDate ? 16 : 20)) break;
   }
 
   const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority }) => {

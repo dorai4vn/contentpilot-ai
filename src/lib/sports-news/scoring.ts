@@ -12,6 +12,8 @@ export const SPORTS_SCORING_RUBRIC = {
   hoursPerFreshnessPoint: 4.8,
 } as const;
 
+export const SPORTS_NEWS_MAX_PER_RUN = 10;
+
 export function scoreSportsNews(assessment: NewsAssessment, publishedAt: number, now: number) {
   const ageHours = Math.max(0, now - publishedAt) / 3_600_000;
   const freshness = Math.max(0, 10 - ageHours / SPORTS_SCORING_RUBRIC.hoursPerFreshnessPoint);
@@ -58,6 +60,6 @@ export function selectSportsNews<T extends { score: number; priority: number; it
     || a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const qualified = ranked.filter((entry) => entry.score >= threshold);
   return qualified.length
-    ? { selected: qualified.slice(0, 2), fallback: false }
+    ? { selected: qualified.slice(0, SPORTS_NEWS_MAX_PER_RUN), fallback: false }
     : { selected: ranked.slice(0, 1), fallback: ranked.length > 0 };
 }

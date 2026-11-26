@@ -22,3 +22,9 @@ it("chooses only the highest-scoring fallback, using competition priority to bre
   expect(selectSportsNews([topC1, qualified], 8)).toEqual({ selected: [qualified], fallback: false });
   expect(selectSportsNews([], 8)).toEqual({ selected: [], fallback: false });
 });
+
+it("selects at most ten qualified stories per scan", () => {
+  const item = { publishedAt: Date.now() };
+  const stories = Array.from({ length: 12 }, (_, index) => ({ score: 10 - index / 10, priority: 1, item }));
+  expect(selectSportsNews(stories, 8).selected).toHaveLength(10);
+});
