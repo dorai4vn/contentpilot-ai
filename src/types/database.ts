@@ -396,6 +396,18 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      get_sports_auto_publish_window: {
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
+        Returns: { id: string; starts_at: string; ends_at: string }[];
+      };
+      claim_sports_auto_publish: {
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_post_id: string };
+        Returns: { id: string; starts_at: string; ends_at: string; target_ref: string; created_at: string }[];
+      };
+      finish_sports_auto_publish: {
+        Args: { p_workspace_id: string; p_id: string; p_external_id: string | null; p_error_code: string | null };
+        Returns: boolean;
+      };
       record_sports_news_assessment: {
         Args: Database["public"]["Functions"]["record_sports_news"]["Args"] & { p_assessment: Json };
         Returns: string | null;

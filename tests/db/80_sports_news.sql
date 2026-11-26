@@ -121,3 +121,52 @@ select pg_temp.check_news(
   (select not has_image and image_base64 is null from public.sports_news_items where post_id = :'text_only_post'),
   'a sports draft can be recorded with no licensed photo');
 reset role;
+
+insert into contentpilot_private.sports_auto_publish_windows(workspace_id,project_id,destination_id,starts_at,ends_at)
+values(:'ws',:'project',:'channel',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '7 hours');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_news((select count(*)=1 from public.get_sports_auto_publish_window(:'ws',:'project',:'channel')),
+  'the registered Member sees the active temporary Telegram window');
+select pg_temp.check_news((select count(*)=0 from public.get_sports_auto_publish_window(:'ws',:'project',:'second')),
+  'the temporary window cannot apply to Discord');
+
+select public.record_sports_news_assessment(:'ws',:'project','https://tuoitre.vn/auto1.htm',repeat('d',64),9,
+  'Auto 1','Caption',null,'Test',array[:'channel'::uuid],
+  jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met')) as auto_one \gset
+select public.record_sports_news_assessment(:'ws',:'project','https://tuoitre.vn/auto2.htm',repeat('e',64),8,
+  'Auto 2','Caption',null,'Test',array[:'channel'::uuid],
+  jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met')) as auto_two \gset
+select public.record_sports_news_assessment(:'ws',:'project','https://tuoitre.vn/auto3.htm',repeat('f',64),8,
+  'Auto 3','Caption',null,'Test',array[:'channel'::uuid],
+  jsonb_build_object('publishedAt',clock_timestamp(),'rubricVersion','sports-v1','decision','threshold_met')) as auto_three \gset
+select id as first_auto from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_one') \gset
+select id as second_auto from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_two') \gset
+select pg_temp.check_news((select count(*)=0 from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_three')),
+  'two reservations exhaust this two-hour slot even across worker retries');
+select pg_temp.check_news(public.finish_sports_auto_publish(:'ws',:'first_auto','639',null),
+  'automatic success records the Telegram message ID');
+select pg_temp.check_news(public.finish_sports_auto_publish(:'ws',:'second_auto',null,'content_rejected'),
+  'definite automatic failure leaves the draft available for human approval');
+select pg_temp.check_news((select status='cancelled' from public.content_publish_requests where post_id=:'auto_one'),
+  'a delivered automatic post is removed from the pending queue without a fake approval');
+select pg_temp.check_news((select status='pending' from public.content_publish_requests where post_id=:'auto_two'),
+  'a definite failure leaves the human approval pending');
+
+reset role;
+update contentpilot_private.sports_auto_publish_windows
+set starts_at=clock_timestamp()-interval '8 hours', ends_at=clock_timestamp()-interval '1 minute'
+where workspace_id=:'ws';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_news((select count(*)=0 from public.get_sports_auto_publish_window(:'ws',:'project',:'channel')),
+  'the temporary window closes at its database deadline');
+select pg_temp.check_news((select count(*)=0 from public.claim_sports_auto_publish(:'ws',:'project',:'channel',:'auto_three')),
+  'no automatic send is reserved after expiry');
+select id as human_request from public.content_publish_requests where post_id=:'auto_three' \gset
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_news(
+  (select status='draft' from public.approve_publish_request(:'human_request',1,:'channel')),
+  'human approval still creates a normal publication after expiry');
+reset role;

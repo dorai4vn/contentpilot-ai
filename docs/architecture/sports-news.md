@@ -68,3 +68,9 @@ Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch c
 5. Để nhận thông báo, mở chat riêng của bot trên Telegram và bấm **Start**. Đặt token bot vào `SPORTS_NEWS_REVIEW_TELEGRAM_BOT_TOKEN`, ID số của chat riêng vào `SPORTS_NEWS_REVIEW_TELEGRAM_CHAT_ID` và địa chỉ HTTPS của ứng dụng vào `SPORTS_NEWS_REVIEW_SITE_ORIGIN`. Có thể dùng bot riêng cho thông báo. Nếu bot này cũng được cấp quyền đăng trên một kênh Telegram, đặt UUID đích vào `SPORTS_NEWS_TELEGRAM_DESTINATION_ID` để dùng lại token đã lưu.
 6. Trong GitHub Actions, đặt biến `SPORTS_NEWS_CRON_URL` thành URL HTTPS của trang thử nghiệm cộng với `/api/cron/sports-news`. Đặt secret `SPORTS_NEWS_CRON_SECRET` có cùng giá trị với `CRON_SECRET` ở ứng dụng.
 7. Chạy workflow **Sports news automation** thủ công hoặc gọi endpoint bằng POST với bearer token. Mở **Yêu cầu xuất bản**, duyệt bản tin và chạy một lượt nữa. Xác nhận bài có ảnh trên đúng kênh và trạng thái giao nội dung là **Đã xuất bản**. Lịch GitHub Actions chạy mỗi 2 giờ trên nhánh mặc định khi được cấu hình, có thể trễ tùy hàng đợi GitHub.
+
+## Temporary Auto Publish
+
+Một cửa sổ do quản trị production bật có thời hạn tối đa tám giờ, gắn với một workspace, một dự án và một đích Telegram. Worker vẫn là Member. Trong cửa sổ, tối đa hai tin trong mỗi khoảng hai giờ và tám tin toàn kỳ được phép gửi tự động, kể cả khi chạy lại. Chỉ bản nháp RSS mới tạo trong cửa sổ đủ điều kiện. Barem, bộ lọc tin cùng ngày, chống trùng và ảnh vuông được dùng như luồng thường.
+
+Kết quả gửi tự động được ghi riêng trong `contentpilot_private.sports_auto_publish_deliveries`. Nếu Telegram xác nhận đã gửi hoặc kết quả chưa xác định, hệ thống chặn gửi lại cùng bài đến cùng kênh. Lỗi xác định chưa gửi giữ yêu cầu duyệt để xử lý thủ công. Khi quá hạn, worker tự trở về Human Approval.
