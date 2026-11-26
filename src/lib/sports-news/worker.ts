@@ -11,6 +11,7 @@ import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database } from "@/types/database";
 import { assessSportsNews, writeSportsDraft } from "./editor";
 import { collectSportsNews } from "./feeds";
+import { publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
@@ -50,7 +51,7 @@ function headlineKey(title: string): string {
 
 async function sendApproved(client: Client, config: Config, tokens: Config["tokens"]) {
   const destinations = Object.keys(tokens);
-  if (!destinations.length) return { delivered: 0, deliveryFailures: 0 };
+  if (!destinations.length) return { delivered: 0, deliveryFailures: 0, staleSkipped: 0 };
   const { data, error } = await client.rpc("claim_social_deliveries", {
     p_workspace_id: config.workspaceId,
     p_destinations: destinations,
@@ -58,6 +59,9 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
   if (error) throw new Error("sports_news_claim_failed");
 
   const results = await Promise.allSettled(data.map(async (delivery) => {
+    const article = await client.from("sports_news_items").select("assessment")
+      .eq("workspace_id", config.workspaceId).eq("post_id", delivery.post_id).maybeSingle();
+    if (article.error) throw new Error("sports_news_assessment_read_failed");
     const adapter = getPublisher(delivery.kind);
     const image = await readSportsPhoto(client, delivery.post_id, delivery.post_version);
     const snapshot = {
@@ -67,7 +71,9 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
       body: delivery.body,
       ...(image ? { image: Uint8Array.from(Buffer.from(image, "base64")) } : {}),
     };
-    const outcome = await adapter.publish(adapter.render(snapshot), {
+    const stale = article.data !== null && !sportsArticleIsCurrent(article.data.assessment);
+    const outcome = stale ? { ok: false as const, code: "stale_article" }
+      : await adapter.publish(adapter.render(snapshot), {
       credentials: new PublisherSecret(tokens[delivery.destination_id]),
       targetRef: delivery.target_ref,
       idempotencyKey: delivery.idempotency_key,
@@ -79,11 +85,12 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
       p_error_code: outcome.ok ? null : outcome.code,
     });
     if (completion.error || !completion.data) throw new Error("sports_news_finish_failed");
-    return outcome.ok;
+    return stale ? "stale" : outcome.ok;
   }));
 
   const delivered = results.filter((result) => result.status === "fulfilled" && result.value).length;
-  return { delivered, deliveryFailures: results.length - delivered };
+  const staleSkipped = results.filter((result) => result.status === "fulfilled" && result.value === "stale").length;
+  return { delivered, staleSkipped, deliveryFailures: results.length - delivered - staleSkipped };
 }
 
 async function connectWorker(config: Config) {
@@ -128,7 +135,9 @@ export async function runSportsNews(config: Config) {
   const delivery = await sendApproved(client, config, tokens);
   const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
-  const { articles, unavailableSources } = await collectSportsNews(now);
+  const feed = await collectSportsNews(now);
+  const { unavailableSources } = feed;
+  const articles = feed.articles.filter((item) => publishedToday(item.publishedAt, now));
   const report = { ...delivery, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
@@ -170,10 +179,8 @@ export async function runSportsNews(config: Config) {
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
-      const candidatePhoto = draft?.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null;
-      const photo = candidatePhoto && draft &&
-        draft.title.length + draft.body.length + candidatePhoto.attribution.length + 4 <= 1024
-        ? candidatePhoto : null;
+      const photo = draft?.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null;
+      if (!publishedToday(item.publishedAt)) return null;
       const result = await client.rpc("record_sports_news_assessment", {
         p_workspace_id: config.workspaceId,
         p_project_id: config.projectId,
@@ -181,7 +188,7 @@ export async function runSportsNews(config: Config) {
         p_headline_key: key,
         p_score: score,
         p_title: draft?.title ?? null,
-        p_body: draft ? (photo ? `${draft.body}\n\n${photo.attribution}` : draft.body) : null,
+        p_body: draft?.body ?? null,
         p_image: photo?.image ?? null,
         p_reason: draft ? `RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
         p_assessment: {

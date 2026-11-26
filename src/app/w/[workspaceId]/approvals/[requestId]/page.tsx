@@ -7,6 +7,7 @@ import { contentPaths } from "@/lib/content/paths";
 import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getPublishRequest } from "@/lib/content/publish-requests";
+import { sportsArticleIsCurrent } from "@/lib/sports-news/publication-day";
 import { findSportsNewsReview } from "@/lib/sports-news/review";
 import { listDisplayNames } from "@/lib/profiles/profiles";
 import { listPublishDeliveries, listPublishingDestinations } from "@/lib/publishing/destinations";
@@ -70,7 +71,8 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
   const requested = history.find((v) => v.version === request.postVersion) ?? null;
   const status = request.displayStatus;
   const stillCurrent = post.version === request.postVersion && post.status !== "published" && post.archivedAt === null;
-  const decidable = status === "pending" && stillCurrent && can.decidePublish;
+  const stale = news !== null && !sportsArticleIsCurrent(news.assessment);
+  const decidable = status === "pending" && stillCurrent && can.decidePublish && !stale;
   const cancellable =
     request.status === "pending" && (request.requestedBy === user.id || can.cancelAnyRequest);
 
@@ -162,6 +164,7 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 ...(delivery
                   ? [{ label: "Thực thi xuất bản", value: delivery.status === "failed" && delivery.nextAttemptAt
                     ? "Lỗi, sẽ thử lại"
+                    : delivery.lastErrorCode === "stale_article" ? "Đã qua ngày xuất bản của tin"
                     : delivery.lastErrorCode === "delivery_unconfirmed"
                       ? "Chưa xác nhận đã gửi. Kiểm tra trực tiếp trên kênh."
                       : DELIVERY_STATUS_LABELS[delivery.status], testId: "review-delivery" }]
@@ -212,7 +215,11 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
         <aside className="space-y-6">
           <Card>
             <h2 className="mb-3 font-semibold">Quyết định</h2>
-            {decidable && requested ? (
+            {status === "pending" && stale ? (
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Tin này đã qua ngày xuất bản hoặc thiếu thời điểm xuất bản.
+              </p>
+            ) : decidable && requested ? (
               <div className="space-y-5" data-testid="decision-panel">
                 <ApproveForm
                   target={{
