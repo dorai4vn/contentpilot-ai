@@ -2,7 +2,7 @@
 
 ContentPilot AI lấy tin thể thao từ Tuổi Trẻ và Thanh Niên. Mỗi lượt chỉ xét tin trong 48 giờ, bỏ qua URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án. Điểm từ 0 đến 10 kết hợp độ nhận diện cao nhất của cầu thủ, đội hoặc giải (45%), tầm quan trọng của sự kiện (40%) và độ mới (15%). Mô hình ước lượng độ nhận diện theo độc giả Việt Nam. Điểm tự giảm khi tin cũ đi.
 
-Với tin đạt ngưỡng mặc định 8/10, AI viết bản tin ngắn dựa trên tiêu đề và tóm tắt RSS, gắn nguồn và tạo ảnh minh họa JPEG. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng.
+Với tin đạt ngưỡng mặc định 8/10, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có một dòng mở bài bắt mắt, các đoạn ngắn và emoji hợp ngữ cảnh. Hệ thống gắn link nguồn và tạo ảnh minh họa JPEG. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng.
 
 Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của phiên bản đầu. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa chỉ gửi nội dung văn bản.
 
