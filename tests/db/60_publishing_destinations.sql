@@ -194,7 +194,7 @@ select pg_temp.assert_error(
   '23505', 'a second internal destination is impossible');
 select pg_temp.assert_error(
   $q$insert into public.publishing_destinations (workspace_id, kind, name, target_ref) values ('6c000000-0000-0000-0000-000000000001', 'telegram', 'Telegram', '@channel')$q$,
-  '23514', 'external kinds are not enabled yet (CHECK)');
+  '23514', 'Telegram targets must be stable numeric channel IDs');
 select pg_temp.assert_error(
   $q$insert into public.publishing_destinations (workspace_id, kind, name) values ('6c000000-0000-0000-0000-000000000009', 'internal', 'X')$q$,
   '42501', 'an admin cannot add destinations to another workspace');
@@ -340,24 +340,18 @@ select pg_temp.assert(
   'members read the deliveries of their workspace');
 select pg_temp.reset_actor();
 
--- 7. Simulated future destination kind (what an M5 migration would enable) -----------------------------------
--- Enables a test-only external kind in this disposable database to exercise the
--- multi-destination rules that real platforms will rely on.
-alter table public.publishing_destinations drop constraint publishing_destinations_kind_check;
-alter table public.publishing_destinations add constraint publishing_destinations_kind_check
-  check (kind in ('internal', 'test_external'));
-
+-- 7. External destination approvals -------------------------------------------------------------
 select pg_temp.act_as('00000000-0000-0000-0000-0000000006c2');
 -- Clients cannot choose the id (not granted); the database generates it.
 select pg_temp.assert_error(
-  $q$insert into public.publishing_destinations (id, workspace_id, kind, name) values (gen_random_uuid(), '6c000000-0000-0000-0000-000000000001', 'test_external', 'X')$q$,
+  $q$insert into public.publishing_destinations (id, workspace_id, kind, name) values (gen_random_uuid(), '6c000000-0000-0000-0000-000000000001', 'discord', 'X')$q$,
   '42501', 'clients cannot choose a destination id');
 select pg_temp.assert_error(
-  $q$insert into public.publishing_destinations (workspace_id, kind, name, created_by) values ('6c000000-0000-0000-0000-000000000001', 'test_external', 'X', '00000000-0000-0000-0000-0000000006c3')$q$,
+  $q$insert into public.publishing_destinations (workspace_id, kind, name, created_by) values ('6c000000-0000-0000-0000-000000000001', 'discord', 'X', '00000000-0000-0000-0000-0000000006c3')$q$,
   '42501', 'clients cannot forge created_by');
 insert into public.publishing_destinations (workspace_id, kind, name, target_ref) values
-  ('6c000000-0000-0000-0000-000000000001', 'test_external', 'Kênh A', 'channel-a'),
-  ('6c000000-0000-0000-0000-000000000001', 'test_external', 'Kênh B', 'channel-b');
+  ('6c000000-0000-0000-0000-000000000001', 'discord', 'Kênh A', '123456789'),
+  ('6c000000-0000-0000-0000-000000000001', 'discord', 'Kênh B', '123456780');
 select pg_temp.assert(
   (select count(*) = 3 from public.publishing_destinations where workspace_id = '6c000000-0000-0000-0000-000000000001'),
   'several destinations in one workspace (internal + two channels)');

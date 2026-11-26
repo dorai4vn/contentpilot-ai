@@ -7,7 +7,7 @@ import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getProject } from "@/lib/content/projects";
 import { listPublishRequests } from "@/lib/content/publish-requests";
-import { getInternalDestination } from "@/lib/publishing/destinations";
+import { getInternalDestination, listPublishingDestinations } from "@/lib/publishing/destinations";
 
 import { LocalDateTime } from "../../../_components/client-ui";
 import { ArchivePostButton, type EditablePost, PostEditor, StatusSwitch } from "../../../_components/post-forms";
@@ -25,11 +25,11 @@ export default async function PostEditorPage({ params }: PageProps<"/w/[workspac
   const postId = routeId(postParam);
   const [post, history] = await Promise.all([getPost({ postId }), getPostHistory({ postId })]);
   if (!post || post.workspaceId !== workspace.id) notFound();
-  const [project, requests, internalDestination] = await Promise.all([
+  const [project, requests, internalDestination, destinations] = await Promise.all([
     getProject({ projectId: post.projectId }),
     listPublishRequests({ workspaceId: workspace.id, postId: post.id, limit: 10 }),
-    // Requests always name their destination; today only the internal one exists.
     getInternalDestination({ workspaceId: workspace.id }),
+    listPublishingDestinations({ workspaceId: workspace.id }),
   ]);
   if (!project) notFound();
 
@@ -179,6 +179,8 @@ export default async function PostEditorPage({ params }: PageProps<"/w/[workspac
                         postId={post.id}
                         version={post.version}
                         destination={{ id: internalDestination.id, name: internalDestination.name }}
+                        alternatives={destinations.filter((item) => item.kind !== "internal")
+                          .map((item) => ({ id: item.id, name: `${item.name} · ${item.kind}` }))}
                       />
                     )}
                   </>

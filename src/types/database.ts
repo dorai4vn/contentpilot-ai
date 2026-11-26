@@ -19,7 +19,7 @@ export type PublishRequestStatus = "pending" | "approved" | "rejected" | "cancel
 export type PublishRequestCancelReason = "withdrawn" | "post_changed" | "expired";
 export type PublishRequestEvent = "requested" | "approved" | "rejected" | "cancelled" | "published";
 
-export type PublishingDestinationKind = "internal";
+export type PublishingDestinationKind = "internal" | "telegram" | "discord" | "facebook";
 export type PublishingDestinationStatus = "active" | "disabled";
 export type PublishDeliveryStatus = "queued" | "sending" | "succeeded" | "failed" | "cancelled";
 
@@ -141,6 +141,21 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      sports_news_items: {
+        Row: {
+          workspace_id: string;
+          project_id: string;
+          source_url: string;
+          headline_key: string;
+          score: number;
+          post_id: string | null;
+          image_base64: string | null;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
       };
       content_projects: {
         Row: {
@@ -363,6 +378,44 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      record_sports_news: {
+        Args: {
+          p_workspace_id: string;
+          p_project_id: string;
+          p_source_url: string;
+          p_headline_key: string;
+          p_score: number;
+          p_title: string | null;
+          p_body: string | null;
+          p_image: string | null;
+          p_reason: string | null;
+          p_destinations: string[];
+        };
+        Returns: string | null;
+      };
+      claim_social_deliveries: {
+        Args: { p_workspace_id: string; p_destinations: string[] };
+        Returns: Array<{
+          id: string;
+          destination_id: string;
+          kind: string;
+          target_ref: string;
+          idempotency_key: string;
+          post_id: string;
+          post_version: number;
+          title: string;
+          body: string;
+        }>;
+      };
+      finish_social_delivery: {
+        Args: {
+          p_workspace_id: string;
+          p_id: string;
+          p_external_id: string | null;
+          p_error_code: string | null;
+        };
+        Returns: boolean;
+      };
       health_check: {
         Args: Record<PropertyKey, never>;
         Returns: Json;

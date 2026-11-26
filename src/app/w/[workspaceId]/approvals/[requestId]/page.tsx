@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 
 import { contentPaths } from "@/lib/content/paths";
 import { publishPermissions } from "@/lib/content/permissions";
 import { getPost, getPostHistory } from "@/lib/content/posts";
 import { getPublishRequest } from "@/lib/content/publish-requests";
+import { findSportsNewsReview } from "@/lib/sports-news/review";
 import { listDisplayNames } from "@/lib/profiles/profiles";
 import { listPublishDeliveries, listPublishingDestinations } from "@/lib/publishing/destinations";
 import { listWorkspaceMembers } from "@/lib/workspaces/queries";
@@ -50,6 +52,11 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
   ]);
   const destinationNames = new Map(destinations.map((d) => [d.id, d.name]));
   const destinationName = destinationLabel(request.destinationId, destinationNames);
+  const destination = destinations.find((item) => item.id === request.destinationId);
+  const socialTarget = destination?.targetRef;
+  const news = socialTarget && request.postVersion === 1
+    ? await findSportsNewsReview(workspace.id, request.postId)
+    : null;
   const delivery = deliveries[0] ?? null;
   if (!post || post.workspaceId !== workspace.id) notFound();
   const involved = [request.requestedBy, request.decidedBy, ...events.map((e) => e.actorId)].filter((id): id is string => id !== null);
@@ -137,6 +144,7 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                   ),
                 },
                 { label: "Đích xuất bản", value: destinationName, testId: "review-destination" },
+                ...(socialTarget ? [{ label: "Tài khoản hoặc kênh", value: `${destination.kind} · ${socialTarget}` }] : []),
                 { label: "Phiên bản xin duyệt", value: `Phiên bản ${request.postVersion}`, testId: "review-requested-version" },
                 {
                   label: "Phiên bản hiện tại",
@@ -152,7 +160,11 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 { label: "Hạn duyệt", value: <LocalDateTime iso={request.expiresAt} />, testId: "review-expires-at" },
                 ...(request.reason ? [{ label: "Ghi chú của người gửi", value: `“${request.reason}”` }] : []),
                 ...(delivery
-                  ? [{ label: "Thực thi xuất bản", value: DELIVERY_STATUS_LABELS[delivery.status], testId: "review-delivery" }]
+                  ? [{ label: "Thực thi xuất bản", value: delivery.status === "failed" && delivery.nextAttemptAt
+                    ? "Lỗi, sẽ thử lại"
+                    : delivery.lastErrorCode === "delivery_unconfirmed"
+                      ? "Chưa xác nhận đã gửi. Kiểm tra trực tiếp trên kênh."
+                      : DELIVERY_STATUS_LABELS[delivery.status], testId: "review-delivery" }]
                   : []),
               ]}
             />
@@ -172,6 +184,22 @@ export default async function ApprovalReviewPage({ params }: PageProps<"/w/[work
                 >
                   {requested.body || "(trống)"}
                 </pre>
+                {news && /^https:\/\/(tuoitre\.vn|thanhnien\.vn)\//.test(news.source_url) ? (
+                  <figure className="space-y-2">
+                    <Image
+                      src={`/api/sports-news/image/${post.id}`}
+                      unoptimized
+                      alt="Ảnh minh họa thể thao do AI tạo"
+                      width={1024}
+                      height={1024}
+                      className="h-auto w-full max-w-sm rounded-md"
+                    />
+                    <figcaption className="text-sm text-slate-600">
+                      Độ hot {news.score}/10 ·{" "}
+                      <a href={news.source_url} target="_blank" rel="noreferrer" className="underline">Đọc nguồn</a>
+                    </figcaption>
+                  </figure>
+                ) : null}
               </article>
             ) : (
               <Notice tone="warning" testId="review-content-missing">

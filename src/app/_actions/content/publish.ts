@@ -9,7 +9,7 @@ import {
   approvePublishRequest,
   cancelPublishRequest,
   getPublishRequest,
-  type PublishedPost,
+  type ApprovedPost,
   type PublishRequest,
   rejectPublishRequest,
   requestPostPublish,
@@ -49,8 +49,8 @@ export type PublishActionData = {
   postId: string;
   requestId: string;
   requestStatus: PublishRequest["status"];
-  /** Set when the action published the post (approval). */
-  postStatus?: "published";
+  /** Post status after approval. External deliveries are queued. */
+  postStatus?: ApprovedPost["status"];
   /** New post version after publishing (the post page must reload with it). */
   postVersion?: number;
 };
@@ -119,14 +119,14 @@ export async function approvePublishAction(
       await requestInWorkspace(requestId, workspaceId);
       return approvePublishRequest({ requestId, expectedPostVersion, expectedDestinationId });
     },
-    (post: PublishedPost): PublishActionData => {
+    (post: ApprovedPost): PublishActionData => {
       revalidatePublishPaths(post.workspaceId, post.id, post.projectId);
       return {
         workspaceId: post.workspaceId,
         postId: post.id,
         requestId,
         requestStatus: "approved",
-        postStatus: "published",
+        postStatus: post.status,
         postVersion: post.version,
       };
     },

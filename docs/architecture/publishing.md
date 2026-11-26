@@ -5,10 +5,10 @@ later Telegram, Discord, Facebook and others). This document is the long-term
 design every publishing change must follow. It was approved for M4.6 and applies
 to all later milestones.
 
-Status: **M4.6a** implemented the database foundation
-(`supabase/migrations/20261121120000_publishing_destinations.sql`) and **M4.6b**
-the application layer (data access, Publisher Adapter, registry, UI). Only the
-`internal` destination kind is enabled; no external platform is integrated yet.
+M4.6 introduced destination-scoped approval and delivery. The
+[sports RSS pipeline](sports-news.md) adds Telegram, Discord and Facebook Page
+adapters and a worker for their approved deliveries. The earlier M4.6 notes
+below describe the foundation they build on.
 
 ## Principles
 

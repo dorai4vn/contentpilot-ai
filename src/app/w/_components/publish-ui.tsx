@@ -46,7 +46,7 @@ export const DELIVERY_STATUS_LABELS: Record<"queued" | "sending" | "succeeded" |
   queued: "Đang chờ thực thi",
   sending: "Đang gửi",
   succeeded: "Đã xuất bản",
-  failed: "Lỗi, sẽ thử lại",
+  failed: "Gửi thất bại",
   cancelled: "Đã hủy",
 };
 

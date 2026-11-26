@@ -67,19 +67,20 @@ export type DestinationOption = { id: string; name: string };
 
 /**
  * Ask for publication of the post at the version shown, on one explicit
- * destination (today the workspace's internal destination: no picker until a
- * real external adapter exists).
+ * destination.
  */
 export function RequestPublishForm({
   workspaceId,
   postId,
   version,
   destination,
+  alternatives = [],
 }: {
   workspaceId: string;
   postId: string;
   version: number;
   destination: DestinationOption;
+  alternatives?: DestinationOption[];
 }) {
   const [state, action] = useActionState<State, FormData>(requestPublishAction, null);
   useRefreshOnSuccess(state);
@@ -90,10 +91,21 @@ export function RequestPublishForm({
       <input type="hidden" name="workspaceId" value={workspaceId} />
       <input type="hidden" name="postId" value={postId} />
       <input type="hidden" name="expectedVersion" value={version} />
-      <input type="hidden" name="destinationId" value={destination.id} />
-      <p className="text-sm text-slate-600 dark:text-slate-400" data-testid="request-publish-destination">
-        Đích xuất bản: <span className="font-medium text-slate-800 dark:text-slate-200">{destination.name}</span>
-      </p>
+      {alternatives.length ? (
+        <div data-testid="request-publish-destination">
+          <FieldLabel htmlFor={`${id}-destination`}>Đích xuất bản</FieldLabel>
+          <select id={`${id}-destination`} name="destinationId" className={inputClass} defaultValue={destination.id}>
+            {[destination, ...alternatives].map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="destinationId" value={destination.id} />
+          <p className="text-sm text-slate-600 dark:text-slate-400" data-testid="request-publish-destination">
+            Đích xuất bản: <span className="font-medium text-slate-800 dark:text-slate-200">{destination.name}</span>
+          </p>
+        </>
+      )}
       <div>
         <FieldLabel htmlFor={`${id}-reason`}>Ghi chú cho người duyệt (không bắt buộc)</FieldLabel>
         <textarea
@@ -141,7 +153,9 @@ export function ApproveForm({ target }: { target: ApprovalTarget }) {
   if (state?.ok) {
     return (
       <Notice tone="success" testId="approve-success">
-        Đã phê duyệt và xuất bản phiên bản {target.postVersion}.
+        {state.data.postStatus === "published"
+          ? `Đã phê duyệt và xuất bản phiên bản ${target.postVersion}.`
+          : `Đã phê duyệt phiên bản ${target.postVersion}. Đang chờ gửi đến ${target.destinationName}.`}
       </Notice>
     );
   }
