@@ -19,7 +19,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 SUITES=("$@")
-if [[ ${#SUITES[@]} -eq 0 ]]; then SUITES=(smoke content agent-ui approval-ui profiles); fi
+if [[ ${#SUITES[@]} -eq 0 ]]; then SUITES=(smoke content agent-ui approval-ui bulk-approval profiles); fi
 PORT="${E2E_PORT:-3100}"
 LOCAL_RE='^(https?://|postgres(ql)?://[^@]*@)(localhost|127\.0\.0\.1)(:[0-9]+)?(/|$)'
 

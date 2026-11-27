@@ -1,9 +1,10 @@
 "use client";
 
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type ReactNode,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -39,37 +40,88 @@ export type BulkQueueItem = {
   children: ReactNode;
 };
 
+/** One line of the persistent result report (kept even when every row disappears). */
+type ReportRow = {
+  requestId: string;
+  title: string;
+  destinationName: string;
+  result: BulkApproveItemResult;
+};
+
+const CARD =
+  "rounded-xl border border-border bg-surface shadow-card text-foreground";
+
+/**
+ * Mount with a `key` built from workspace + filter + page: a different scope
+ * remounts the component, which resets selection, confirmation and report.
+ * `emptyState` is rendered inside, so the result report survives the refresh
+ * that empties the queue after an all-success batch.
+ */
 export function BulkApprovalList({
   workspaceId,
   items,
+  emptyState,
 }: {
   workspaceId: string;
   items: BulkQueueItem[];
+  emptyState?: ReactNode;
 }) {
   const router = useRouter();
   const groupId = useId();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [confirming, setConfirming] = useState(false);
-  const [results, setResults] = useState<Map<string, BulkApproveItemResult>>(
-    new Map(),
+  // Exactly what the approver confirmed; the submit payload is built from it.
+  const [confirmation, setConfirmation] = useState<BulkQueueItem[] | null>(
+    null,
   );
+  const [report, setReport] = useState<ReportRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
   const inFlight = useRef(false);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
 
   const eligible = useMemo(() => items.filter((i) => i.eligible), [items]);
   const eligibleIds = useMemo(
     () => new Set(eligible.map((i) => i.requestId)),
     [eligible],
   );
-  // Only ids still on the page and eligible count (the page refreshes after success).
+  // Only ids still on the page and eligible count.
   const chosen = eligible.filter((i) => selected.has(i.requestId));
   const tooMany = chosen.length > BULK_APPROVE_MAX;
   const allSelected = eligible.length > 0 && chosen.length === eligible.length;
 
+  // The confirmation is valid only while every confirmed item is still on the
+  // page, eligible, with the same version, destination and selected. Anything
+  // else (refresh, selection change) silently invalidates it: it can never
+  // submit a payload different from what the approver read.
+  const confirmValid =
+    confirmation !== null &&
+    confirmation.length === chosen.length &&
+    confirmation.every((c) => {
+      const now = eligible.find((i) => i.requestId === c.requestId);
+      return (
+        now !== undefined &&
+        selected.has(c.requestId) &&
+        now.postVersion === c.postVersion &&
+        now.destinationId === c.destinationId
+      );
+    });
+  const confirming = confirmValid ? confirmation : null;
+
+  // Keyboard: opening the confirmation moves focus to it (not to the approve
+  // button, so a stray Enter cannot approve); Escape cancels and returns focus.
+  useEffect(() => {
+    if (confirming) confirmRef.current?.focus();
+  }, [confirming !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const closeConfirm = (restoreFocus: boolean) => {
+    setConfirmation(null);
+    if (restoreFocus) queueMicrotask(() => startRef.current?.focus());
+  };
+
   const toggle = (id: string, on: boolean) => {
     if (busy) return;
-    setConfirming(false);
+    setConfirmation(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (on) next.add(id);
@@ -79,7 +131,7 @@ export function BulkApprovalList({
   };
   const selectAll = (on: boolean) => {
     if (busy) return;
-    setConfirming(false);
+    setConfirmation(null);
     setSelected(
       on
         ? new Set(eligible.slice(0, BULK_APPROVE_MAX).map((i) => i.requestId))
@@ -88,25 +140,26 @@ export function BulkApprovalList({
   };
   const clear = () => {
     if (busy) return;
-    setConfirming(false);
+    setConfirmation(null);
     setSelected(new Set());
   };
 
   const destinationSummary = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const i of chosen)
+    for (const i of confirming ?? [])
       counts.set(i.destinationName, (counts.get(i.destinationName) ?? 0) + 1);
     return [...counts.entries()];
-  }, [chosen]);
+  }, [confirming]);
 
   const submit = () => {
-    if (inFlight.current || busy || chosen.length === 0 || tooMany) return;
+    if (inFlight.current || busy || !confirming || tooMany) return;
     inFlight.current = true;
     setError(null);
+    const batch = confirming;
     const payload = {
       workspaceId,
       confirm: "approve",
-      items: chosen.map((i) => ({
+      items: batch.map((i) => ({
         requestId: i.requestId,
         expectedPostVersion: i.postVersion,
         expectedDestinationId: i.destinationId,
@@ -119,14 +172,23 @@ export function BulkApprovalList({
           setError(res.error);
           return;
         }
-        setResults(new Map(res.data.results.map((r) => [r.requestId, r])));
-        // Succeeded items leave the selection; failed ones stay selected for review.
+        const byId = new Map(batch.map((i) => [i.requestId, i]));
+        setReport(
+          res.data.results.map((r) => ({
+            requestId: r.requestId,
+            title: byId.get(r.requestId)?.title ?? r.requestId,
+            destinationName: byId.get(r.requestId)?.destinationName ?? "",
+            result: r,
+          })),
+        );
+        // Succeeded items leave the selection; failed ones stay selected (the
+        // `chosen` filter drops those that are no longer eligible after refresh).
         setSelected(
           new Set(
             res.data.results.filter((r) => !r.ok).map((r) => r.requestId),
           ),
         );
-        setConfirming(false);
+        setConfirmation(null);
         router.refresh();
       } catch {
         setError(
@@ -138,20 +200,24 @@ export function BulkApprovalList({
     });
   };
 
-  const okCount = [...results.values()].filter((r) => r.ok).length;
-  const failCount = results.size - okCount;
+  const resultById = new Map(report?.map((r) => [r.requestId, r.result]));
+  const okCount = report?.filter((r) => r.result.ok).length ?? 0;
+  const failCount = (report?.length ?? 0) - okCount;
+  const failedGone = (report ?? []).filter(
+    (r) => !r.result.ok && !eligibleIds.has(r.requestId),
+  ).length;
 
   return (
     <div className="space-y-3">
       {eligible.length > 0 ? (
         <div
-          className="sticky top-2 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-card backdrop-blur"
+          className={`sticky top-2 z-10 flex flex-wrap items-center gap-3 p-3 ${CARD}`}
           data-testid="bulk-toolbar"
         >
           <label className="flex items-center gap-2 text-sm font-medium">
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+              className="h-4 w-4 rounded border-border accent-primary"
               checked={allSelected}
               disabled={busy}
               onChange={(e) => selectAll(e.target.checked)}
@@ -160,12 +226,13 @@ export function BulkApprovalList({
             Chọn tất cả yêu cầu đang chờ duyệt trên trang này
           </label>
           <span
-            className="text-sm text-slate-600"
+            className="text-sm text-muted"
             role="status"
             aria-live="polite"
             data-testid="bulk-count"
           >
             Đã chọn {chosen.length}/{eligible.length}
+            {tooMany ? ` — tối đa ${BULK_APPROVE_MAX} mỗi lần` : ""}
           </span>
           <div className="ml-auto flex flex-wrap gap-2">
             <button
@@ -178,9 +245,10 @@ export function BulkApprovalList({
               Bỏ chọn
             </button>
             <button
+              ref={startRef}
               type="button"
               className={buttonClass.primary}
-              onClick={() => setConfirming(true)}
+              onClick={() => setConfirmation(chosen)}
               disabled={busy || chosen.length === 0 || tooMany}
               data-testid="bulk-approve-start"
             >
@@ -191,22 +259,31 @@ export function BulkApprovalList({
         </div>
       ) : null}
 
-      {confirming && chosen.length > 0 ? (
+      {confirming ? (
         <div
-          className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm leading-6 text-indigo-950 shadow-card"
+          ref={confirmRef}
+          tabIndex={-1}
+          className="space-y-3 rounded-xl border border-border bg-(--accent) p-4 text-sm leading-6 text-foreground shadow-card outline-none focus-visible:ring-2 focus-visible:ring-primary"
           role="alertdialog"
           aria-labelledby={`${groupId}-title`}
+          aria-describedby={`${groupId}-summary`}
           data-testid="bulk-confirm"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !busy) {
+              e.stopPropagation();
+              closeConfirm(true);
+            }
+          }}
         >
           <p
             id={`${groupId}-title`}
             className="flex items-center gap-2 font-semibold"
           >
-            <ShieldCheck className="h-4 w-4 text-indigo-600" aria-hidden />
+            <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
             Xác nhận phê duyệt hàng loạt
           </p>
-          <p data-testid="bulk-confirm-summary">
-            Bạn sắp phê duyệt <strong>{chosen.length}</strong> yêu cầu đúng
+          <p id={`${groupId}-summary`} data-testid="bulk-confirm-summary">
+            Bạn sắp phê duyệt <strong>{confirming.length}</strong> yêu cầu đúng
             phiên bản đang hiển thị. Đích xuất bản:{" "}
             {destinationSummary.map(([name, n], idx) => (
               <span key={name}>
@@ -229,12 +306,12 @@ export function BulkApprovalList({
             >
               {busy
                 ? "Đang phê duyệt…"
-                : `Xác nhận phê duyệt ${chosen.length} yêu cầu`}
+                : `Xác nhận phê duyệt ${confirming.length} yêu cầu`}
             </button>
             <button
               type="button"
               className={buttonClass.ghost}
-              onClick={() => setConfirming(false)}
+              onClick={() => closeConfirm(true)}
               disabled={busy}
               data-testid="bulk-confirm-cancel"
             >
@@ -249,21 +326,93 @@ export function BulkApprovalList({
           {error}
         </Notice>
       ) : null}
-      {results.size > 0 ? (
-        <Notice
-          tone={failCount > 0 ? "warning" : "success"}
-          testId="bulk-result"
+
+      {report ? (
+        <section
+          className={`space-y-2 p-4 ${CARD}`}
+          aria-labelledby={`${groupId}-report`}
+          data-testid="bulk-result"
+          data-ok-count={okCount}
+          data-fail-count={failCount}
         >
-          Đã phê duyệt {okCount}/{results.size} yêu cầu
-          {failCount > 0
-            ? `; ${failCount} yêu cầu lỗi vẫn được chọn bên dưới.`
-            : "."}
-        </Notice>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2
+              id={`${groupId}-report`}
+              className="text-sm font-semibold"
+              role="status"
+            >
+              Kết quả phê duyệt hàng loạt: {okCount}/{report.length} thành công
+              {failCount > 0 ? `, ${failCount} lỗi` : ""}
+            </h2>
+            <button
+              type="button"
+              className={buttonClass.ghost}
+              onClick={() => setReport(null)}
+              disabled={busy}
+              data-testid="bulk-result-dismiss"
+            >
+              Đóng kết quả
+            </button>
+          </div>
+          {failedGone > 0 ? (
+            <p className="text-xs text-muted" data-testid="bulk-result-gone">
+              {failedGone} yêu cầu lỗi không còn đủ điều kiện duyệt trong hàng
+              chờ (đã được xử lý, hết hạn hoặc bị gỡ) nên không còn được chọn.
+            </p>
+          ) : null}
+          <ul className="divide-y divide-border text-sm">
+            {report.map((r) => (
+              <li
+                key={r.requestId}
+                className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2"
+                data-testid="bulk-result-row"
+                data-ok={r.result.ok}
+                data-still-eligible={eligibleIds.has(r.requestId)}
+              >
+                {r.result.ok ? (
+                  <CheckCircle2
+                    className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+                    aria-hidden
+                  />
+                ) : (
+                  <XCircle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-red-600"
+                    aria-hidden
+                  />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{r.title}</span>
+                  {r.destinationName ? (
+                    <span className="text-muted"> · {r.destinationName}</span>
+                  ) : null}
+                  <span
+                    className={`block text-xs ${r.result.ok ? "text-emerald-700" : "text-red-700"}`}
+                  >
+                    {r.result.ok
+                      ? r.result.postStatus === "published"
+                        ? "Đã phê duyệt và xuất bản."
+                        : "Đã phê duyệt, đang chờ gửi."
+                      : `Không phê duyệt được: ${r.result.error}${
+                          eligibleIds.has(r.requestId)
+                            ? " (vẫn được chọn để xem lại)"
+                            : " (không còn đủ điều kiện, đã bỏ chọn)"
+                        }`}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
-      <ul className="space-y-2" data-testid="approval-list">
+      {items.length === 0 ? emptyState : null}
+
+      <ul
+        className={items.length ? "space-y-2" : "hidden"}
+        data-testid="approval-list"
+      >
         {items.map((i) => {
-          const result = results.get(i.requestId);
+          const result = resultById.get(i.requestId);
           const checkboxId = `${groupId}-${i.requestId}`;
           return (
             <li
@@ -280,7 +429,7 @@ export function BulkApprovalList({
                       <input
                         id={checkboxId}
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+                        className="h-4 w-4 rounded border-border accent-primary"
                         checked={selected.has(i.requestId)}
                         disabled={busy}
                         onChange={(e) => toggle(i.requestId, e.target.checked)}
@@ -294,18 +443,13 @@ export function BulkApprovalList({
                 ) : null}
                 <div className="min-w-0 flex-1">
                   {i.children}
-                  {result ? (
+                  {result && !result.ok ? (
                     <p
-                      className={`mt-2 text-xs font-medium ${result.ok ? "text-emerald-700" : "text-red-700"}`}
-                      role="status"
+                      className="mt-2 text-xs font-medium text-red-700"
                       data-testid="bulk-item-result"
-                      data-ok={result.ok}
+                      data-ok="false"
                     >
-                      {result.ok
-                        ? result.postStatus === "published"
-                          ? "Đã phê duyệt và xuất bản."
-                          : "Đã phê duyệt, đang chờ gửi."
-                        : `Không phê duyệt được: ${result.error}`}
+                      Không phê duyệt được: {result.error}
                     </p>
                   ) : null}
                 </div>
