@@ -12,7 +12,8 @@ import type { Database, Json } from "@/types/database";
 import { getTemporaryAutoWindow, sendTemporarySportsPost } from "./auto-delivery";
 import { AUTO_PUBLISH_MAX_PER_RUN } from "./temporary-auto-publish";
 import { assessSportsNews, writeSportsDraft } from "./editor";
-import { buildEventIdentity, buildEventPayload, classifyEvent, parseStoredIdentity, type EventDecision, type EventIdentity, type KnownEvent } from "./event-identity";
+import { loadBlockingEvents } from "./event-history";
+import { buildEventIdentity, buildEventPayload, classifyEvent, type EventDecision, type EventIdentity, type KnownEvent } from "./event-identity";
 import { collectSportsNews } from "./feeds";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
@@ -224,12 +225,12 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const articles = feed.articles.filter((item) => testDate
     ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
     : publishedToday(item.publishedAt, now));
-  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
+  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
     .from("sports_news_items")
-    .select("source_url, headline_key, event_identity")
+    .select("source_url, headline_key, event_identity, post_id, assessment, created_at")
     .eq("workspace_id", config.workspaceId)
     .eq("project_id", config.projectId)
     .gte("created_at", new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString())
@@ -238,10 +239,9 @@ export async function runSportsNews(config: Config, testDate?: string) {
   if (seen.error) throw new Error("sports_news_history_failed");
   const urls = new Set(seen.data.map((item) => item.source_url));
   const headlines = new Set(seen.data.map((item) => item.headline_key));
-  const knownEvents: KnownEvent[] = seen.data.flatMap((row) => {
-    const identity = parseStoredIdentity(row.event_identity);
-    return identity ? [{ identity, sourceUrl: row.source_url }] : [];
-  });
+  // Only events that became an actual, non-archived, non-rejected post may suppress a later report.
+  // Low-score, failed, unselected or merely discovered items never do.
+  const knownEvents: KnownEvent[] = await loadBlockingEvents(client, config.workspaceId, seen.data);
   const skippedEvents: { url: string; key: string; identity: EventIdentity; verdict: EventDecision }[] = [];
   const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, [item.summary, item.categories].filter(Boolean).join(" ")) }))
     .sort((a, b) => a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
@@ -249,8 +249,9 @@ export async function runSportsNews(config: Config, testDate?: string) {
   for (const { item, priority } of prioritized) {
     const key = headlineKey(item.title);
     if (urls.has(item.url) || headlines.has(key)) continue;
-    // Semantic check (FN05): same real-world event from another source is skipped with evidence;
-    // a meaningful follow-up (new type, firmer status, changed score) continues as a linked candidate.
+    // Semantic check (FN05): same real-world event as an already accepted post is skipped with evidence;
+    // a meaningful follow-up (result after preview, firmer status, changed score) continues as a linked
+    // candidate. Candidates of this run never block each other here: that is decided after scoring.
     const identity = buildEventIdentity(item);
     const verdict = classifyEvent(identity, knownEvents);
     if (verdict.decision === "duplicate") {
@@ -261,19 +262,9 @@ export async function runSportsNews(config: Config, testDate?: string) {
     if (verdict.decision === "follow_up") report.followUps += 1;
     urls.add(item.url);
     headlines.add(key);
-    knownEvents.push({ identity, sourceUrl: item.url });
     candidates.push({ item, key, priority, identity, verdict });
     if (candidates.length === (testDate ? 16 : 20)) break;
   }
-
-  await Promise.allSettled(skippedEvents.map(({ url, key, identity, verdict }) =>
-    client.rpc("record_sports_news_event_duplicate", {
-      p_workspace_id: config.workspaceId,
-      p_project_id: config.projectId,
-      p_source_url: url,
-      p_headline_key: key,
-      p_event: buildEventPayload(identity, verdict) as unknown as Json,
-    })));
 
   const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority, identity, verdict }) => {
     const assessment = await assessSportsNews(item);
@@ -282,11 +273,40 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
   report.itemFailures = assessments.length - assessed.length;
-  const selection = selectSportsNews(assessed, threshold, scoring?.fallback_mode ?? "highest");
+  // Same-run duplicates: the highest-scoring report of an event is kept; weaker rewrites of it never take a
+  // slot, yet a weak report can never suppress a stronger one (ranking happens AFTER scoring).
+  const accepted: KnownEvent[] = [];
+  const weaker = new Set<string>();
+  for (const entry of [...assessed].sort((a, b) => b.score - a.score || a.priority - b.priority)) {
+    const verdict = classifyEvent(entry.identity, accepted);
+    if (verdict.decision === "duplicate") {
+      weaker.add(entry.key);
+      if (skippedEvents.length < 30) {
+        skippedEvents.push({ url: entry.item.url, key: entry.key, identity: entry.identity,
+          verdict: { ...verdict, reasons: [{ code: "same_run_weaker_report" }, ...verdict.reasons] } });
+      }
+      report.semanticDuplicates += 1;
+    } else {
+      accepted.push({ identity: entry.identity, sourceUrl: entry.item.url, title: entry.item.title, origin: "stored" });
+    }
+  }
+  const selection = selectSportsNews(assessed.filter((entry) => !weaker.has(entry.key)), threshold, scoring?.fallback_mode ?? "highest");
   const fallback = !testDate && selection.fallback;
   const selected = testDate ? (selection.fallback ? [] : selection.selected.slice(0, 1)) : selection.selected;
   const selectedKeys = new Set(selected.map((entry) => entry.key));
   const decided = testDate ? selected : assessed.filter((entry) => entry.score < threshold || selectedKeys.has(entry.key));
+
+  const evidence = await Promise.allSettled(skippedEvents.map(({ url, key, identity, verdict }) =>
+    client.rpc("record_sports_news_event_duplicate", {
+      p_workspace_id: config.workspaceId,
+      p_project_id: config.projectId,
+      p_source_url: url,
+      p_headline_key: key,
+      p_event: buildEventPayload(identity, verdict) as unknown as Json,
+    })));
+  // Evidence failures are reported, never swallowed.
+  report.eventEvidenceFailures = evidence.filter((entry) => entry.status === "rejected" || entry.value.error).length;
+  report.itemFailures += report.eventEvidenceFailures;
 
   const saved = await Promise.allSettled(
     decided.map(async ({ item, key, priority, identity, verdict, assessment, score, reach, freshness }) => {

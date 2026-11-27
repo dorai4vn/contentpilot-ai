@@ -77,10 +77,20 @@ Kết quả gửi tự động được ghi riêng trong `contentpilot_private.s
 
 ## Khử trùng sự kiện theo ngữ nghĩa (FN05)
 
-Ngoài khử trùng theo URL và tiêu đề chuẩn hoá (giữ nguyên), worker tính **danh tính sự kiện** cho mỗi bài bằng bộ trích xuất tất định (`src/lib/sports-news/event-identity.ts`, không gọi LLM): đội/cầu thủ, giải đấu, loại sự kiện (kết quả, nhận định, chuyển nhượng, chấn thương, HLV, kỷ luật), mức chắc chắn (tin đồn → đưa tin → chính thức), tỷ số và ngày (Asia/Dubai).
+Ngoài khử trùng theo URL và tiêu đề chuẩn hoá (vẫn được xử lý trước, giữ nguyên), worker tính **danh tính sự kiện** (`event-v2`) bằng bộ trích xuất tất định (`src/lib/sports-news/event-identity.ts`, không gọi LLM/API trả phí). Danh tính chỉ "cụ thể" (`specific`) khi nêu được MỘT sự kiện:
 
-- **Trùng lặp**: cùng chủ thể (≥ 2 đối tượng chung, hoặc 1 nếu chỉ có 1), cùng ngày ±1, cùng giải, cùng loại tin và không có thông tin chắc chắn hơn → bỏ qua, ghi bằng chứng và lý do có cấu trúc vào `sports_news_event_matches`.
-- **Tiếp nối có ý nghĩa**: cùng chủ thể nhưng đổi loại tin, nâng mức chắc chắn hoặc đổi tỷ số → vẫn được chấm điểm/duyệt, liên kết với sự kiện gốc (`follow_up`).
-- **Chạy đồng thời**: RPC `record_sports_news_event_assessment` kiểm tra lại `event_key`/`cluster_key` dưới advisory lock của dự án, nên hai lượt chạy song song chỉ tạo một bài. Phê duyệt thủ công, quota và cửa sổ Auto Publish không đổi.
-- **Cách ly**: bảng bằng chứng bật RLS, thành viên workspace chỉ đọc, ghi chỉ qua RPC `SECURITY DEFINER` của worker đã đăng ký.
-- **Giới hạn**: trích xuất dựa trên từ điển đội/giải và cụm tên viết hoa nên có thể bỏ sót hoặc gộp sai với tin ít gặp; chưa có giao diện xem bằng chứng. Áp dụng migration trước khi triển khai worker mới.
+- **Trận đấu**: đúng 2 đội trong từ điển (không phân biệt thứ tự), ngày, loại (nhận định/kết quả), tỷ số (không phân biệt hướng).
+- **Cá nhân** (chuyển nhượng, chấn thương, HLV, kỷ luật): 1–2 tên người cụ thể + loại tin + ngày; chuyển nhượng/HLV còn cần cùng tập CLB. Cầu thủ khác nhau của cùng CLB, cùng ngày, cùng loại **không bao giờ** gộp. Họ đơn lẻ ("Rashford") chỉ khớp tên đầy đủ khi cùng CLB và họ đó là duy nhất trong lịch sử gần đây.
+- **Không cụ thể** (thiếu đội/tên, tiêu đề trộn nhiều loại tin, tổng hợp nhiều trận, loại "other"): `identity_not_specific` → **fail open**: chấm điểm và duyệt thủ công như bình thường, không bỏ qua, không chặn, không lưu `event_key/cluster_key`.
+
+Quyết định: `duplicate` (cùng sự kiện, không có gì mới → bỏ qua, ghi bằng chứng + lý do có cấu trúc vào `sports_news_event_matches`, hiển thị ở trang Luồng tin → "Nhật ký trùng sự kiện"); `follow_up` (nhận định → kết quả, tin đồn → chính thức, đổi tỷ số → vẫn qua chấm điểm/duyệt, liên kết sự kiện gốc); `new`.
+
+**Chỉ bài đã thành post mới chặn được.** Chỉ mục có `post_id`, post chưa lưu trữ và chưa bị từ chối toàn bộ yêu cầu duyệt mới chặn báo cáo sau (TS: `blocksLaterReports`; DB: `contentpilot_private.sports_item_blocks_event`, cùng quy tắc). Bài điểm thấp, không được chọn, lỗi hoặc chỉ mới phát hiện không bao giờ chặn bài mạnh hơn (cùng lượt quét, lượt sau, hay lúc DB kiểm tra lại). Cùng lượt quét: sau khi chấm điểm, chỉ giữ bản điểm cao nhất của mỗi sự kiện; bản yếu hơn không chiếm chỗ nhưng cũng không chặn bản mạnh. Post đã lưu trữ hoặc bị từ chối hoàn toàn không còn chặn (có thể được đề xuất lại qua duyệt thủ công); post đang chờ/đã duyệt/đã hủy do hết hạn vẫn chặn để tránh gửi trùng.
+
+**Chạy đồng thời**: `record_sports_news_event_assessment` lấy advisory lock theo dự án rồi kiểm tra lại `event_key`/`cluster_key` — chỉ khi lệnh này sắp tạo post (`p_title` khác null) và danh tính cụ thể. Phê duyệt thủ công, quota, Auto Publish có thời hạn, dừng khẩn cấp không đổi. TS và DB cùng quy tắc, DB là chốt cuối.
+
+**Dữ liệu lịch sử**: không backfill, không ghi dữ liệu cũ. Với mục gần đây (cửa sổ 2 ngày, tối đa 150 post) chưa có `event_identity`, worker dựng danh tính bảo thủ tại bộ nhớ từ tiêu đề đã ghi (`assessment.title`) và nội dung post; kết quả không cụ thể thì bị bỏ qua. Bằng chứng ghi `matchedOrigin: "derived"`. Danh tính dẫn xuất không có khóa DB nên không được DB kiểm tra lại (chỉ lớp TS).
+
+**Cách ly/ACL**: bảng bằng chứng bật RLS (thành viên chỉ đọc); hai RPC `SECURITY DEFINER` chỉ cấp cho `authenticated`, kiểm tra worker đã đăng ký; hàm chặn nằm ở schema private, không client nào gọi được. Lỗi ghi bằng chứng được đếm vào `eventEvidenceFailures`/`itemFailures`.
+
+**Giới hạn đã biết**: từ điển đội/giải nhỏ (đội ngoài từ điển → không cụ thể → không gộp); tên người dựa vào chữ hoa trong tiêu đề; tỷ số không phân biệt chủ/khách; khóa cụm theo ngày Dubai chính xác (±1 ngày chỉ ở lớp TS); hai trận giống hệt cặp đội trong cùng ngày bị coi là một; tiêu đề trộn nhiều loại tin không bị gộp (an toàn nhưng có thể bỏ sót trùng). Áp dụng migration trước khi triển khai worker mới.

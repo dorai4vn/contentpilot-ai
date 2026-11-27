@@ -29,10 +29,10 @@ insert into public.workspace_members (workspace_id, user_id, role) values (:'ws2
 reset role;
 insert into contentpilot_private.sports_news_workers values (:'ws2', :'worker2');
 
-\set event_a '{"decision":"new","eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1","type":"match_result"},"reasons":[{"code":"no_matching_event"}]}'
-\set event_dup_cluster '{"decision":"new","eventKey":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1"},"reasons":[]}'
-\set event_follow '{"decision":"follow_up","matchedEventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eventKey":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1","status":"official"},"reasons":[{"code":"status_upgraded","detail":"rumor->official"}],"evidence":{"matchedTitle":"Tin đồn"}}'
-\set event_orphan '{"decision":"follow_up","matchedEventKey":"9999999999999999999999999999999999999999999999999999999999999999","eventKey":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1"},"reasons":[]}'
+\set event_a '{"decision":"new","specific":true,"eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1","type":"match_result"},"reasons":[{"code":"no_matching_event"}]}'
+\set event_dup_cluster '{"decision":"new","specific":true,"eventKey":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1"},"reasons":[]}'
+\set event_follow '{"decision":"follow_up","specific":true,"matchedEventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eventKey":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1","status":"official"},"reasons":[{"code":"status_upgraded","detail":"rumor->official"}],"evidence":{"matchedTitle":"Tin đồn"}}'
+\set event_orphan '{"decision":"follow_up","specific":true,"matchedEventKey":"9999999999999999999999999999999999999999999999999999999999999999","eventKey":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1"},"reasons":[]}'
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'worker', false);
@@ -88,10 +88,10 @@ select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'p
 
 -- Skipped duplicates are recorded idempotently.
 select pg_temp.check_event(public.record_sports_news_event_duplicate(:'ws', :'project', 'https://skip.vn/a.htm', repeat('9',64),
-  '{"decision":"new","eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","matchedEventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reasons":[{"code":"participants_overlap"}],"evidence":{"matchedUrl":"https://tuoitre.vn/event-a.htm"}}'::jsonb),
+  '{"decision":"new","specific":true,"eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","matchedEventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reasons":[{"code":"participants_overlap"}],"evidence":{"matchedUrl":"https://tuoitre.vn/event-a.htm"}}'::jsonb),
   'a pre-filtered duplicate is recorded with its evidence');
 select pg_temp.check_event(not public.record_sports_news_event_duplicate(:'ws', :'project', 'https://skip.vn/a.htm', repeat('9',64),
-  '{"decision":"new","eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasons":[]}'::jsonb),
+  '{"decision":"new","specific":true,"eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasons":[]}'::jsonb),
   'recording the same skipped duplicate twice is idempotent');
 
 -- Invalid payloads and unauthorized callers.
@@ -163,7 +163,7 @@ do $$
 begin
   perform public.record_sports_news_event_duplicate('6c000000-0000-0000-0000-000000000001'::uuid,
     '6c100000-0000-0000-0000-000000000001'::uuid, 'https://anon.vn/1', repeat('a',64),
-    '{"decision":"new","eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasons":[]}'::jsonb);
+    '{"decision":"new","specific":true,"eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasons":[]}'::jsonb);
   raise exception 'anon call permitted';
 exception when insufficient_privilege then null;
 end $$;
@@ -179,7 +179,7 @@ do $$
 begin
   perform public.record_sports_news_event_assessment(current_setting('contentpilot.ws')::uuid,
     current_setting('contentpilot.project')::uuid, 'https://member.vn/1', repeat('c',64), 8, null, null, null, null,
-    array[]::uuid[], '{}'::jsonb, '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+    array[]::uuid[], '{}'::jsonb, '{"decision":"new","specific":true,"eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
   raise exception 'non-worker member permitted';
 exception when insufficient_privilege then null;
 end $$;
@@ -187,7 +187,7 @@ do $$
 begin
   perform public.record_sports_news_event_duplicate(current_setting('contentpilot.ws')::uuid,
     current_setting('contentpilot.project')::uuid, 'https://member.vn/2', repeat('d',64),
-    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+    '{"decision":"new","specific":true,"eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
   raise exception 'non-worker member permitted';
 exception when insufficient_privilege then null;
 end $$;
@@ -196,7 +196,7 @@ do $$
 begin
   perform public.record_sports_news_event_duplicate(current_setting('contentpilot.ws')::uuid,
     current_setting('contentpilot.project')::uuid, 'https://outsider.vn/1', repeat('e',64),
-    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+    '{"decision":"new","specific":true,"eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
   raise exception 'outsider permitted';
 exception when insufficient_privilege then null;
 end $$;
@@ -213,9 +213,119 @@ do $$
 begin
   perform public.record_sports_news_event_duplicate('6c000000-0000-0000-0000-00000000000a'::uuid,
     '6c100000-0000-0000-0000-000000000001'::uuid, 'https://cross.vn/1', repeat('f',64),
-    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+    '{"decision":"new","specific":true,"eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
   raise exception 'cross-workspace project permitted';
 exception when invalid_parameter_value then null;
 end $$;
 reset role;
 select pg_temp.check_event(true, 'a worker cannot target another workspace''s project through its own workspace id');
+
+-- ===========================================================================================================
+-- FN05 QC remediation: only an actual, eligible post may block; sparse identities fail open.
+-- ===========================================================================================================
+create function pg_temp.ev(k text, c text, decision text default 'new', specific boolean default true, parent text default null)
+returns jsonb language sql as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'decision', decision, 'specific', specific, 'eventKey', repeat(k, 64), 'clusterKey', repeat(c, 64),
+    'matchedEventKey', case when parent is null then null else repeat(parent, 64) end,
+    'identity', jsonb_build_object('version', 'event-v2', 'subjectKind', 'match'),
+    'reasons', case when decision = 'follow_up' then '[{"code":"score_changed"}]'::jsonb else '[]'::jsonb end,
+    'evidence', jsonb_build_object('matchedTitle', 'x')))
+$$;
+\set ws_post_before '0'
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+
+-- (1) low -> high: a low-score item (no post) of an event never blocks a later, stronger report.
+-- (Checks read in a separate statement: a statement cannot see rows written by its own function calls.)
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://low.vn/1', repeat('a1',32),
+  2, null, null, null, null, array[]::uuid[], '{"decision":"below_threshold"}'::jsonb, pg_temp.ev('1', '2')) is null as low1_null \gset
+select pg_temp.check_event(:'low1_null'
+  and exists (select 1 from public.sports_news_items where source_url = 'https://low.vn/1' and post_id is null and event_key = repeat('1',64)),
+  'a low-score report is recorded as an item without a post');
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://high.vn/1', repeat('a2',32),
+  8, 'Báo cáo mạnh', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('3', '2')) as high_post \gset
+select pg_temp.check_event(:'high_post' is not null,
+  'a stronger report with a different key in the same cluster is accepted after a low-score one');
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://high.vn/2', repeat('a3',32),
+  8, 'Báo cáo mạnh khác', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('4', '2')) is null,
+  'once the post exists, another materializing report of the cluster is rejected');
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://low.vn/2', repeat('a4',32),
+  2, null, null, null, null, array[]::uuid[], '{}'::jsonb, pg_temp.ev('5', '2')) is null as low2_null \gset
+select pg_temp.check_event(:'low2_null'
+  and exists (select 1 from public.sports_news_items where source_url = 'https://low.vn/2' and post_id is null),
+  'a low-score report never creates a post and is never rejected semantically');
+
+-- (2) sparse / ambiguous identity (specific=false) fails open to normal handling and stores no keys.
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://vague.vn/1', repeat('a5',32),
+  8, 'Tin mơ hồ', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('6', '2', 'new', false)) is not null as vague1 \gset
+select pg_temp.check_event(:'vague1'
+  and (select event_key is null and cluster_key is null and event_identity is not null
+       from public.sports_news_items where source_url = 'https://vague.vn/1'),
+  'a non-specific identity is never blocked by a cluster and stores no event keys');
+select pg_temp.check_event(
+  public.record_sports_news_event_assessment(:'ws', :'project', 'https://vague.vn/2', repeat('a6',32),
+    8, 'Tin mơ hồ 2', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('6', '2', 'new', false)) is not null,
+  'a second non-specific report with identical placeholder keys is also not blocked');
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://vague.vn/3', repeat('a7',32),
+  8, 'Thiếu cờ specific', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.ev('6', '2') - 'specific') is not null,
+  'a payload without the specific flag defaults to fail-open');
+
+-- (3) follow-up whose parent exists only as a low-score item: accepted as new, parent not verified.
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://fu.vn/1', repeat('a8',32),
+  8, 'Follow-up mồ côi', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.ev('8', '9', 'follow_up', true, '1')) is not null as fu1 \gset
+select pg_temp.check_event(:'fu1'
+  and (select (evidence->>'parentVerifiedInDatabase')::boolean = false from public.sports_news_event_matches
+       where source_url = 'https://fu.vn/1' and decision = 'follow_up'),
+  'a follow-up of a non-materialized parent is accepted and its evidence says the parent was not verified');
+-- a genuine follow-up of the accepted post keeps working
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://fu.vn/2', repeat('a9',32),
+  8, 'Follow-up thật', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.ev('b', '2', 'follow_up', true, '3')) is not null as fu2 \gset
+select pg_temp.check_event(:'fu2'
+  and (select (evidence->>'parentVerifiedInDatabase')::boolean from public.sports_news_event_matches
+       where source_url = 'https://fu.vn/2' and decision = 'follow_up'),
+  'a meaningful follow-up of an accepted post is accepted with a verified parent');
+reset role;
+
+-- (4) archived posts stop blocking; (5) posts whose approval requests were all rejected stop blocking.
+update public.content_posts set archived_at = now() where id = :'high_post';
+select pg_temp.check_event(
+  contentpilot_private.sports_item_blocks_event(:'ws', :'high_post') is not true, 'an archived post does not block');
+update public.content_posts set archived_at = null where id = :'high_post';
+select pg_temp.check_event(contentpilot_private.sports_item_blocks_event(:'ws', :'high_post'),
+  'a restored post blocks again (its request was cancelled by archiving, not rejected)');
+-- A separate cluster whose only approval request is REJECTED by a human: the event may be reported again.
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://rej.vn/1', repeat('c1',32),
+  8, 'Bị từ chối', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('c', 'd')) as rej_post \gset
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://rej.vn/2', repeat('c2',32),
+  8, 'Báo cáo thứ hai', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('e', 'd')) is null,
+  'while the first post is pending approval a same-cluster report is rejected');
+select set_config('request.jwt.claim.sub', :'owner', false);
+select id as rej_request from public.content_publish_requests where post_id = :'rej_post' \gset
+select status from public.reject_publish_request(:'rej_request', 'Không đăng');
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://rej.vn/3', repeat('c3',32),
+  8, 'Báo cáo sau khi bị từ chối', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev('f', 'd')) as after_reject \gset
+select pg_temp.check_event(:'after_reject' is not null,
+  'after every approval request of a post was rejected, a later report of the event is accepted');
+reset role;
+select pg_temp.check_event(not contentpilot_private.sports_item_blocks_event(:'ws', :'rej_post'),
+  'a post whose approval requests were all rejected does not block');
+select pg_temp.check_event(not contentpilot_private.sports_item_blocks_event(:'ws', null), 'no post means no block');
+
+-- (6) workspace isolation: the helper and the recheck only see their own workspace; ws2 is unaffected.
+select pg_temp.check_event(not contentpilot_private.sports_item_blocks_event(:'ws2', :'high_post'),
+  'a post of another workspace is never considered blocking');
+
+-- (7) the helper is not callable by clients.
+select pg_temp.check_event(
+  not has_function_privilege('authenticated', 'contentpilot_private.sports_item_blocks_event(uuid, uuid)', 'EXECUTE')
+  and not has_function_privilege('anon', 'contentpilot_private.sports_item_blocks_event(uuid, uuid)', 'EXECUTE')
+  and not has_schema_privilege('authenticated', 'contentpilot_private', 'USAGE'),
+  'the blocking helper is private: no client can execute it');
