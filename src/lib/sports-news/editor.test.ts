@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { writeSportsDraft } from "./editor";
+import { SPORTS_CAPTION_BUDGET, writeSportsDraft } from "./editor";
+import { socialPublisher } from "@/lib/publishing/adapters/social";
 
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
 vi.mock("server-only", () => ({}));
@@ -73,4 +74,104 @@ it("still rejects oversized or invalid drafts and passes provider errors", async
   await expect(writeSportsDraft(item("a", "b"))).rejects.toThrow();
   complete.mockResolvedValueOnce({ choices: [{ message: { content: "" } }] });
   await expect(writeSportsDraft(item("a", "b"))).rejects.toThrow("sports_editor_empty_response");
+});
+
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+const sentence = (n: number) => `Câu số ${n} nêu diễn biến cụ thể của trận đấu giữa hai đội ở vòng đấu này.`;
+const para = (from: number, count: number) => Array.from({ length: count }, (_, i) => sentence(from + i)).join(" ");
+
+it("prompt drops the 1–2 sentence / 620 rule, sets word targets and the shared platform budget", async () => {
+  reply({ ...base, title: "Tin", body: "Nội dung." });
+  await writeSportsDraft(item("Tin", "Nội dung."));
+  const { messages, max_completion_tokens } = complete.mock.calls[0][0];
+  const system: string = messages[0].content;
+  expect(system).not.toMatch(/620|mỗi đoạn 1–2 câu/);
+  expect(system).toMatch(/120–180 từ/);
+  expect(system).toMatch(/80–120 từ/);
+  expect(system).toContain(`${SPORTS_CAPTION_BUDGET} ký tự`);
+  expect(system).toContain("không độn chữ");
+  expect(system).toContain("không để cụt giữa câu");
+  expect(max_completion_tokens).toBeGreaterThanOrEqual(1400);
+});
+
+it("keeps a realistic full-length multi-paragraph Vietnamese caption intact and within budget", async () => {
+  const body = [para(1, 3), para(4, 3), para(7, 2)].join("\n\n");
+  const title = "Lille hạ Bayern ở Champions League";
+  expect(words(body)).toBeGreaterThan(120);
+  reply({ ...base, title, body });
+  const r = await writeSportsDraft(item(title, "x"));
+  expect(r.body).toBe(body);
+  expect(r.body.split("\n\n")).toHaveLength(3);
+  expect(`${r.title}\n\n${r.body}`.length).toBeLessThanOrEqual(SPORTS_CAPTION_BUDGET);
+});
+
+it("sparse input stays short: no filler is added", async () => {
+  reply({ ...base, title: "Son dính chấn thương", body: "Son rời sân ở phút 30." });
+  const r = await writeSportsDraft(item("Son dính chấn thương", "Son rời sân."));
+  expect(r.body).toBe("Son rời sân ở phút 30.");
+});
+
+it("over-budget body is cut at paragraph/sentence boundary, never mid-sentence", async () => {
+  const title = "Tin lớn";
+  const body = [para(1, 5), para(6, 5), para(11, 5)].join("\n\n");
+  expect(body.length).toBeGreaterThan(SPORTS_CAPTION_BUDGET);
+  reply({ ...base, title, body });
+  const r = await writeSportsDraft(item(title, "x"));
+  expect(`${r.title}\n\n${r.body}`.length).toBeLessThanOrEqual(SPORTS_CAPTION_BUDGET);
+  expect(r.body.endsWith(".")).toBe(true);
+  expect(body.startsWith(r.body)).toBe(true);
+  // chỉ gồm các câu nguyên vẹn
+  for (const s of r.body.split(/\n\n|(?<=\.)\s/)) expect(s).toMatch(/^Câu số \d+ .*\.$/);
+});
+
+it("a single over-long paragraph is trimmed to whole sentences", async () => {
+  reply({ ...base, title: "T", body: para(1, 14) });
+  const r = await writeSportsDraft(item("T", "x"));
+  expect(r.body.length).toBeLessThanOrEqual(SPORTS_CAPTION_BUDGET - 3);
+  expect(r.body.endsWith("trận đấu giữa hai đội ở vòng đấu này.")).toBe(true);
+});
+
+it("counts emoji surrogate pairs in UTF-16 units against the budget", async () => {
+  const title = "⚽ Chung kết";
+  const body = Array.from({ length: 60 }, () => "Bàn thắng đẹp. 🏆").join(" ");
+  reply({ ...base, title, body });
+  const r = await writeSportsDraft(item(title, "x"));
+  expect(`${r.title}\n\n${r.body}`.length).toBeLessThanOrEqual(SPORTS_CAPTION_BUDGET);
+  expect(r.body.match(/\p{Extended_Pictographic}/gu)?.length).toBeLessThanOrEqual(3);
+});
+
+it("normalizes decomposed Vietnamese diacritics to NFC so length is not inflated", async () => {
+  const nfd = "Việt Nam thắng".normalize("NFD");
+  reply({ ...base, title: nfd, body: nfd });
+  const r = await writeSportsDraft(item("a", "b"));
+  expect(r.title).toBe("Việt Nam thắng");
+  expect(r.body).toBe("Việt Nam thắng");
+});
+
+it("rejects captions that are empty after normalization", async () => {
+  reply({ ...base, title: "Tin", body: "**__**" });
+  await expect(writeSportsDraft(item("a", "b"))).rejects.toThrow("sports_editor_empty_caption");
+  reply({ ...base, title: "***", body: "Nội dung" });
+  await expect(writeSportsDraft(item("a", "b"))).rejects.toThrow("sports_editor_empty_caption");
+});
+
+it("a normalized full caption is accepted by Telegram photo delivery with correct bold title entity", async () => {
+  const title = "⚽ Lille hạ Bayern";
+  reply({ ...base, title, body: [para(1, 5), para(6, 5)].join("\n\n") });
+  const draft = await writeSportsDraft(item(title, "x"));
+  const adapter = socialPublisher("telegram");
+  const payload = adapter.render({ title: draft.title, body: draft.body, image: new Uint8Array([1, 2, 3]) } as never);
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ ok: true, result: { message_id: 7 } })));
+  const outcome = await adapter.publish(payload, {
+    targetRef: "-1001234567890", credentials: { reveal: () => "123:abc" }, idempotencyKey: "k",
+  } as never);
+  expect(outcome).toEqual({ ok: true, externalId: "7" });
+  expect(fetchMock).toHaveBeenCalledTimes(1); // một bài, không gửi thêm tin nhắn
+  const form = fetchMock.mock.calls[0][1]!.body as FormData;
+  expect(String(fetchMock.mock.calls[0][0])).toContain("sendPhoto");
+  expect(JSON.parse(String(form.get("caption_entities")))).toEqual([{ type: "bold", offset: 0, length: draft.title.length }]);
+  expect(String(form.get("caption")).startsWith(draft.title)).toBe(true);
+  expect(String(form.get("caption")).length).toBeLessThanOrEqual(1024);
+  fetchMock.mockRestore();
 });
