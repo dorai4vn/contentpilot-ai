@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 /*
- * Light mode is the only theme: the `dark:` utilities used across the app only
- * apply when a `.dark` class is present (never set), not from the OS setting.
+ * FN01 light design tokens. Theme selection is introduced in FN02.
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f1f5f4;
+  --foreground: #152b27;
   --surface: #ffffff;
-  --border: #e2e8f0;
-  --primary: #4f46e5;
+  --border: #d7e3de;
+  --primary: #087f5b;
+  --accent: #d6f5e5;
+  --muted: #526963;
   color-scheme: light;
 }
 
@@ -21,7 +22,7 @@
   --color-surface: var(--surface);
   --color-border: var(--border);
   --color-primary: var(--primary);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
   --shadow-raised: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
@@ -30,13 +31,64 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "cv11", "ss01";
 }
 
 ::selection {
-  background: rgb(79 70 229 / 0.18);
+  background: rgb(8 127 91 / 0.18);
 }
+
+.football-shell { background: var(--background); color: var(--foreground); }
+.football-topbar { border-color: var(--border); }
+.football-shell-body { display: flex; width: 100%; max-width: 1600px; margin-inline: auto; flex: 1; min-width: 0; }
+.football-sidebar { width: 248px; flex: none; border-right: 1px solid var(--border); background: var(--surface); }
+.football-sidebar-inner { position: sticky; top: 64px; padding: 22px 14px; }
+.football-back { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.football-back:hover { color: var(--primary); }
+.football-workspace { display: flex; align-items: center; gap: 10px; margin: 10px 2px 27px; padding: 11px; border: 1px solid var(--border); border-radius: 10px; }
+.football-workspace-mark { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 9px; background: var(--accent); color: var(--primary); font-weight: 700; }
+.football-workspace strong, .football-workspace small { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.football-workspace strong { font-size: 13px; } .football-workspace small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.football-navigation { display: grid; gap: 24px; }
+.football-nav-group p { margin: 0 10px 8px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+.football-nav-link { display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 10px 11px; border-radius: 9px; color: var(--muted); font-size: 13px; font-weight: 600; transition: background-color 180ms, color 180ms; }
+.football-nav-link:hover { background: var(--background); color: var(--foreground); }
+.football-nav-link.is-active { background: var(--accent); color: #065f46; }
+.football-nav-count { margin-left: auto; padding: 2px 6px; border-radius: 99px; background: #fff3d6; color: #805300; font-size: 11px; }
+.football-main { width: 100%; min-width: 0; padding: 32px clamp(20px, 4vw, 56px) 64px; }
+.football-page { max-width: 1100px; margin-inline: auto; }
+.football-page-header { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 28px; }
+.football-eyebrow { margin-bottom: 7px; color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.football-page-header h1 { font-size: clamp(26px, 3vw, 34px); line-height: 1.2; font-weight: 750; letter-spacing: -.035em; }
+.football-page-header p:last-child { margin-top: 7px; color: var(--muted); font-size: 14px; }
+.football-action { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 10px 14px; border-radius: 9px; background: var(--primary); color: white; font-size: 13px; font-weight: 700; }
+.football-action:hover { background: #066c4d; }
+.football-panel { overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 2px 10px rgb(21 43 39 / .035); }
+.football-panel-heading { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.football-panel-heading h2 { font-size: 15px; font-weight: 700; } .football-panel-heading p { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.football-panel-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--accent); color: var(--primary); }
+.football-news-row { display: flex; justify-content: space-between; gap: 24px; padding: 19px 24px; border-bottom: 1px solid var(--border); }
+.football-news-row:last-child { border-bottom: 0; }
+.football-news-main { min-width: 0; } .football-news-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; }
+.football-news-row h2 { margin-top: 7px; font-size: 15px; line-height: 1.45; font-weight: 650; } .football-news-row h2 a:hover { color: var(--primary); }
+.football-source-link { display: inline-flex; align-items: center; gap: 2px; margin-top: 8px; color: var(--primary); font-size: 12px; font-weight: 650; }
+.football-image-indicator { color: var(--primary); }
+.football-score { align-self: center; flex: none; color: var(--primary); font-size: 12px; white-space: nowrap; } .football-score strong { font-size: 22px; font-weight: 750; }
+.football-empty { padding: 52px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+@media (max-width: 767px) {
+  .football-shell-body { display: block; }
+  .football-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); }
+  .football-sidebar-inner { position: static; padding: 8px 16px; }
+  .football-back, .football-workspace, .football-nav-group p { display: none; }
+  .football-navigation { display: flex; gap: 8px; overflow-x: auto; }
+  .football-nav-group { display: flex; gap: 4px; flex: none; }
+  .football-nav-link { white-space: nowrap; }
+  .football-main { padding: 24px 16px 48px; }
+  .football-page-header { align-items: start; flex-direction: column; }
+  .football-news-row, .football-panel-heading { padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .football-nav-link { transition: none; } }
 
 /* Visible, consistent keyboard focus everywhere. */
 :where(a, button, [role="button"], summary):focus-visible {
