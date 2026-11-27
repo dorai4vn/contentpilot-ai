@@ -26,6 +26,7 @@ export default async function WorkspaceLayout({ children, params }: LayoutProps<
           workspaceName={workspace.name}
           roleLabel={ROLE_LABELS[workspace.role]}
           pendingCount={pendingCount}
+          automationAvailable={process.env.SPORTS_NEWS_WORKSPACE_ID === workspace.id}
         />
         <main id="main-content" className="football-main">{children}</main>
       </div>

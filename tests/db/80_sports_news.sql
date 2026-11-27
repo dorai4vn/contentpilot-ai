@@ -76,6 +76,30 @@ exception when insufficient_privilege then null;
 end
 $$;
 reset role;
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_news(public.set_sports_auto_publish_control(:'ws',:'project',:'channel',true,2,3,6),
+  'Owner enables a bounded auto-publish window');
+select pg_temp.check_news(
+  (select max_per_slot=3 and max_per_window=6 from public.read_sports_auto_publish_control(:'ws',:'project',:'channel')),
+  'configured quotas are visible to workspace users');
+select set_config('request.jwt.claim.sub', :'worker', false);
+do $$
+begin
+  perform public.set_sports_auto_publish_control(
+    '6c000000-0000-0000-0000-000000000001'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid,
+    '60000000-0000-4000-8000-000000000080'::uuid,false,1,10,40);
+  raise exception 'Member unexpectedly changed automation';
+exception when insufficient_privilege then null;
+end $$;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_news(public.set_sports_auto_publish_control(:'ws',:'project',:'channel',false,1,10,40),
+  'Owner emergency stop succeeds');
+select pg_temp.check_news(
+  (select count(*)=0 from public.read_sports_auto_publish_control(:'ws',:'project',:'channel')),
+  'emergency stop immediately closes the active window');
+reset role;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'worker', false);

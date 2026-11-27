@@ -396,6 +396,14 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      read_sports_auto_publish_control: {
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
+        Returns: { id: string; starts_at: string; ends_at: string; max_per_slot: number; max_per_window: number }[];
+      };
+      set_sports_auto_publish_control: {
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_enabled: boolean; p_hours: number; p_slot_limit: number; p_window_limit: number };
+        Returns: boolean;
+      };
       get_sports_auto_publish_window: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
         Returns: { id: string; starts_at: string; ends_at: string }[];

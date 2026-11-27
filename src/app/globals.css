@@ -91,6 +91,23 @@ html.dark .football-action:hover { background: #066c4d; }
 .football-image-indicator { color: var(--primary); }
 .football-score { align-self: center; flex: none; color: var(--primary); font-size: 12px; white-space: nowrap; } .football-score strong { font-size: 22px; font-weight: 750; }
 .football-empty { padding: 52px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+.football-state { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 999px; background: #edf1f0; color: #425750; font-size: 12px; font-weight: 700; }
+.football-state.is-on { background: var(--accent); color: #065f46; }
+html.dark .football-state { background: #2a3a46; color: var(--foreground); }
+html.dark .football-state.is-on { background: var(--accent); color: #a7f3d0; }
+.football-control-details { display: flex; flex-wrap: wrap; gap: 14px 28px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.football-control-details p:first-child { display: flex; align-items: center; gap: 7px; }
+.football-control-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+.football-control-form label { display: grid; gap: 7px; color: var(--foreground); font-size: 12px; font-weight: 700; }
+.football-control-form input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); font-size: 14px; }
+.football-control-form button { justify-self: start; align-self: end; }
+.football-stop { padding: 10px 14px; border: 1px solid #b24852; border-radius: 8px; color: #a92b37; font-size: 13px; font-weight: 700; }
+.football-stop:hover { background: #fff1f2; }
+html.dark .football-stop { color: #fda4af; }
+html.dark .football-stop:hover { background: #42272d; }
+.football-feedback { padding: 12px 15px; border: 1px solid #79c9a6; border-radius: 9px; background: var(--accent); color: #065f46; font-size: 13px; font-weight: 650; }
+.football-feedback.is-error { border-color: #e8a5aa; background: #fff1f2; color: #9f2330; }
+html.dark .football-feedback { color: #a7f3d0; } html.dark .football-feedback.is-error { background: #42272d; color: #fda4af; }
 
 /* Existing Content Studio utilities use fixed light colors. Scope their dark
  * equivalents to the semantic surface, text and status roles. */
@@ -128,6 +145,7 @@ html.dark .hover\:bg-indigo-50:hover { background-color: var(--accent); }
   .football-main { padding: 24px 16px 48px; }
   .football-page-header { align-items: start; flex-direction: column; }
   .football-news-row, .football-panel-heading { padding-inline: 16px; }
+  .football-control-form { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .football-nav-link { transition: none; } }
 
