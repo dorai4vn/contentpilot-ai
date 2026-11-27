@@ -2,6 +2,7 @@ import { LogOut, Trophy, UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { signOut } from "@/app/(auth)/actions";
+import { ThemeControl } from "./theme-control";
 
 /** Brand mark used by the top bar, the auth pages and the home page. */
 export function BrandMark({ className = "" }: { className?: string }) {
@@ -10,7 +11,7 @@ export function BrandMark({ className = "" }: { className?: string }) {
       <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm">
         <Trophy className="h-4 w-4" aria-hidden />
       </span>
-      <span>Football News <span className="text-emerald-700">Control Center</span></span>
+      <span className="max-[380px]:sr-only">Football News <span className="hidden text-emerald-700 sm:inline">Control Center</span></span>
     </span>
   );
 }
@@ -25,6 +26,7 @@ export function AppHeader({ email }: { email: string | null }) {
           <BrandMark />
         </Link>
         <div className="flex items-center gap-1.5 text-sm sm:gap-2">
+          <ThemeControl />
           <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-1 pl-1 pr-3 md:inline-flex">
             <span
               className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700"
@@ -50,7 +52,7 @@ export function AppHeader({ email }: { email: string | null }) {
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900"
             >
               <LogOut className="h-4 w-4" aria-hidden />
-              Đăng xuất
+              <span className="max-sm:sr-only">Đăng xuất</span>
             </button>
           </form>
         </div>

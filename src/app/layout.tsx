@@ -19,7 +19,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="vi" className={`${inter.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="vi" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable} h-full antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("football-news-theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}` }} />
+      </head>
       <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
