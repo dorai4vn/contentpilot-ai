@@ -7,7 +7,7 @@ import { dubaiDate } from "./publication-day";
  * same identity, so fixtures and regressions are reproducible. It complements (never replaces) the
  * URL and normalized-headline deduplication.
  */
-export const EVENT_IDENTITY_VERSION = "event-v2";
+export const EVENT_IDENTITY_VERSION = "event-v3";
 
 export type EventType = "match_result" | "match_preview" | "transfer" | "injury" | "coach" | "discipline" | "other";
 export type EventStatus = "rumor" | "reported" | "official";
@@ -30,6 +30,11 @@ export type EventIdentity = {
   type: EventType;
   status: EventStatus;
   scores: string[];
+  /**
+   * Material, verifiable facts found by fixed patterns (injury duration/diagnosis, transfer fee, contract length,
+   * standings implication), e.g. "fee:50m". Part of eventKey: the same event with a NEW fact is a different key.
+   */
+  facts: string[];
   /** Calendar date (Asia/Dubai, same calendar as the publication-day rules). */
   date: string;
   eventKey: string;
@@ -203,7 +208,7 @@ function scoresIn(folded: string): string[] {
   return [...scores].sort();
 }
 
-type Category = "transfer" | "injury" | "coach" | "discipline" | "match";
+export type Category = "transfer" | "injury" | "coach" | "discipline" | "match";
 
 // `thang`/`hoa` collide with "tháng" (month) / "hoa" (flower) once diacritics are folded, so those two are
 // tested on the original lower-cased text.
@@ -228,6 +233,56 @@ function eventStatus(folded: string): EventStatus {
   return "reported";
 }
 
+const MONTHS_UNIT: Record<string, string> = { tuan: "w", week: "w", weeks: "w", thang: "m", month: "m", months: "m", ngay: "d", day: "d", days: "d" };
+
+/**
+ * Deterministic material facts of a report. Only explicit, pattern-matched facts count (no inference, no AI):
+ * wording changes never create a fact, a new number/diagnosis/implication does.
+ */
+export function extractFacts(title: string, summary: string, category: Category): string[] {
+  const text = `${title}. ${summary}`;
+  const lower = text.normalize("NFC").toLowerCase();
+  const folded = foldText(text);
+  const facts = new Set<string>();
+  const num = (value: string) => String(Number(value.replace(",", ".")));
+  if (category === "injury") {
+    // "tháng" is tested on the diacritic-preserving text: folded it equals "thắng" (win).
+    for (const m of lower.matchAll(/(?<![\p{L}\d])(\d{1,2})\s*(tuần|tháng|ngày|weeks?|months?|days?)(?![\p{L}])/gu)) {
+      const unit = MONTHS_UNIT[foldText(m[2])];
+      if (unit) facts.add(`duration:${num(m[1])}${unit}`);
+    }
+    if (/\b(het mua|season-ending|rest of the season|out for the season)\b/.test(folded)) facts.add("duration:season");
+    for (const [re, name] of [[/\b(dut day chang|acl|cruciate)\b/, "acl"], [/\b(phau thuat|surgery|operation)\b/, "surgery"],
+      [/\b(gay xuong|fracture|broken)\b/, "fracture"], [/\b(hamstring|co dui sau)\b/, "hamstring"]] as const) {
+      if (re.test(folded)) facts.add(`diagnosis:${name}`);
+    }
+  }
+  if (category === "transfer") {
+    const amounts: [RegExp, number, number][] = [
+      [/(?:€|£|\$)\s*(\d+(?:[.,]\d+)?)\s*(m\b|million|trieu|ty)?/g, 1, 2],
+      [/(\d+(?:[.,]\d+)?)\s*(m\b|million|trieu|ty)\s*(?:euro|eur|usd|bang|pounds?|do la|dollars?)/g, 1, 2],
+    ];
+    for (const [re, a, u] of amounts) {
+      for (const m of folded.matchAll(re)) {
+        const unit = m[u];
+        const value = Number(m[a].replace(",", "."));
+        if (Number.isFinite(value) && value > 0) facts.add(`fee:${unit === "ty" ? value * 1000 : value}${unit ? "m" : ""}`);
+      }
+    }
+  }
+  if (category === "transfer" || category === "coach") {
+    for (const m of folded.matchAll(/\b(?:den|until|through|to)\s+(?:het\s+)?(?:nam\s+|mua giai\s+)?(20\d\d)\b/g)) facts.add(`contract:${m[1]}`);
+    for (const m of folded.matchAll(/(?:hop dong\s+(?:co thoi han\s+)?(\d{1,2})\s+nam|(\d{1,2})[- ]year (?:deal|contract))/g)) facts.add(`contract:${m[1] ?? m[2]}y`);
+  }
+  if (category === "match") {
+    if (/\b(dau bang|ngoi dau|top of the (?:table|league)|go(?:es)? top|lead the table)\b/.test(folded)) facts.add("standing:top");
+    if (/\b(xuong hang|relegat\w*)\b/.test(folded)) facts.add("standing:relegation");
+    if (/\b(vao chung ket|vao vong|di tiep|qualif\w*|through to the (?:final|semi))\b/.test(folded)) facts.add("standing:qualified");
+    if (/\b(vo dich|win the title|crowned champions)\b/.test(folded)) facts.add("standing:title");
+  }
+  return [...facts].sort();
+}
+
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export function buildEventIdentity(item: { title: string; summary: string; publishedAt: number; categories?: string }): EventIdentity {
@@ -248,7 +303,7 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
     const key = hash([EVENT_IDENTITY_VERSION, "unresolved", titleFolded, date].join("|"));
     return {
       version: EVENT_IDENTITY_VERSION, subjectKind: "unresolved", unresolvedReason: reason, teams, people,
-      participants: [...teams, ...people], competition, type, status: "reported", scores, date, eventKey: key, clusterKey: key,
+      participants: [...teams, ...people], competition, type, status: "reported", scores, facts: [], date, eventKey: key, clusterKey: key,
     };
   };
   if (cats.found.length === 0) return unresolved("no_event_type");
@@ -270,10 +325,11 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
     const type: EventType = cats.preview && !titleScores.length ? "match_preview" : "match_result";
     const pair = [...teams].sort();
     const clusterKey = hash([EVENT_IDENTITY_VERSION, "match", type, pair.join(","), date].join("|"));
-    const eventKey = hash([clusterKey, type === "match_result" ? scores.join(",") : ""].join("|"));
+    const facts = extractFacts(title, summary, "match");
+    const eventKey = hash([clusterKey, type === "match_result" ? scores.join(",") : "", facts.join(",")].join("|"));
     return {
       version: EVENT_IDENTITY_VERSION, subjectKind: "match", unresolvedReason: null, teams: pair, people: [],
-      participants: pair, competition, type, status: "reported", scores: type === "match_result" ? scores : [], date, eventKey, clusterKey,
+      participants: pair, competition, type, status: "reported", scores: type === "match_result" ? scores : [], facts, date, eventKey, clusterKey,
     };
   }
 
@@ -285,10 +341,11 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
   const status = eventStatus(titleFolded);
   const withTeams = type === "transfer" || type === "coach";
   const clusterKey = hash([EVENT_IDENTITY_VERSION, "person", type, people.join(","), withTeams ? teams.join(",") : "", date].join("|"));
-  const eventKey = hash([clusterKey, status].join("|"));
+  const facts = extractFacts(title, summary, category);
+  const eventKey = hash([clusterKey, status, facts.join(",")].join("|"));
   return {
     version: EVENT_IDENTITY_VERSION, subjectKind: "person", unresolvedReason: null, teams, people,
-    participants: [...teams, ...people], competition, type, status, scores: [], date, eventKey, clusterKey,
+    participants: [...teams, ...people], competition, type, status, scores: [], facts, date, eventKey, clusterKey,
   };
 }
 
@@ -329,6 +386,8 @@ export function sameSubject(candidate: EventIdentity, known: EventIdentity): { s
   const dateReason = { code: "date_within_window", detail: `${known.date}~${candidate.date}` };
   if (candidate.subjectKind === "match") {
     if (!sameSet(candidate.teams, known.teams)) return none;
+    // Same two teams in two different known competitions are different matches (e.g. league vs cup).
+    if (candidate.competition && known.competition && candidate.competition !== known.competition) return none;
     return { same: true, reasons: [{ code: "same_team_pair", detail: candidate.teams.join(" vs ") }, dateReason] };
   }
   if (candidate.type !== known.type) return none; // a different kind of news about one player is a different event
@@ -375,6 +434,12 @@ export function classifyEvent(candidate: EventIdentity, known: readonly KnownEve
     if (old.eventKey === candidate.eventKey) {
       return { decision: "duplicate", matched: entry, reasons: [{ code: "same_event_key" }, ...reasons] };
     }
+    // Material facts (injury duration, fee, contract, standings...) the known report did not carry. A key with a
+    // different value is a conflicting fact: still a follow-up, but flagged so it only goes to manual review.
+    const added = candidate.facts.filter((fact) => !old.facts.includes(fact));
+    const conflicting = added.filter((fact) => old.facts.some((o) => o.split(":")[0] === fact.split(":")[0]));
+    const factReason = (): EventReason[] => added.length
+      ? [{ code: conflicting.length ? "fact_changed" : "new_material_facts", detail: added.join(",") }] : [];
     if (candidate.subjectKind === "match") {
       if (old.type === "match_preview" && candidate.type === "match_result") {
         reasons.push({ code: "event_type_changed", detail: "match_preview->match_result" });
@@ -387,12 +452,20 @@ export function classifyEvent(candidate: EventIdentity, known: readonly KnownEve
         best = { decision: "follow_up", matched: entry, reasons };
         continue;
       }
+      if (added.length && candidate.type === old.type) {
+        best = { decision: "follow_up", matched: entry, reasons: [...reasons, ...factReason()] };
+        continue;
+      }
       reasons.push({ code: old.type === candidate.type ? "same_match_report" : "stale_preview_after_result" });
       return { decision: "duplicate", matched: entry, reasons };
     }
     if (STATUS_RANK[candidate.status] > STATUS_RANK[old.status]) {
       reasons.push({ code: "status_upgraded", detail: `${old.status}->${candidate.status}` });
       best = { decision: "follow_up", matched: entry, reasons };
+      continue;
+    }
+    if (added.length) {
+      best = { decision: "follow_up", matched: entry, reasons: [...reasons, ...factReason()] };
       continue;
     }
     reasons.push({ code: "no_new_information", detail: `${old.status}->${candidate.status}` });
@@ -427,17 +500,32 @@ export function parseStoredIdentity(value: unknown): EventIdentity | null {
     type: v.type as EventType,
     status: v.status,
     scores: strings(v.scores),
+    facts: strings(v.facts),
     date: v.date, eventKey: v.eventKey, clusterKey: v.clusterKey,
   };
 }
 
+export type ManualReviewReason = "unresolved_identity" | "follow_up" | "reconsidered" | "uncertain_facts";
+
+/**
+ * Why a candidate may only go through manual review and never through the temporary auto-publish window, or null
+ * for a regular eligible item. `reconsidered`: the event matches a post that was archived/rejected without ever
+ * being sent. The database re-derives the same decision (record_sports_news_event_assessment).
+ */
+export function manualReviewReason(identity: EventIdentity, verdict: EventDecision, reconsidered = false): ManualReviewReason | null {
+  if (identity.subjectKind === "unresolved") return "unresolved_identity";
+  if (verdict.decision === "follow_up") return verdict.reasons.some((r) => r.code === "fact_changed") ? "uncertain_facts" : "follow_up";
+  return reconsidered ? "reconsidered" : null;
+}
+
 /** The JSON payload stored by record_sports_news_event_* (decision, identity, structured reasons, evidence). */
-export function buildEventPayload(identity: EventIdentity, verdict: EventDecision) {
+export function buildEventPayload(identity: EventIdentity, verdict: EventDecision, manual: ManualReviewReason | null = null) {
   const matched = verdict.decision === "new" ? null : verdict.matched;
   return {
     decision: verdict.decision === "follow_up" ? "follow_up" : "new",
     /** Only a specific identity may be used by the database to suppress or block anything. */
     specific: identity.subjectKind !== "unresolved",
+    ...(manual ? { manualReviewReason: manual } : {}),
     eventKey: identity.eventKey,
     clusterKey: identity.clusterKey,
     identity,
@@ -452,11 +540,13 @@ export function buildEventPayload(identity: EventIdentity, verdict: EventDecisio
         matchedType: matched.identity.type,
         matchedStatus: matched.identity.status,
         matchedScores: matched.identity.scores,
+        matchedFacts: matched.identity.facts,
         matchedDate: matched.identity.date,
         candidateParticipants: identity.participants,
         candidateType: identity.type,
         candidateStatus: identity.status,
         candidateScores: identity.scores,
+        candidateFacts: identity.facts,
         candidateDate: identity.date,
         competition: identity.competition,
       },

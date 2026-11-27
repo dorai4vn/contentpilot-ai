@@ -7,6 +7,12 @@ alter table public.sports_news_items
   add column cluster_key text check (cluster_key is null or cluster_key ~ '^[0-9a-f]{64}$'),
   add column event_identity jsonb check (
     event_identity is null or (jsonb_typeof(event_identity) = 'object' and length(event_identity::text) <= 4000)
+  ),
+  -- Why this item may only go through manual review (never the temporary auto-publish window). Null = no
+  -- restriction (regular eligible item, or a row recorded before FN05).
+  add column manual_review_reason text check (
+    manual_review_reason is null
+    or manual_review_reason in ('unresolved_identity', 'follow_up', 'reconsidered', 'uncertain_facts')
   );
 
 create index sports_news_items_event_key on public.sports_news_items (project_id, event_key) where event_key is not null;
@@ -43,6 +49,8 @@ begin
      or coalesce(p_event->>'clusterKey', '') !~ '^[0-9a-f]{64}$'
      or coalesce(p_event->>'decision', '') not in ('new', 'follow_up')
      or (p_event ? 'specific' and coalesce(p_event->>'specific', '') not in ('true', 'false'))
+     or (p_event ? 'manualReviewReason' and coalesce(p_event->>'manualReviewReason', '')
+         not in ('unresolved_identity', 'follow_up', 'reconsidered', 'uncertain_facts'))
      or (p_event ? 'matchedEventKey' and coalesce(p_event->>'matchedEventKey', '') !~ '^[0-9a-f]{64}$')
      or jsonb_typeof(coalesce(p_event->'reasons', '[]'::jsonb)) <> 'array'
      or jsonb_typeof(coalesce(p_event->'identity', '{}'::jsonb)) <> 'object' then
@@ -77,20 +85,38 @@ end
 $$;
 
 -- Whether a recorded item may block a later report of the same event. Only an item that became a real post
--- counts: low-score, failed, unselected or merely discovered items (post_id null) never block. A post that is
--- archived, or whose approval requests were all rejected, no longer blocks either, so a later and stronger report
--- goes through the normal review path. Delivered/pending/approved/cancelled posts keep blocking (no duplicate
--- delivery). Mirrors blocksLaterReports() in src/lib/sports-news/event-history.ts.
+-- counts: low-score, failed, unselected or merely discovered items (post_id null) never block.
+--   * A post that was PUBLISHED or DELIVERED always blocks, even after it is archived: content_posts.status =
+--     'published', a queued/sending/succeeded publish_deliveries row, or a sending/succeeded/uncertain temporary
+--     auto-publish delivery (never send the same event twice).
+--   * Otherwise a post blocks only while it is not archived and not rejected (every approval request rejected);
+--     an archived/rejected post that was never sent can be reconsidered, and the new post is manual-review only.
+-- Mirrors blocksLaterReports() in src/lib/sports-news/event-history.ts (the auto-publish delivery table is private,
+-- so only this function can see it; the database recheck is therefore the authority).
 create function contentpilot_private.sports_item_blocks_event(p_workspace_id uuid, p_post_id uuid)
 returns boolean language sql stable set search_path = '' as $$
   select p_post_id is not null
-    and exists (select 1 from public.content_posts p
+    and exists (select 1 from public.content_posts p where p.workspace_id = p_workspace_id and p.id = p_post_id)
+    and (
+      exists (select 1 from public.content_posts p
+              where p.workspace_id = p_workspace_id and p.id = p_post_id and p.status = 'published')
+      or exists (select 1 from public.publish_deliveries d
+                 where d.workspace_id = p_workspace_id and d.post_id = p_post_id
+                   and d.status in ('queued', 'sending', 'succeeded'))
+      or exists (select 1 from contentpilot_private.sports_auto_publish_deliveries a
+                 join public.content_publish_requests r on r.id = a.request_id
+                 where r.workspace_id = p_workspace_id and r.post_id = p_post_id
+                   and a.state in ('sending', 'succeeded', 'uncertain'))
+      or (
+        exists (select 1 from public.content_posts p
                 where p.workspace_id = p_workspace_id and p.id = p_post_id and p.archived_at is null)
-    and not (
-      exists (select 1 from public.content_publish_requests r
-              where r.workspace_id = p_workspace_id and r.post_id = p_post_id and r.status = 'rejected')
-      and not exists (select 1 from public.content_publish_requests r
-                      where r.workspace_id = p_workspace_id and r.post_id = p_post_id and r.status <> 'rejected')
+        and not (
+          exists (select 1 from public.content_publish_requests r
+                  where r.workspace_id = p_workspace_id and r.post_id = p_post_id and r.status = 'rejected')
+          and not exists (select 1 from public.content_publish_requests r
+                          where r.workspace_id = p_workspace_id and r.post_id = p_post_id and r.status <> 'rejected')
+        )
+      )
     )
 $$;
 revoke all on function contentpilot_private.sports_item_blocks_event(uuid, uuid) from public, anon, authenticated, service_role;
@@ -112,6 +138,7 @@ declare
   v_specific boolean;
   v_follow boolean := false;
   v_reject text;
+  v_manual text;
 begin
   if not contentpilot_private.can_run_news(p_workspace_id) then
     raise exception 'Worker is not authorized' using errcode = '42501';
@@ -150,6 +177,24 @@ begin
       v_reject := 'same_event_cluster';
     end if;
   end if;
+  -- Manual-review-only reasons (never auto-published): the worker's reason, else one derived here. The database
+  -- re-derives them so a stale or forged payload can never open the auto-publish path.
+  v_manual := nullif(p_event->>'manualReviewReason', '');
+  if v_manual is null then
+    if not v_specific then
+      v_manual := 'unresolved_identity';
+    elsif p_event->>'decision' = 'follow_up' then
+      v_manual := 'follow_up';
+    elsif exists (
+      select 1 from public.sports_news_items n
+      where n.project_id = p_project_id and n.post_id is not null
+        and (n.event_key = v_key or n.cluster_key = v_cluster)
+        and not contentpilot_private.sports_item_blocks_event(n.workspace_id, n.post_id)
+    ) then
+      v_manual := 'reconsidered';
+    end if;
+  end if;
+
   if v_reject is not null then
     insert into public.sports_news_event_matches
       (workspace_id, project_id, source_url, headline_key, decision, event_key, matched_event_key, reasons, evidence)
@@ -171,7 +216,8 @@ begin
   update public.sports_news_items n
      set event_key = case when v_specific then v_key end,
          cluster_key = case when v_specific then v_cluster end,
-         event_identity = coalesce(p_event->'identity', '{}'::jsonb)
+         event_identity = coalesce(p_event->'identity', '{}'::jsonb),
+         manual_review_reason = v_manual
    where n.project_id = p_project_id and n.source_url = p_source_url
      and n.created_at = now() and n.event_identity is null;
   if found and v_post is not null and v_specific and p_event->>'decision' = 'follow_up' then
@@ -195,5 +241,66 @@ grant execute on function public.record_sports_news_event_duplicate(uuid, uuid, 
 grant execute on function public.record_sports_news_event_assessment(
   uuid, uuid, text, text, numeric, text, text, text, text, uuid[], jsonb, jsonb
 ) to authenticated;
+
+-- Same body as football_automation_controls plus the FN05 manual-review-only guard (grants are preserved).
+create or replace function public.claim_sports_auto_publish(p_workspace_id uuid,p_project_id uuid,p_destination_id uuid,p_post_id uuid)
+returns table(id uuid, starts_at timestamptz, ends_at timestamptz, target_ref text, created_at timestamptz)
+language plpgsql security definer set search_path = '' as $$
+declare
+  w contentpilot_private.sports_auto_publish_windows;
+  n public.sports_news_items;
+  r public.content_publish_requests;
+  p public.content_posts;
+  d public.publishing_destinations;
+  t timestamptz;
+  published timestamptz;
+  current_slot integer;
+  delivery_id uuid;
+begin
+  if not contentpilot_private.can_run_news(p_workspace_id) then
+    raise exception 'Worker is not authorized' using errcode = '42501';
+  end if;
+  select * into p from public.content_posts cp
+    where (cp.id,cp.workspace_id,cp.project_id) = (p_post_id,p_workspace_id,p_project_id) for update;
+  if not found or p.version <> 1 or p.status <> 'draft' or p.archived_at is not null then return; end if;
+  select * into r from public.content_publish_requests req
+    where (req.post_id,req.destination_id,req.workspace_id) = (p_post_id,p_destination_id,p_workspace_id)
+      and req.status = 'pending' and req.request_source = 'agent' and req.requested_by = (select auth.uid())
+      and req.post_version = 1 for update;
+  if not found then return; end if;
+  select * into w from contentpilot_private.sports_auto_publish_windows aw
+    where (aw.workspace_id,aw.project_id,aw.destination_id) = (p_workspace_id,p_project_id,p_destination_id)
+      and aw.starts_at <= clock_timestamp() and aw.ends_at > clock_timestamp()
+    order by aw.starts_at desc limit 1 for update;
+  if not found then return; end if;
+  t := clock_timestamp();
+  if t + interval '15 seconds' >= w.ends_at or p.created_at < w.starts_at or r.requested_at < w.starts_at
+      or r.expires_at <= t then return; end if;
+  select * into d from public.publishing_destinations dest
+    where (dest.id,dest.workspace_id) = (p_destination_id,p_workspace_id) and dest.kind='telegram' and dest.status='active';
+  if not found then return; end if;
+  select * into n from public.sports_news_items item
+    where (item.post_id,item.workspace_id,item.project_id) = (p_post_id,p_workspace_id,p_project_id);
+  if not found or n.created_at < w.starts_at or n.assessment ? 'testPublishUntil'
+      or n.assessment->>'rubricVersion' is distinct from 'sports-v1'
+      or coalesce(n.assessment->>'decision','') not in ('threshold_met','highest_below_threshold')
+      -- FN05: unresolved identities, follow-ups and reconsidered (archived/rejected) events are manual review only.
+      or n.manual_review_reason is not null then return; end if;
+  published := (n.assessment->>'publishedAt')::timestamptz;
+  if published is null or published > t or (published at time zone 'Asia/Dubai')::date <> (t at time zone 'Asia/Dubai')::date then return; end if;
+  if exists (select 1 from public.publish_deliveries x where x.post_id=p_post_id and x.destination_id=p_destination_id) then return; end if;
+
+  if exists (select 1 from contentpilot_private.sports_auto_publish_deliveries a
+    join public.content_publish_requests p_req on p_req.id=a.request_id
+    where p_req.post_id=p_post_id and p_req.destination_id=p_destination_id) then return; end if;
+
+  current_slot := floor(extract(epoch from t - w.starts_at) / 7200)::integer;
+  if (select count(*) from contentpilot_private.sports_auto_publish_deliveries a where a.window_id=w.id and a.slot=current_slot) >= w.max_per_slot
+      or (select count(*) from contentpilot_private.sports_auto_publish_deliveries a where a.window_id=w.id) >= w.max_per_window then return; end if;
+  insert into contentpilot_private.sports_auto_publish_deliveries(window_id,request_id,slot,state)
+    values(w.id,r.id,current_slot,'sending') on conflict(request_id) do nothing returning sports_auto_publish_deliveries.id into delivery_id;
+  if delivery_id is not null then return query select delivery_id,w.starts_at,w.ends_at,d.target_ref,p.created_at; end if;
+end
+$$;
 
 commit;

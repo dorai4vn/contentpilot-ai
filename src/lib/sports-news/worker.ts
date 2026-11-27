@@ -12,8 +12,8 @@ import type { Database, Json } from "@/types/database";
 import { getTemporaryAutoWindow, sendTemporarySportsPost } from "./auto-delivery";
 import { AUTO_PUBLISH_MAX_PER_RUN } from "./temporary-auto-publish";
 import { assessSportsNews, writeSportsDraft } from "./editor";
-import { loadBlockingEvents } from "./event-history";
-import { buildEventIdentity, buildEventPayload, classifyEvent, type EventDecision, type EventIdentity, type KnownEvent } from "./event-identity";
+import { loadEventHistory } from "./event-history";
+import { buildEventIdentity, buildEventPayload, classifyEvent, manualReviewReason, type EventDecision, type EventIdentity, type KnownEvent, type ManualReviewReason } from "./event-identity";
 import { collectSportsNews } from "./feeds";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
@@ -21,7 +21,7 @@ import { findSportsPostPhoto } from "./licensed-photo";
 import { findSourceSportsPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
-import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_SCORING_RUBRIC } from "./scoring";
+import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_MAX_PER_RUN, SPORTS_SCORING_RUBRIC } from "./scoring";
 
 const configSchema = z.object({
   workspaceId: z.uuid(),
@@ -241,11 +241,12 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const headlines = new Set(seen.data.map((item) => item.headline_key));
   // Only events that became an actual, non-archived, non-rejected post may suppress a later report.
   // Low-score, failed, unselected or merely discovered items never do.
-  const knownEvents: KnownEvent[] = await loadBlockingEvents(client, config.workspaceId, seen.data);
+  const history = await loadEventHistory(client, config.workspaceId, seen.data);
+  const knownEvents: KnownEvent[] = history.blocking;
   const skippedEvents: { url: string; key: string; identity: EventIdentity; verdict: EventDecision }[] = [];
   const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, [item.summary, item.categories].filter(Boolean).join(" ")) }))
     .sort((a, b) => a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
-  const candidates: { item: (typeof articles)[number]; key: string; priority: number; identity: EventIdentity; verdict: EventDecision }[] = [];
+  const candidates: { item: (typeof articles)[number]; key: string; priority: number; identity: EventIdentity; verdict: EventDecision; reconsidered: boolean }[] = [];
   for (const { item, priority } of prioritized) {
     const key = headlineKey(item.title);
     if (urls.has(item.url) || headlines.has(key)) continue;
@@ -262,39 +263,46 @@ export async function runSportsNews(config: Config, testDate?: string) {
     if (verdict.decision === "follow_up") report.followUps += 1;
     urls.add(item.url);
     headlines.add(key);
-    candidates.push({ item, key, priority, identity, verdict });
+    // A post of this event that was archived/rejected without ever being sent no longer blocks, but a report
+    // of the same event is then reconsidered by a human only (never through the auto-publish window).
+    const reconsidered = identity.subjectKind !== "unresolved" && classifyEvent(identity, history.reconsidered).decision !== "new";
+    candidates.push({ item, key, priority, identity, verdict, reconsidered });
     if (candidates.length === (testDate ? 16 : 20)) break;
   }
 
-  const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority, identity, verdict }) => {
+  const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority, identity, verdict, reconsidered }) => {
     const assessment = await assessSportsNews(item);
-    return { item, key, priority, identity, verdict, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
+    return { item, key, priority, identity, verdict, reconsidered, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
   }));
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
   report.itemFailures = assessments.length - assessed.length;
-  // Same-run duplicates: the highest-scoring report of an event is kept; weaker rewrites of it never take a
-  // slot, yet a weak report can never suppress a stronger one (ranking happens AFTER scoring).
+  // Same-run duplicates: the highest-scoring report of an event leads; weaker rewrites of it never take a slot
+  // and can never suppress a stronger one (ranking happens AFTER scoring). A weaker report is only an alternate:
+  // it is persisted as a skip only once its event really became a post, so a failed or unselected lead never
+  // costs the event its alternates (they stay eligible for the bounded same-run fallback and for the next run).
+  type Scored = (typeof assessed)[number];
   const accepted: KnownEvent[] = [];
-  const weaker = new Set<string>();
+  const leads: Scored[] = [];
+  const alternates = new Map<string, Scored[]>();
   for (const entry of [...assessed].sort((a, b) => b.score - a.score || a.priority - b.priority)) {
     const verdict = classifyEvent(entry.identity, accepted);
     if (verdict.decision === "duplicate") {
-      weaker.add(entry.key);
-      if (skippedEvents.length < 30) {
-        skippedEvents.push({ url: entry.item.url, key: entry.key, identity: entry.identity,
-          verdict: { ...verdict, reasons: [{ code: "same_run_weaker_report" }, ...verdict.reasons] } });
+      const lead = leads.find((candidate) => candidate.item.url === verdict.matched.sourceUrl);
+      if (lead) {
+        alternates.set(lead.key, [...(alternates.get(lead.key) ?? []), { ...entry, verdict: { ...verdict, reasons: [{ code: "same_run_weaker_report" }, ...verdict.reasons] } }]);
+        continue;
       }
-      report.semanticDuplicates += 1;
-    } else {
-      accepted.push({ identity: entry.identity, sourceUrl: entry.item.url, title: entry.item.title, origin: "stored" });
     }
+    // A same-run follow-up (e.g. the result scored below its preview) is linked to the lead it extends.
+    if (verdict.decision === "follow_up") entry.verdict = { ...verdict, reasons: [{ code: "same_run_follow_up" }, ...verdict.reasons] };
+    accepted.push({ identity: entry.identity, sourceUrl: entry.item.url, title: entry.item.title, origin: "stored" });
+    leads.push(entry);
   }
-  const selection = selectSportsNews(assessed.filter((entry) => !weaker.has(entry.key)), threshold, scoring?.fallback_mode ?? "highest");
+  const selection = selectSportsNews(leads, threshold, scoring?.fallback_mode ?? "highest");
   const fallback = !testDate && selection.fallback;
   const selected = testDate ? (selection.fallback ? [] : selection.selected.slice(0, 1)) : selection.selected;
   const selectedKeys = new Set(selected.map((entry) => entry.key));
-  const decided = testDate ? selected : assessed.filter((entry) => entry.score < threshold || selectedKeys.has(entry.key));
 
   const evidence = await Promise.allSettled(skippedEvents.map(({ url, key, identity, verdict }) =>
     client.rpc("record_sports_news_event_duplicate", {
@@ -308,50 +316,105 @@ export async function runSportsNews(config: Config, testDate?: string) {
   report.eventEvidenceFailures = evidence.filter((entry) => entry.status === "rejected" || entry.value.error).length;
   report.itemFailures += report.eventEvidenceFailures;
 
-  const saved = await Promise.allSettled(
-    decided.map(async ({ item, key, priority, identity, verdict, assessment, score, reach, freshness }) => {
-      const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
-      const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
-      const photo = draft ? await findSourceSportsPhoto(item)
-        ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
-      if (!testDate && !publishedToday(item.publishedAt)) return null;
-      const result = await client.rpc("record_sports_news_event_assessment", {
-        p_workspace_id: config.workspaceId,
-        p_project_id: config.projectId,
-        p_source_url: item.url,
-        p_headline_key: key,
-        p_score: score,
-        p_title: draft?.title ?? null,
-        p_body: draft?.body ?? null,
-        p_image: photo?.image ?? null,
-        p_reason: draft ? `${testDate ? "Đăng thử Telegram · " : ""}RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
-        p_assessment: {
-          ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
-          ...(testDate ? { testPublishUntil: new Date(now + 24 * 60 * 60 * 1000).toISOString() } : {}),
-          threshold, scoringVersion: scoring?.version ?? 0, weights, components: {
-            playerPopularity: assessment.playerPopularity, teamPopularity: assessment.teamPopularity,
-            competitionPopularity: assessment.competitionPopularity, eventImportance: assessment.eventImportance,
-            reach, freshness,
-          },
-          title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
+  type Saved = { id: string; title: string; body: string; publishedAt: number; manual: ManualReviewReason | null };
+  // Existing AI budget: never more draft calls than one run could already make (SPORTS_NEWS_MAX_PER_RUN).
+  let draftCalls = 0;
+  const reportOf = (entry: Scored) => manualReviewReason(entry.identity, entry.verdict, entry.reconsidered);
+  const record = async (entry: Scored, materialize: boolean): Promise<Saved | null> => {
+    const { item, key, priority, identity, verdict, assessment, score, reach, freshness } = entry;
+    const decision = materialize ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
+    let draft = null;
+    if (materialize) {
+      draftCalls += 1;
+      draft = await writeSportsDraft(item);
+    }
+    const photo = draft ? await findSourceSportsPhoto(item)
+      ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
+    if (!testDate && !publishedToday(item.publishedAt)) return null;
+    const manual = reportOf(entry);
+    const result = await client.rpc("record_sports_news_event_assessment", {
+      p_workspace_id: config.workspaceId,
+      p_project_id: config.projectId,
+      p_source_url: item.url,
+      p_headline_key: key,
+      p_score: score,
+      p_title: draft?.title ?? null,
+      p_body: draft?.body ?? null,
+      p_image: photo?.image ?? null,
+      p_reason: draft ? `${testDate ? "Đăng thử Telegram · " : ""}RSS · ${score}/10${fallback ? " · Cao nhất lượt quét, dưới ngưỡng" : ""} · ${assessment.reason}`.slice(0, 500) : null,
+      p_assessment: {
+        ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
+        ...(testDate ? { testPublishUntil: new Date(now + 24 * 60 * 60 * 1000).toISOString() } : {}),
+        threshold, scoringVersion: scoring?.version ?? 0, weights, components: {
+          playerPopularity: assessment.playerPopularity, teamPopularity: assessment.teamPopularity,
+          competitionPopularity: assessment.competitionPopularity, eventImportance: assessment.eventImportance,
+          reach, freshness,
         },
-        p_destinations: destinations,
-        p_event: buildEventPayload(identity, verdict) as unknown as Json,
-      });
-      if (result.error) throw new Error("sports_news_record_failed");
-      return result.data && draft
-        ? { id: result.data, title: draft.title, body: draft.body, publishedAt: item.publishedAt } : null;
-    }),
-  );
+        title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
+      },
+      p_destinations: destinations,
+      p_event: buildEventPayload(identity, verdict, manual) as unknown as Json,
+    });
+    if (result.error) throw new Error("sports_news_record_failed");
+    return result.data && draft
+      ? { id: result.data, title: draft.title, body: draft.body, publishedAt: item.publishedAt, manual } : null;
+  };
 
-  const drafts = saved.flatMap((item) => item.status === "fulfilled" && item.value ? [item.value] : []);
+  // Settles one selected event: the lead first, then (only if the lead FAILED before a post existed) its
+  // alternates in rank order, within the draft budget. A null result (stale or database-rejected duplicate) is a
+  // legitimate outcome, not a failure, and never triggers a fallback.
+  const settle = async (lead: Scored): Promise<{ saved: Saved | null; failed: boolean; used: Scored | null }> => {
+    const queue = [lead, ...(alternates.get(lead.key) ?? []).filter((alt) => alt.score >= threshold || fallback)];
+    let failed = false;
+    for (const [index, entry] of queue.entries()) {
+      if (index > 0 && draftCalls >= SPORTS_NEWS_MAX_PER_RUN) break;
+      try {
+        return { saved: await record(entry, true), failed: false, used: entry };
+      } catch {
+        failed = true;
+        report.itemFailures += 1;
+      }
+    }
+    return { saved: null, failed, used: null };
+  };
+  const settled = await Promise.all(selected.map(settle));
+  const usedKeys = new Set(settled.flatMap((entry) => entry.used ? [entry.used.key] : []));
+  const materializedLeads = new Set(selected.filter((_, index) => !settled[index].failed).map((entry) => entry.key));
+
+  // Weaker reports are persisted as skips only for an event that really became a post (or already was one).
+  const lateSkips: typeof skippedEvents = [];
+  for (const lead of leads) {
+    if (!materializedLeads.has(lead.key)) continue;
+    for (const alt of alternates.get(lead.key) ?? []) {
+      if (usedKeys.has(alt.key)) continue;
+      report.semanticDuplicates += 1;
+      if (lateSkips.length < 30) lateSkips.push({ url: alt.item.url, key: alt.key, identity: alt.identity, verdict: alt.verdict });
+    }
+  }
+  const lateEvidence = await Promise.allSettled(lateSkips.map(({ url, key, identity, verdict }) =>
+    client.rpc("record_sports_news_event_duplicate", {
+      p_workspace_id: config.workspaceId, p_project_id: config.projectId, p_source_url: url, p_headline_key: key,
+      p_event: buildEventPayload(identity, verdict) as unknown as Json,
+    })));
+  const lateFailures = lateEvidence.filter((entry) => entry.status === "rejected" || entry.value.error).length;
+  report.eventEvidenceFailures += lateFailures;
+  report.itemFailures += lateFailures;
+
+  // Low-score reports are recorded without a post (never blocking). A used fallback alternate is already recorded.
+  const lows = assessed.filter((entry) => entry.score < threshold && !selectedKeys.has(entry.key) && !usedKeys.has(entry.key));
+  const lowResults = await Promise.allSettled(lows.map((entry) => record(entry, false)));
+
+  const drafts = settled.flatMap((entry) => entry.saved ? [entry.saved] : []);
   report.drafted = drafts.length;
   if (autoWindow && autoTarget) {
-    const sent = await Promise.allSettled(drafts.slice(0, AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
+    // Only regular eligible drafts may be auto-published. Unresolved identities, follow-ups, uncertain facts and
+    // reconsidered (previously archived/rejected) events are manual review only; the database enforces it too.
+    const eligible = drafts.filter((draft) => draft.manual === null);
+    const sent = await Promise.allSettled(eligible.slice(0, AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
       sendTemporarySportsPost(client, autoTarget, tokens[autoTarget.destinationId], draft)));
     report.autoPublished = sent.filter((item) => item.status === "fulfilled" && item.value).length;
     report.autoPublishFailures = sent.length - report.autoPublished;
   }
-  report.itemFailures += saved.filter((item) => item.status === "rejected").length;
+  report.itemFailures += lowResults.filter((item) => item.status === "rejected").length;
   return { ...report, ...await alert() };
 }

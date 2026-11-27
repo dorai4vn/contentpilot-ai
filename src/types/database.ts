@@ -169,6 +169,7 @@ export type Database = {
           event_key: string | null;
           cluster_key: string | null;
           event_identity: Json | null;
+          manual_review_reason: "unresolved_identity" | "follow_up" | "reconsidered" | "uncertain_facts" | null;
           review_notice_sent_at: string | null;
           review_notice_claim: string | null;
           review_notice_claimed_at: string | null;
