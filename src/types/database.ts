@@ -166,10 +166,23 @@ export type Database = {
           image_base64: string | null;
           has_image: boolean;
           assessment: Json | null;
+          event_key: string | null;
+          cluster_key: string | null;
+          event_identity: Json | null;
           review_notice_sent_at: string | null;
           review_notice_claim: string | null;
           review_notice_claimed_at: string | null;
           created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      sports_news_event_matches: {
+        Row: {
+          id: string; workspace_id: string; project_id: string; source_url: string; headline_key: string;
+          decision: "duplicate" | "follow_up"; event_key: string; matched_event_key: string | null;
+          reasons: Json; evidence: Json; created_at: string;
         };
         Insert: never;
         Update: never;
@@ -428,6 +441,14 @@ export type Database = {
       };
       finish_sports_auto_publish: {
         Args: { p_workspace_id: string; p_id: string; p_external_id: string | null; p_error_code: string | null };
+        Returns: boolean;
+      };
+      record_sports_news_event_assessment: {
+        Args: Database["public"]["Functions"]["record_sports_news_assessment"]["Args"] & { p_event: Json };
+        Returns: string | null;
+      };
+      record_sports_news_event_duplicate: {
+        Args: { p_workspace_id: string; p_project_id: string; p_source_url: string; p_headline_key: string; p_event: Json };
         Returns: boolean;
       };
       record_sports_news_assessment: {

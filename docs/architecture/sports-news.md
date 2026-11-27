@@ -74,3 +74,13 @@ Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch c
 Một cửa sổ do quản trị production bật có thời hạn tối đa tám giờ, gắn với một workspace, một dự án và một đích Telegram. Worker vẫn là Member. Trong cửa sổ, tối đa hai tin trong mỗi khoảng hai giờ và tám tin toàn kỳ được phép gửi tự động, kể cả khi chạy lại. Chỉ bản nháp RSS mới tạo trong cửa sổ đủ điều kiện. Barem, bộ lọc tin cùng ngày, chống trùng và ảnh vuông được dùng như luồng thường.
 
 Kết quả gửi tự động được ghi riêng trong `contentpilot_private.sports_auto_publish_deliveries`. Nếu Telegram xác nhận đã gửi hoặc kết quả chưa xác định, hệ thống chặn gửi lại cùng bài đến cùng kênh. Lỗi xác định chưa gửi giữ yêu cầu duyệt để xử lý thủ công. Khi quá hạn, worker tự trở về Human Approval.
+
+## Khử trùng sự kiện theo ngữ nghĩa (FN05)
+
+Ngoài khử trùng theo URL và tiêu đề chuẩn hoá (giữ nguyên), worker tính **danh tính sự kiện** cho mỗi bài bằng bộ trích xuất tất định (`src/lib/sports-news/event-identity.ts`, không gọi LLM): đội/cầu thủ, giải đấu, loại sự kiện (kết quả, nhận định, chuyển nhượng, chấn thương, HLV, kỷ luật), mức chắc chắn (tin đồn → đưa tin → chính thức), tỷ số và ngày (Asia/Dubai).
+
+- **Trùng lặp**: cùng chủ thể (≥ 2 đối tượng chung, hoặc 1 nếu chỉ có 1), cùng ngày ±1, cùng giải, cùng loại tin và không có thông tin chắc chắn hơn → bỏ qua, ghi bằng chứng và lý do có cấu trúc vào `sports_news_event_matches`.
+- **Tiếp nối có ý nghĩa**: cùng chủ thể nhưng đổi loại tin, nâng mức chắc chắn hoặc đổi tỷ số → vẫn được chấm điểm/duyệt, liên kết với sự kiện gốc (`follow_up`).
+- **Chạy đồng thời**: RPC `record_sports_news_event_assessment` kiểm tra lại `event_key`/`cluster_key` dưới advisory lock của dự án, nên hai lượt chạy song song chỉ tạo một bài. Phê duyệt thủ công, quota và cửa sổ Auto Publish không đổi.
+- **Cách ly**: bảng bằng chứng bật RLS, thành viên workspace chỉ đọc, ghi chỉ qua RPC `SECURITY DEFINER` của worker đã đăng ký.
+- **Giới hạn**: trích xuất dựa trên từ điển đội/giải và cụm tên viết hoa nên có thể bỏ sót hoặc gộp sai với tin ít gặp; chưa có giao diện xem bằng chứng. Áp dụng migration trước khi triển khai worker mới.

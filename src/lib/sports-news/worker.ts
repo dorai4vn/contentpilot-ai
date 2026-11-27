@@ -8,10 +8,11 @@ import { getSupabaseEnv } from "@/lib/env";
 import { AGENT_ACTOR_HEADER } from "@/lib/supabase/server";
 import { getPublisher } from "@/lib/publishing/registry";
 import { PublisherSecret } from "@/lib/publishing/types";
-import type { Database } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 import { getTemporaryAutoWindow, sendTemporarySportsPost } from "./auto-delivery";
 import { AUTO_PUBLISH_MAX_PER_RUN } from "./temporary-auto-publish";
 import { assessSportsNews, writeSportsDraft } from "./editor";
+import { buildEventIdentity, buildEventPayload, classifyEvent, parseStoredIdentity, type EventDecision, type EventIdentity, type KnownEvent } from "./event-identity";
 import { collectSportsNews } from "./feeds";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
@@ -223,12 +224,12 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const articles = feed.articles.filter((item) => testDate
     ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
     : publishedToday(item.publishedAt, now));
-  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
+  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
     .from("sports_news_items")
-    .select("source_url, headline_key")
+    .select("source_url, headline_key, event_identity")
     .eq("workspace_id", config.workspaceId)
     .eq("project_id", config.projectId)
     .gte("created_at", new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString())
@@ -237,21 +238,46 @@ export async function runSportsNews(config: Config, testDate?: string) {
   if (seen.error) throw new Error("sports_news_history_failed");
   const urls = new Set(seen.data.map((item) => item.source_url));
   const headlines = new Set(seen.data.map((item) => item.headline_key));
+  const knownEvents: KnownEvent[] = seen.data.flatMap((row) => {
+    const identity = parseStoredIdentity(row.event_identity);
+    return identity ? [{ identity, sourceUrl: row.source_url }] : [];
+  });
+  const skippedEvents: { url: string; key: string; identity: EventIdentity; verdict: EventDecision }[] = [];
   const prioritized = articles.map((item) => ({ item, priority: footballPriority(item.title, [item.summary, item.categories].filter(Boolean).join(" ")) }))
     .sort((a, b) => a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
-  const candidates = [];
+  const candidates: { item: (typeof articles)[number]; key: string; priority: number; identity: EventIdentity; verdict: EventDecision }[] = [];
   for (const { item, priority } of prioritized) {
     const key = headlineKey(item.title);
     if (urls.has(item.url) || headlines.has(key)) continue;
+    // Semantic check (FN05): same real-world event from another source is skipped with evidence;
+    // a meaningful follow-up (new type, firmer status, changed score) continues as a linked candidate.
+    const identity = buildEventIdentity(item);
+    const verdict = classifyEvent(identity, knownEvents);
+    if (verdict.decision === "duplicate") {
+      if (skippedEvents.length < 30) skippedEvents.push({ url: item.url, key, identity, verdict });
+      report.semanticDuplicates += 1;
+      continue;
+    }
+    if (verdict.decision === "follow_up") report.followUps += 1;
     urls.add(item.url);
     headlines.add(key);
-    candidates.push({ item, key, priority });
+    knownEvents.push({ identity, sourceUrl: item.url });
+    candidates.push({ item, key, priority, identity, verdict });
     if (candidates.length === (testDate ? 16 : 20)) break;
   }
 
-  const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority }) => {
+  await Promise.allSettled(skippedEvents.map(({ url, key, identity, verdict }) =>
+    client.rpc("record_sports_news_event_duplicate", {
+      p_workspace_id: config.workspaceId,
+      p_project_id: config.projectId,
+      p_source_url: url,
+      p_headline_key: key,
+      p_event: buildEventPayload(identity, verdict) as unknown as Json,
+    })));
+
+  const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority, identity, verdict }) => {
     const assessment = await assessSportsNews(item);
-    return { item, key, priority, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
+    return { item, key, priority, identity, verdict, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
   }));
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
@@ -263,13 +289,13 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const decided = testDate ? selected : assessed.filter((entry) => entry.score < threshold || selectedKeys.has(entry.key));
 
   const saved = await Promise.allSettled(
-    decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
+    decided.map(async ({ item, key, priority, identity, verdict, assessment, score, reach, freshness }) => {
       const decision = selectedKeys.has(key) ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
       const draft = selectedKeys.has(key) ? await writeSportsDraft(item) : null;
       const photo = draft ? await findSourceSportsPhoto(item)
         ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
       if (!testDate && !publishedToday(item.publishedAt)) return null;
-      const result = await client.rpc("record_sports_news_assessment", {
+      const result = await client.rpc("record_sports_news_event_assessment", {
         p_workspace_id: config.workspaceId,
         p_project_id: config.projectId,
         p_source_url: item.url,
@@ -290,6 +316,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
           title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
         },
         p_destinations: destinations,
+        p_event: buildEventPayload(identity, verdict) as unknown as Json,
       });
       if (result.error) throw new Error("sports_news_record_failed");
       return result.data && draft
