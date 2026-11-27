@@ -33,34 +33,42 @@
 
 ## Fallback schedule (NOT applied; needs owner action)
 
-GitHub Actions cron cannot run every minute (minimum 5 min, best-effort), and workflow files were out of scope.
-Proposed separate workflow `.github/workflows/sports-delivery.yml` for owner review:
+Uses the existing Supabase `pg_cron` + `pg_net` architecture (see `docs/architecture/sports-news.md`), every minute,
+with the existing Vault secret `contentpilot_sports_news_cron_bearer` (no plaintext secrets, no new service).
+Exact idempotent setup / verify / rollback SQL: [`docs/ops/sports-delivery-cron.sql`](ops/sports-delivery-cron.sql).
 
-```yaml
-name: Sports delivery fallback
-on:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
-permissions: {}
-concurrency:
-  group: sports-delivery
-  cancel-in-progress: false
-jobs:
-  deliver:
-    if: ${{ vars.SPORTS_NEWS_CRON_URL != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Deliver approved items only
-        env:
-          CRON_URL: ${{ vars.SPORTS_NEWS_CRON_URL }}
-          CRON_SECRET: ${{ secrets.SPORTS_NEWS_CRON_SECRET }}
-        run: |
-          curl --silent --show-error --fail-with-body --proto '=https' --max-time 120 \
-            --request POST --header "Authorization: Bearer ${CRON_SECRET:?}" "${CRON_URL:?}?mode=deliver"
-```
+- **Cheap queue-due check**: the cron command only calls `net.http_post` when `publish_deliveries` has a sendable row
+  (`queued`/`failed`, `next_attempt_at <= now()`, `attempt_count < 4`, destination `active` and not `internal`; the same
+  predicate as `claim_social_deliveries`). Idle minutes make zero HTTP calls and zero Vercel invocations. No schema change.
+  The check is not workspace-scoped and does not know about the auto-publish window; the worst case is one no-op call,
+  because the route itself is bound to the configured worker workspace and leaves a window-owned destination alone.
+- **Route auth**: `POST /api/cron/sports-news?mode=deliver` requires `Authorization: Bearer $CRON_SECRET`
+  (constant-time compare, 401 otherwise). Workspace binding comes from worker env + `can_run_news` inside the RPCs.
+- **Overlap / concurrency**: `net.http_post` is asynchronous, so a slow run never blocks the next minute; overlapping runs
+  and the post-approval `after()` dispatch cannot claim the same row (`FOR UPDATE SKIP LOCKED`, status leaves `queued`).
+- **Bounded runtime**: scheduled run ≤ 5 rounds × 6 rows and a 100 s budget inside the route's `maxDuration = 180`;
+  pg_net timeout is 70 s (the HTTP request may be abandoned by pg_net, the route still finishes and claims stay safe).
+  Post-approval `after()` dispatch uses a 40 s budget, and the pages that host the approval actions export `maxDuration = 60`.
+  Anything left over stays `queued` and the next minute continues. 8 approvals = 2 claim rounds.
+- **Retries / uncertain**: 429 → `failed` with backoff and up to 4 attempts; a `sending` row older than 5 min (function killed
+  mid-send) becomes `failed/delivery_unconfirmed` and is never replayed automatically.
+- **Auto-publish exclusion**: while a temporary auto-publish window owns the Telegram destination, the delivery run does
+  not touch that destination (unit-tested).
 
-Prerequisites: this PR deployed; existing `SPORTS_NEWS_CRON_URL` var must be the bare route URL without a query string
-(otherwise adapt the `?mode=deliver` append); the existing worker env vars. A true every-minute schedule needs an
-external scheduler (e.g. Vercel Cron on a Pro plan, which sends GET and would need a GET handler added) — not applied.
+### Deployment order
+
+1. Merge/deploy this PR to Production (route `?mode=deliver` + dispatch). Confirm `CRON_SECRET`, worker env vars and the
+   Vault secret already exist (they do for the 2-hourly job).
+2. Verify the route without sending anything: an unauthenticated `POST ...?mode=deliver` must return 401.
+3. Only then run the SETUP block of `docs/ops/sports-delivery-cron.sql` (the owner, in the SQL Editor).
+4. Keep the 2-hourly `contentpilot-sports-news` job unchanged.
+
+### Safe production verification (no test posts)
+
+- Read-only SQL in the VERIFY block: job is active, `cron.job_run_details` succeed, `net._http_response` shows 200, and
+  `publish_deliveries` queued count drains. With an empty queue, expect no `net._http_response` rows at all.
+- Do not create test approvals in Production; the next real approval is the verification (status goes
+  `queued` → `sending` → `succeeded` with an external id within about a minute).
+- Rollback: `select cron.unschedule('contentpilot-sports-delivery');`.
+
+The earlier GitHub Actions proposal is superseded (Actions cannot run every minute).

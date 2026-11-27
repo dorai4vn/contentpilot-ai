@@ -16,6 +16,9 @@ import { CANCEL_REASON_LABELS, PublishStatusBadge } from "../../../_components/p
 import { Badge, Breadcrumbs, Card, Notice, STATUS_LABELS, StatusBadge } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
+// Server Actions on this page run post-approval delivery dispatch in after(); keep it within a bounded function duration.
+export const maxDuration = 60;
+
 export const metadata: Metadata = { title: "Soạn thảo bài viết" };
 
 export default async function PostEditorPage({ params }: PageProps<"/w/[workspaceId]/posts/[postId]">) {

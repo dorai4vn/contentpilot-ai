@@ -1,7 +1,7 @@
 import "server-only";
 
 import { logSafeError, safeErrorInfo } from "@/lib/logging/safe-log";
-import { readSportsNewsConfig, runSportsDelivery } from "./worker";
+import { DISPATCH_TIME_BUDGET_MS, readSportsNewsConfig, runSportsDelivery } from "./worker";
 
 /**
  * Prompt post-approval dispatch. Called after a human approval has been
@@ -20,7 +20,7 @@ async function drain() {
   do {
     again = false;
     try {
-      await runSportsDelivery(readSportsNewsConfig());
+      await runSportsDelivery(readSportsNewsConfig(), Date.now, DISPATCH_TIME_BUDGET_MS);
     } catch (error) {
       logSafeError("sports-dispatch", { ...safeErrorInfo(error), reason: "dispatch_failed" });
       return;

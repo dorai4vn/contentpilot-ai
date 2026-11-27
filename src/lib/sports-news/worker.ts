@@ -57,6 +57,8 @@ export const DELIVERY_CLAIM_BATCH = 6;
 /** Delivery-only runs: bounded rounds and wall-clock so one request can never run away. */
 export const DELIVERY_MAX_ROUNDS = 5;
 export const DELIVERY_TIME_BUDGET_MS = 100_000;
+/** Post-approval dispatch runs inside the server action's function (after()), so it gets a much smaller budget. */
+export const DISPATCH_TIME_BUDGET_MS = 40_000;
 
 async function sendApproved(client: Client, config: Config, tokens: Config["tokens"]) {
   const destinations = Object.keys(tokens);
@@ -123,7 +125,9 @@ async function resolveTokens(client: Client, config: Config, notices: ReturnType
  * auto-publish window owns the Telegram destination that destination is left to
  * it, exactly as in the full run. Bounded by DELIVERY_MAX_ROUNDS and a time budget.
  */
-export async function runSportsDelivery(config: Config, now: () => number = Date.now) {
+export async function runSportsDelivery(
+  config: Config, now: () => number = Date.now, timeBudgetMs: number = DELIVERY_TIME_BUDGET_MS,
+) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
   const tokens = await resolveTokens(client, config, notices);
@@ -137,7 +141,7 @@ export async function runSportsDelivery(config: Config, now: () => number = Date
   const total = { rounds: 0, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, truncated: false };
   const started = now();
   for (;;) {
-    if (total.rounds >= DELIVERY_MAX_ROUNDS || now() - started >= DELIVERY_TIME_BUDGET_MS) {
+    if (total.rounds >= DELIVERY_MAX_ROUNDS || now() - started >= timeBudgetMs) {
       total.truncated = true;
       break;
     }

@@ -37,6 +37,9 @@ import {
 } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
+// Server Actions on this page run post-approval delivery dispatch in after(); keep it within a bounded function duration.
+export const maxDuration = 60;
+
 export const metadata: Metadata = { title: "Phê duyệt xuất bản" };
 
 const FILTERS = PUBLISH_QUEUE_FILTERS;

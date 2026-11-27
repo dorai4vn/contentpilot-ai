@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ read: vi.fn(), run: vi.fn(), log: vi.fn() }));
-vi.mock("./worker", () => ({ readSportsNewsConfig: mocks.read, runSportsDelivery: mocks.run }));
+vi.mock("./worker", () => ({ readSportsNewsConfig: mocks.read, runSportsDelivery: mocks.run, DISPATCH_TIME_BUDGET_MS: 40_000 }));
 vi.mock("@/lib/logging/safe-log", () => ({ logSafeError: mocks.log, safeErrorInfo: () => ({ type: "Error" }) }));
 
 import { dispatchApprovedDeliveries } from "./dispatch";
@@ -20,6 +20,11 @@ describe("dispatchApprovedDeliveries", () => {
     mocks.read.mockImplementation(() => { throw new Error("missing env"); });
     await dispatchApprovedDeliveries(WS);
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("uses the short dispatch budget (it runs inside the action's function via after())", async () => {
+    await dispatchApprovedDeliveries(WS);
+    expect(mocks.run).toHaveBeenCalledWith({ workspaceId: WS }, Date.now, 40_000);
   });
 
   it("ignores other workspaces", async () => {
