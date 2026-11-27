@@ -10,5 +10,11 @@ Decision date: 2026-11-27. Product owner approved semantic event deduplication, 
 - Record structured reasons for missing image, crop error, expiry, quota, duplicate event, API failure, uncertain delivery and success. Separate skipped from failed in metrics.
 - Synchronize README and sports-news architecture docs with deployed behavior; do not claim unverified external delivery or image rights.
 
+## UI and theme requirements (approved 2026-11-27)
+- Modern SaaS dashboard, desktop-first with responsive mobile workflows; prioritize Football News Control Center over coursework UX.
+- Full Light and Dark modes, plus System preference as a proposed default. Provide a visible theme selector and persist user preference across navigation and reloads.
+- Use semantic design tokens for backgrounds, surfaces, text, borders, focus, status colors and charts. Ensure readable contrast (WCAG AA target), including tables, forms, dialogs, badges, loading/empty/error states and legacy Content Studio routes where retained.
+- Verify both themes at desktop and mobile widths, including keyboard navigation, chart readability and absence of theme flash/hydration mismatch.
+
 ## Release gates
-Regression tests for legacy auth/workspaces/content/approval; cross-workspace authorization tests; semantic dedup fixtures; concurrency/quota/expiry tests; dashboard preview and mobile QA; verify production migration and deployment before claiming completion. Existing photo licensing and factual accuracy concerns remain open; they were not explicitly approved in this decision.
+Regression tests for legacy auth/workspaces/content/approval; cross-workspace authorization tests; semantic dedup fixtures; concurrency/quota/expiry tests; dashboard preview and mobile QA; verify production migration and deployment before claiming completion. Dedicated photo-license verification and news fact-checking modules are explicitly out of scope for the current roadmap. This does not establish permission to reuse third-party imagery or certify news accuracy.
