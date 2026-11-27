@@ -55,7 +55,8 @@ body {
 .theme-control { max-width: 100px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); font-size: 12px; font-weight: 650; }
 .football-shell-body { display: flex; width: 100%; max-width: 1600px; margin-inline: auto; flex: 1; min-width: 0; }
 .football-sidebar { width: 248px; flex: none; border-right: 1px solid var(--border); background: var(--surface); }
-.football-sidebar-inner { position: sticky; top: 64px; padding: 22px 14px; }
+.football-sidebar-inner { position: sticky; top: 64px; display: flex; flex-direction: column; min-height: calc(100vh - 64px); max-height: calc(100vh - 64px); overflow-y: auto; padding: 22px 14px; }
+.football-sidebar-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
 .football-back { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .football-back:hover { color: var(--primary); }
 .football-workspace { display: flex; align-items: center; gap: 10px; margin: 10px 2px 27px; padding: 11px; border: 1px solid var(--border); border-radius: 10px; }
@@ -140,9 +141,10 @@ html.dark .hover\:bg-indigo-50:hover { background-color: var(--accent); }
 @media (max-width: 767px) {
   .football-shell-body { display: block; }
   .football-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); }
-  .football-sidebar-inner { position: static; padding: 8px 16px; }
+  .football-sidebar-inner { position: static; flex-direction: row; align-items: center; gap: 8px; min-height: 0; max-height: none; overflow: visible; padding: 8px 16px; }
+  .football-sidebar-footer { margin-top: 0; padding: 0 0 0 8px; border-top: 0; border-left: 1px solid var(--border); flex: none; }
   .football-back, .football-workspace, .football-nav-group p { display: none; }
-  .football-navigation { display: flex; gap: 8px; overflow-x: auto; }
+  .football-navigation { display: flex; gap: 8px; flex: 1; min-width: 0; overflow-x: auto; }
   .football-nav-group { display: flex; gap: 4px; flex: none; }
   .football-nav-link { white-space: nowrap; }
   .football-main { padding: 24px 16px 48px; }
