@@ -9,6 +9,8 @@ export function contentPermissions(role: WorkspaceRole) {
   return {
     /** Create, rename, archive and restore projects. */
     manageProjects: manager,
+    /** Rename the workspace (owners/admins, mirrors the workspaces UPDATE policy). */
+    manageWorkspace: manager,
     /** Create, edit, change status, archive and restore posts (any member). */
     editPosts: true,
   };

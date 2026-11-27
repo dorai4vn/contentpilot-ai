@@ -71,6 +71,22 @@ export async function getMyWorkspace(user: CurrentUser, workspaceId: string): Pr
   return { id: data.workspaces.id, name: data.workspaces.name, role: data.role, createdAt: data.workspaces.created_at };
 }
 
+/**
+ * Renames a workspace. Only `name` is written (id, created_by and membership are
+ * untouched). Runs as the user: RLS allows owners/admins only. A blocked update
+ * affects zero rows without an error, so the returned row is checked.
+ */
+export async function renameWorkspace(workspaceId: string, name: string): Promise<void> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("workspaces").update({ name }).eq("id", workspaceId).select("id");
+  if (error) {
+    throw new Error("Could not rename workspace");
+  }
+  if (!data || data.length !== 1) {
+    throw new Error("Workspace rename not permitted");
+  }
+}
+
 export type WorkspaceMemberRole = { userId: string; role: WorkspaceRole };
 
 /**

@@ -8,6 +8,6 @@ describe("contentPermissions", () => {
     ["admin", true],
     ["member", false],
   ] as const)("%s manages projects: %s", (role, manage) => {
-    expect(contentPermissions(role)).toEqual({ manageProjects: manage, editPosts: true });
+    expect(contentPermissions(role)).toEqual({ manageProjects: manage, manageWorkspace: manage, editPosts: true });
   });
 });

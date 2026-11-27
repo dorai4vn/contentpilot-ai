@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Bot, ClipboardCheck, LayoutDashboard, Newspaper, PanelsTopLeft, Settings2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Bot, ClipboardCheck, LayoutDashboard, Newspaper, PanelsTopLeft, Settings, Settings2, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -24,6 +24,7 @@ export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCou
   const studioItems: NavItem[] = [
     { href: `${base}/studio`, label: "Nội dung", icon: PanelsTopLeft, testId: "nav-studio", match: (path) => path.startsWith(`${base}/studio`) || path.startsWith(`${base}/p/`) || path.startsWith(`${base}/posts/`) },
     { href: `${base}/agent`, label: "Trợ lý AI", icon: Bot, testId: "nav-agent", match: (path) => path.startsWith(`${base}/agent`) },
+    { href: `${base}/settings`, label: "Cài đặt", icon: Settings, testId: "nav-settings", match: (path) => path.startsWith(`${base}/settings`) },
   ];
 
   function links(items: NavItem[]) {
