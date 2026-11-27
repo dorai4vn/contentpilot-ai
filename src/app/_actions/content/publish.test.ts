@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
   cancelPublishRequest: vi.fn(),
   getPublishRequest: vi.fn(),
   listPublishRequests: vi.fn(),
+  dispatch: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => { void fn(); } }));
+vi.mock("@/lib/sports-news/dispatch", () => ({ dispatchApprovedDeliveries: mocks.dispatch }));
 vi.mock("@/lib/auth/dal", () => ({ requireUser: mocks.requireUser }));
 vi.mock("@/lib/content/publish-requests", () => ({
   requestPostPublish: mocks.requestPostPublish,
@@ -559,6 +562,46 @@ describe("bulkApprovePublishAction", () => {
     expect(second.ok && second.data.results[0]).toMatchObject({
       ok: false,
       code: "request_closed",
+    });
+  });
+
+  describe("prompt dispatch of queued external deliveries", () => {
+    const queued = { ...published, status: "ready" as const, publishedAt: null };
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      item(`00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`),
+    );
+
+    it("dispatches exactly once after 8 bulk approvals, for the approved workspace only", async () => {
+      mocks.approvePublishRequest.mockResolvedValue(queued);
+      const result = await bulkApprovePublishAction(input(eight));
+      expect(result.ok && result.data.results.every((r) => r.ok)).toBe(true);
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+      expect(mocks.dispatch).toHaveBeenCalledWith(WS);
+    });
+
+    it("does not dispatch when nothing was approved or the approval was internal", async () => {
+      mocks.approvePublishRequest.mockRejectedValue(new ContentError("version_conflict"));
+      await bulkApprovePublishAction(input(eight));
+      mocks.approvePublishRequest.mockReset().mockResolvedValue(published);
+      await bulkApprovePublishAction(input([item(REQUEST)]));
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    });
+
+    it("dispatches after a mixed batch that approved at least one item", async () => {
+      mocks.approvePublishRequest
+        .mockResolvedValueOnce(queued)
+        .mockRejectedValueOnce(new ContentError("forbidden"));
+      await bulkApprovePublishAction(input([item(REQUEST), item(R2)]));
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it("dispatches after a single queued approval and not after a failed one", async () => {
+      mocks.approvePublishRequest.mockRejectedValueOnce(new ContentError("request_closed"));
+      await approvePublishAction(null, approveForm());
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      mocks.approvePublishRequest.mockResolvedValueOnce(queued);
+      await approvePublishAction(null, approveForm());
+      expect(mocks.dispatch).toHaveBeenCalledWith(WS);
     });
   });
 });

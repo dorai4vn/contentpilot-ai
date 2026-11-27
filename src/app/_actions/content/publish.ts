@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import { requireUser } from "@/lib/auth/dal";
 import { ContentError, type ContentErrorCode } from "@/lib/content/errors";
 import { contentPaths } from "@/lib/content/paths";
+import { dispatchApprovedDeliveries } from "@/lib/sports-news/dispatch";
 import {
   approvePublishRequest,
   cancelPublishRequest,
@@ -61,6 +63,17 @@ function revalidatePublishPaths(workspaceId: string, postId: string, projectId?:
   revalidatePath(contentPaths.approvals(workspaceId));
   revalidatePath(contentPaths.workspace(workspaceId));
   if (projectId) revalidatePath(contentPaths.project(workspaceId, projectId));
+}
+
+/**
+ * After a committed human approval that queued an external delivery, ask the
+ * existing delivery worker to process it now instead of waiting for the cron.
+ * Runs after the response; it never approves anything and its failure never
+ * affects the approval (the delivery simply stays queued for the scheduled run).
+ */
+function dispatchQueuedDeliveries(workspaceId: string, posts: ApprovedPost[]) {
+  if (!posts.some((post) => post.status !== "published")) return;
+  after(() => dispatchApprovedDeliveries(workspaceId));
 }
 
 function requestDone(request: PublishRequest): PublishActionData {
@@ -122,6 +135,7 @@ export async function approvePublishAction(
     },
     (post: ApprovedPost): PublishActionData => {
       revalidatePublishPaths(post.workspaceId, post.id, post.projectId);
+      dispatchQueuedDeliveries(post.workspaceId, [post]);
       return {
         workspaceId: post.workspaceId,
         postId: post.id,
@@ -229,5 +243,6 @@ export async function bulkApprovePublishAction(
   for (const post of touched)
     revalidatePublishPaths(post.workspaceId, post.id, post.projectId);
   revalidatePath(contentPaths.approvals(workspaceId));
+  dispatchQueuedDeliveries(workspaceId, touched);
   return { ok: true, data: { workspaceId, results } };
 }
