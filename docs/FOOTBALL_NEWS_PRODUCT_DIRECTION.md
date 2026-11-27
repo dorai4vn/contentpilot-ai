@@ -16,5 +16,11 @@ Decision date: 2026-11-27. Product owner approved semantic event deduplication, 
 - Use semantic design tokens for backgrounds, surfaces, text, borders, focus, status colors and charts. Ensure readable contrast (WCAG AA target), including tables, forms, dialogs, badges, loading/empty/error states and legacy Content Studio routes where retained.
 - Verify both themes at desktop and mobile widths, including keyboard navigation, chart readability and absence of theme flash/hydration mismatch.
 
+## Scoring configuration (2026-11-27)
+- Owner/Admin can set the qualifying RSS score threshold (0–10, step 0.1) directly in the Automation screen. Default 8. Persist per workspace/project, enforce server-side, apply on the next scan without redeployment.
+- Proposed advanced control: editable reach/importance/freshness weights, default 45/40/15, each nonnegative, sum exactly 100; reset defaults and preview sample scores. Version each configuration and retain the effective weights, threshold and component scores for every decision. Never silently rescore historical decisions.
+- Expose strict threshold mode (no qualifying story means no post); existing highest-below-threshold fallback must be explicit and must not automatically publish below the configured minimum in strict mode. Test boundary values, invalid totals, permission isolation and consistent worker behavior.
+- Functional-first UI: simple reusable components, no ornamental neon, stadium backgrounds or glassmorphism; prioritize real data and responsive light/dark controls.
+
 ## Release gates
 Regression tests for legacy auth/workspaces/content/approval; cross-workspace authorization tests; semantic dedup fixtures; concurrency/quota/expiry tests; dashboard preview and mobile QA; verify production migration and deployment before claiming completion. Dedicated photo-license verification and news fact-checking modules are explicitly out of scope for the current roadmap. This does not establish permission to reuse third-party imagery or certify news accuracy.
