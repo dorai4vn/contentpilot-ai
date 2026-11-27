@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
   cancelPublishRequest: vi.fn(),
   getPublishRequest: vi.fn(),
   listPublishRequests: vi.fn(),
+  dispatch: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => { void fn(); } }));
+vi.mock("@/lib/sports-news/dispatch", () => ({ dispatchApprovedDeliveries: mocks.dispatch }));
 vi.mock("@/lib/auth/dal", () => ({ requireUser: mocks.requireUser }));
 vi.mock("@/lib/content/publish-requests", () => ({
   requestPostPublish: mocks.requestPostPublish,
@@ -28,7 +31,7 @@ vi.mock("@/lib/content/publish-requests", () => ({
 import { CONTENT_ERROR_MESSAGES, ContentError, type ContentErrorCode } from "@/lib/content/errors";
 
 import * as actions from "./publish";
-import { approvePublishAction, cancelPublishAction, rejectPublishAction, requestPublishAction } from "./publish";
+import { approvePublishAction, bulkApprovePublishAction, cancelPublishAction, rejectPublishAction, requestPublishAction } from "./publish";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111", email: null };
 const WS = "22222222-2222-4222-8222-222222222222";
@@ -89,9 +92,9 @@ beforeEach(() => {
 });
 
 describe("module surface", () => {
-  it("exports exactly the four human actions", () => {
+  it("exports exactly the human actions", () => {
     expect(Object.keys(actions).sort()).toEqual(
-      ["approvePublishAction", "cancelPublishAction", "rejectPublishAction", "requestPublishAction"].sort(),
+      ["approvePublishAction", "bulkApprovePublishAction", "cancelPublishAction", "rejectPublishAction", "requestPublishAction"].sort(),
     );
   });
 });
@@ -431,5 +434,174 @@ describe("human and agent paths are separate", () => {
   it("CSRF: no serverActions.allowedOrigins override (Next.js same-origin check applies)", () => {
     const config = readFileSync(join(root, "next.config.ts"), "utf8");
     expect(config).not.toMatch(/allowedOrigins/);
+  });
+});
+
+describe("bulkApprovePublishAction", () => {
+  const R2 = "77777777-7777-4777-8777-777777777777";
+  const item = (requestId: string, v = 3) => ({
+    requestId,
+    expectedPostVersion: v,
+    expectedDestinationId: DEST,
+  });
+  const input = (
+    items: ReturnType<typeof item>[],
+    extra: Record<string, unknown> = {},
+  ) => ({
+    workspaceId: WS,
+    confirm: "approve",
+    items,
+    ...extra,
+  });
+
+  it("requires a signed-in user", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+    await expect(
+      bulkApprovePublishAction(input([item(REQUEST)])),
+    ).rejects.toThrow();
+    expect(mocks.approvePublishRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty, oversized, duplicated, unconfirmed and unknown-field input", async () => {
+    const many = Array.from({ length: 31 }, (_, i) =>
+      item(`00000000-0000-4000-8000-${String(i).padStart(12, "0")}`),
+    );
+    for (const bad of [
+      input([]),
+      input(many),
+      input([item(REQUEST), item(REQUEST)]),
+      input([item(REQUEST)], { confirm: "yes" }),
+      input([item(REQUEST)], { approvedBy: USER.id }),
+      null,
+    ]) {
+      expect(await bulkApprovePublishAction(bad)).toEqual(
+        failure("invalid_input"),
+      );
+    }
+    expect(mocks.approvePublishRequest).not.toHaveBeenCalled();
+  });
+
+  it("approves one item", async () => {
+    mocks.approvePublishRequest.mockResolvedValue(published);
+    const result = await bulkApprovePublishAction(input([item(REQUEST)]));
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        workspaceId: WS,
+        results: [
+          {
+            requestId: REQUEST,
+            ok: true,
+            postStatus: "published",
+            postVersion: 4,
+          },
+        ],
+      },
+    });
+    expect(mocks.approvePublishRequest).toHaveBeenCalledWith({
+      requestId: REQUEST,
+      expectedPostVersion: 3,
+      expectedDestinationId: DEST,
+    });
+  });
+
+  it("judges items individually and sequentially: mixed stale / forbidden / cross-workspace", async () => {
+    const order: string[] = [];
+    mocks.getPublishRequest.mockImplementation(
+      async ({ requestId }: { requestId: string }) => ({
+        request: {
+          ...pending,
+          id: requestId,
+          workspaceId:
+            requestId === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+              ? OTHER_WS
+              : WS,
+        },
+        events: [],
+      }),
+    );
+    mocks.approvePublishRequest.mockImplementation(
+      async ({ requestId }: { requestId: string }) => {
+        order.push(requestId);
+        if (requestId === R2) throw new ContentError("version_conflict");
+        if (requestId === "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+          throw new ContentError("forbidden");
+        return published;
+      },
+    );
+    const result = await bulkApprovePublishAction(
+      input([
+        item(REQUEST),
+        item(R2),
+        item("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+        item("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+      ]),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.results.map((r) => (r.ok ? "ok" : r.code))).toEqual([
+      "ok",
+      "version_conflict",
+      "not_found",
+      "forbidden",
+    ]);
+    expect(order).toEqual([
+      REQUEST,
+      R2,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]);
+  });
+
+  it("a repeated submit is closed by the data layer, not approved twice", async () => {
+    mocks.approvePublishRequest
+      .mockResolvedValueOnce(published)
+      .mockRejectedValueOnce(new ContentError("request_closed"));
+    const first = await bulkApprovePublishAction(input([item(REQUEST)]));
+    const second = await bulkApprovePublishAction(input([item(REQUEST)]));
+    expect(first.ok && first.data.results[0]?.ok).toBe(true);
+    expect(second.ok && second.data.results[0]).toMatchObject({
+      ok: false,
+      code: "request_closed",
+    });
+  });
+
+  describe("prompt dispatch of queued external deliveries", () => {
+    const queued = { ...published, status: "ready" as const, publishedAt: null };
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      item(`00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`),
+    );
+
+    it("dispatches exactly once after 8 bulk approvals, for the approved workspace only", async () => {
+      mocks.approvePublishRequest.mockResolvedValue(queued);
+      const result = await bulkApprovePublishAction(input(eight));
+      expect(result.ok && result.data.results.every((r) => r.ok)).toBe(true);
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+      expect(mocks.dispatch).toHaveBeenCalledWith(WS);
+    });
+
+    it("does not dispatch when nothing was approved or the approval was internal", async () => {
+      mocks.approvePublishRequest.mockRejectedValue(new ContentError("version_conflict"));
+      await bulkApprovePublishAction(input(eight));
+      mocks.approvePublishRequest.mockReset().mockResolvedValue(published);
+      await bulkApprovePublishAction(input([item(REQUEST)]));
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    });
+
+    it("dispatches after a mixed batch that approved at least one item", async () => {
+      mocks.approvePublishRequest
+        .mockResolvedValueOnce(queued)
+        .mockRejectedValueOnce(new ContentError("forbidden"));
+      await bulkApprovePublishAction(input([item(REQUEST), item(R2)]));
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it("dispatches after a single queued approval and not after a failed one", async () => {
+      mocks.approvePublishRequest.mockRejectedValueOnce(new ContentError("request_closed"));
+      await approvePublishAction(null, approveForm());
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      mocks.approvePublishRequest.mockResolvedValueOnce(queued);
+      await approvePublishAction(null, approveForm());
+      expect(mocks.dispatch).toHaveBeenCalledWith(WS);
+    });
   });
 });

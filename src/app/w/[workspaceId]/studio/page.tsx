@@ -12,6 +12,9 @@ import { CreateProjectForm, ProjectCard } from "../../_components/project-forms"
 import { Badge, Breadcrumbs, Card, EmptyState, Notice, PageHeader, StatCard, buttonClass, segmentClass } from "../../_components/ui";
 import { loadWorkspace } from "../../_lib/load";
 
+// Server Actions on this page run post-approval delivery dispatch in after(); keep it within a bounded function duration.
+export const maxDuration = 60;
+
 type PostCounts = { total: number; draft: number; ready: number; published: number };
 
 /** Real post counts of the active projects (read-only, RLS). Null when they cannot be loaded. */

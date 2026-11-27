@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { dubaiDate } from "@/lib/sports-news/publication-day";
-import { checkSportsNewsSetup, readSportsNewsConfig, runSportsNews } from "@/lib/sports-news/worker";
+import { checkSportsNewsSetup, readSportsNewsConfig, runSportsDelivery, runSportsNews } from "@/lib/sports-news/worker";
 
 export const maxDuration = 180;
 
@@ -26,6 +26,10 @@ export async function POST(request: Request) {
     }
     if (mode === "setup" && channel !== null && !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(channel)) {
       return Response.json({ error: "invalid_channel" }, { status: 400 });
+    }
+    if (mode === "deliver") {
+      // Delivery-only: sends already-approved items; never reads RSS or drafts anything.
+      return Response.json(await runSportsDelivery(config), { headers: { "Cache-Control": "no-store" } });
     }
     const report = mode === "setup"
       ? await checkSportsNewsSetup(config, channel ?? undefined)

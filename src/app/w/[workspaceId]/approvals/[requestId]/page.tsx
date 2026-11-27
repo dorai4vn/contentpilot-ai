@@ -28,6 +28,9 @@ import {
 import { Badge, Breadcrumbs, Card, Notice, StatusBadge } from "../../../_components/ui";
 import { loadWorkspace, routeId } from "../../../_lib/load";
 
+// Server Actions on this page run post-approval delivery dispatch in after(); keep it within a bounded function duration.
+export const maxDuration = 60;
+
 export const metadata: Metadata = { title: "Duyệt yêu cầu xuất bản" };
 
 /**

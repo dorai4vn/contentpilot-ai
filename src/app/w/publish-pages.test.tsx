@@ -334,8 +334,32 @@ describe("approvals list", () => {
     expect(all).toContain('data-testid="approval-item-stale"');
     expect(all.match(/data-testid="approval-item-destination">Đích xuất bản: Nội bộ</g)).toHaveLength(3);
     expect(all.match(/data-testid="approval-item"/g)).toHaveLength(3);
-    expect(all).not.toContain("approve-start"); // the list itself offers no approve button
+    expect(all).not.toContain('data-testid="approve-start"'); // the list itself offers no approve button
     expect(all).not.toContain("approvals-pagination");
+  });
+
+  it("bulk selection: checkbox only on pending items for owner/admin; none for members, none when empty", async () => {
+    const counts = { pending: 1, expired: 1, approved: 0, rejected: 0, cancelled: 0, all: 2 };
+    const page = (items: unknown[]) => ({ items, filter: "all", page: 1, pageSize: 20, total: items.length, totalPages: 1 });
+    m.countPublishRequests.mockResolvedValue(counts);
+    m.listPublishRequestsPage.mockResolvedValue(page([request, { ...request, id: "r2", displayStatus: "expired" }]));
+
+    asRole("owner");
+    const owner = await render({ status: "all" });
+    expect(owner.match(/data-testid="bulk-item-checkbox"/g)).toHaveLength(1);
+    expect(owner).toContain('data-testid="bulk-select-all"');
+    expect(owner).toContain('data-testid="bulk-approve-start"');
+    expect(owner).toContain("Xem và duyệt"); // single approval entry point kept
+
+    asRole("member");
+    const member = await render({ status: "all" });
+    expect(member).not.toContain("bulk-item-checkbox");
+    expect(member).not.toContain("bulk-toolbar");
+
+    asRole("owner");
+    m.listPublishRequestsPage.mockResolvedValue(page([]));
+    const empty = await render({});
+    expect(empty).not.toContain("bulk-toolbar");
   });
 
   it("passes filter and page from the URL and links pages keeping the filter", async () => {

@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { ContentError } from "@/lib/content/errors";
+import { ContentError, type ContentErrorCode } from "@/lib/content/errors";
 import { contentPaths } from "@/lib/content/paths";
+import { dispatchApprovedDeliveries } from "@/lib/sports-news/dispatch";
 import {
   approvePublishRequest,
   cancelPublishRequest,
@@ -16,12 +18,13 @@ import {
 } from "@/lib/content/publish-requests";
 import {
   approvePublishFormSchema,
+  bulkApprovePublishSchema,
   cancelPublishFormSchema,
   rejectPublishFormSchema,
   requestPublishFormSchema,
 } from "@/lib/validation/publish-actions";
 
-import { type ActionResult, type ActionState, parseForm, runAction } from "./action-result";
+import { type ActionResult, type ActionState, failure, parseForm, runAction } from "./action-result";
 
 /**
  * Server Actions for M4 human approval of publishing — the HUMAN path only.
@@ -60,6 +63,17 @@ function revalidatePublishPaths(workspaceId: string, postId: string, projectId?:
   revalidatePath(contentPaths.approvals(workspaceId));
   revalidatePath(contentPaths.workspace(workspaceId));
   if (projectId) revalidatePath(contentPaths.project(workspaceId, projectId));
+}
+
+/**
+ * After a committed human approval that queued an external delivery, ask the
+ * existing delivery worker to process it now instead of waiting for the cron.
+ * Runs after the response; it never approves anything and its failure never
+ * affects the approval (the delivery simply stays queued for the scheduled run).
+ */
+function dispatchQueuedDeliveries(workspaceId: string, posts: ApprovedPost[]) {
+  if (!posts.some((post) => post.status !== "published")) return;
+  after(() => dispatchApprovedDeliveries(workspaceId));
 }
 
 function requestDone(request: PublishRequest): PublishActionData {
@@ -121,6 +135,7 @@ export async function approvePublishAction(
     },
     (post: ApprovedPost): PublishActionData => {
       revalidatePublishPaths(post.workspaceId, post.id, post.projectId);
+      dispatchQueuedDeliveries(post.workspaceId, [post]);
       return {
         workspaceId: post.workspaceId,
         postId: post.id,
@@ -161,4 +176,73 @@ export async function cancelPublishAction(
     await requestInWorkspace(requestId, workspaceId);
     return cancelPublishRequest({ requestId });
   }, requestDone);
+}
+
+export type BulkApproveItemResult =
+  | {
+      requestId: string;
+      ok: true;
+      postStatus: ApprovedPost["status"];
+      postVersion: number;
+    }
+  | { requestId: string; ok: false; code: ContentErrorCode; error: string };
+
+export type BulkApproveData = {
+  workspaceId: string;
+  results: BulkApproveItemResult[];
+};
+
+/**
+ * Bulk approval by an owner/admin (issue #26). There is no new approval or
+ * publish path: every item goes through exactly the same checks and the same
+ * data-layer call as approvePublishAction (workspace scope, owner/admin role,
+ * pending status, exact post version, exact destination, database RPC).
+ * Items run sequentially, each is judged individually and its own result is
+ * returned; a failing item never hides or rolls back the others. The batch is
+ * bounded (BULK_APPROVE_MAX) and request ids must be unique.
+ */
+export async function bulkApprovePublishAction(
+  input: unknown,
+): Promise<ActionResult<BulkApproveData>> {
+  await requireUser();
+  const parsed = bulkApprovePublishSchema.safeParse(input);
+  if (!parsed.success) return failure("invalid_input");
+  const { workspaceId, items } = parsed.data;
+
+  const results: BulkApproveItemResult[] = [];
+  const touched: ApprovedPost[] = [];
+  for (const item of items) {
+    const outcome = await runAction(
+      async () => {
+        await requestInWorkspace(item.requestId, workspaceId);
+        return approvePublishRequest({
+          requestId: item.requestId,
+          expectedPostVersion: item.expectedPostVersion,
+          expectedDestinationId: item.expectedDestinationId,
+        });
+      },
+      (post: ApprovedPost) => post,
+    );
+    if (outcome.ok) {
+      touched.push(outcome.data);
+      results.push({
+        requestId: item.requestId,
+        ok: true,
+        postStatus: outcome.data.status,
+        postVersion: outcome.data.version,
+      });
+    } else {
+      results.push({
+        requestId: item.requestId,
+        ok: false,
+        code: outcome.code,
+        error: outcome.error,
+      });
+    }
+  }
+  for (const post of touched)
+    revalidatePublishPaths(post.workspaceId, post.id, post.projectId);
+  revalidatePath(contentPaths.approvals(workspaceId));
+  dispatchQueuedDeliveries(workspaceId, touched);
+  return { ok: true, data: { workspaceId, results } };
 }

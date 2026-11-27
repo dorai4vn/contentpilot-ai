@@ -52,9 +52,17 @@ function headlineKey(title: string): string {
   return createHash("sha256").update(normalized).digest("hex");
 }
 
+/** The claim RPC hands out at most this many rows per call (see claim_social_deliveries). */
+export const DELIVERY_CLAIM_BATCH = 6;
+/** Delivery-only runs: bounded rounds and wall-clock so one request can never run away. */
+export const DELIVERY_MAX_ROUNDS = 5;
+export const DELIVERY_TIME_BUDGET_MS = 100_000;
+/** Post-approval dispatch runs inside the server action's function (after()), so it gets a much smaller budget. */
+export const DISPATCH_TIME_BUDGET_MS = 40_000;
+
 async function sendApproved(client: Client, config: Config, tokens: Config["tokens"]) {
   const destinations = Object.keys(tokens);
-  if (!destinations.length) return { delivered: 0, deliveryFailures: 0, staleSkipped: 0 };
+  if (!destinations.length) return { claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0 };
   const { data, error } = await client.rpc("claim_social_deliveries", {
     p_workspace_id: config.workspaceId,
     p_destinations: destinations,
@@ -93,7 +101,59 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
 
   const delivered = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
   const staleSkipped = results.filter((result) => result.status === "fulfilled" && result.value === "stale").length;
-  return { delivered, staleSkipped, deliveryFailures: results.length - delivered - staleSkipped };
+  return { claimed: data.length, delivered, staleSkipped, deliveryFailures: results.length - delivered - staleSkipped };
+}
+
+/** Resolves the destination tokens for this worker (env tokens + the configured Telegram destination). */
+async function resolveTokens(client: Client, config: Config, notices: ReturnType<typeof readReviewNoticeConfig>) {
+  const tokens = { ...config.tokens };
+  if (config.telegramDestinationId && !tokens[config.telegramDestinationId]) {
+    const { data, error } = await client.from("publishing_destinations").select("id")
+      .eq("workspace_id", config.workspaceId).eq("id", config.telegramDestinationId)
+      .eq("kind", "telegram").eq("status", "active").maybeSingle();
+    if (error || !data || !notices) throw new Error("sports_news_telegram_destination_unavailable");
+    tokens[data.id] = notices.botToken;
+  }
+  return tokens;
+}
+
+/**
+ * Delivery-only run: sends already-approved deliveries (exact approved version,
+ * claimed atomically by claim_social_deliveries with FOR UPDATE SKIP LOCKED, so
+ * concurrent runs never claim the same row). It never reads RSS, never calls the
+ * LLM, never drafts, and never creates or approves anything. While a temporary
+ * auto-publish window owns the Telegram destination that destination is left to
+ * it, exactly as in the full run. Bounded by DELIVERY_MAX_ROUNDS and a time budget.
+ */
+export async function runSportsDelivery(
+  config: Config, now: () => number = Date.now, timeBudgetMs: number = DELIVERY_TIME_BUDGET_MS,
+) {
+  const notices = readReviewNoticeConfig();
+  const client = await connectWorker(config);
+  const tokens = await resolveTokens(client, config, notices);
+  const telegramId = config.telegramDestinationId;
+  const autoTarget = telegramId && tokens[telegramId]
+    ? { workspaceId: config.workspaceId, projectId: config.projectId, destinationId: telegramId } : null;
+  const autoWindow = autoTarget ? await getTemporaryAutoWindow(client, autoTarget) : null;
+  const approvedTokens = { ...tokens };
+  if (autoWindow && autoTarget) delete approvedTokens[autoTarget.destinationId];
+
+  const total = { rounds: 0, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, truncated: false };
+  const started = now();
+  for (;;) {
+    if (total.rounds >= DELIVERY_MAX_ROUNDS || now() - started >= timeBudgetMs) {
+      total.truncated = true;
+      break;
+    }
+    const round = await sendApproved(client, config, approvedTokens);
+    total.rounds += 1;
+    total.claimed += round.claimed;
+    total.delivered += round.delivered;
+    total.deliveryFailures += round.deliveryFailures;
+    total.staleSkipped += round.staleSkipped;
+    if (round.claimed < DELIVERY_CLAIM_BATCH) break;
+  }
+  return { ...total, autoPublishActive: autoWindow !== null };
 }
 
 async function connectWorker(config: Config) {
