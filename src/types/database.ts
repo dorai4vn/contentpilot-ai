@@ -175,6 +175,16 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      sports_news_scoring_configs: {
+        Row: {
+          workspace_id: string; project_id: string; version: number; threshold: number;
+          reach_weight: number; importance_weight: number; freshness_weight: number;
+          fallback_mode: "highest" | "strict"; updated_by: string | null; updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       content_projects: {
         Row: {
           id: string;
@@ -396,6 +406,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      set_sports_news_scoring_config: {
+        Args: { p_workspace_id: string; p_project_id: string; p_threshold: number; p_reach_weight: number; p_importance_weight: number; p_freshness_weight: number; p_fallback_mode: "highest" | "strict" };
+        Returns: number;
+      };
       read_sports_auto_publish_control: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
         Returns: { id: string; starts_at: string; ends_at: string; max_per_slot: number; max_per_window: number }[];

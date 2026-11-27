@@ -506,7 +506,7 @@ select pg_temp.assert(
       and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
   = array['approve_publish_request', 'archive_content_post', 'cancel_publish_request', 'claim_social_deliveries', 'claim_sports_auto_publish', 'claim_sports_news_review_notices',
           'finish_social_delivery', 'finish_sports_auto_publish', 'finish_sports_news_review_notice', 'get_sports_auto_publish_window', 'has_workspace_role', 'is_workspace_member', 'read_sports_auto_publish_control', 'record_sports_news', 'record_sports_news_assessment', 'reject_publish_request', 'request_post_publish', 'restore_content_post',
-          'set_sports_auto_publish_control', 'shares_workspace_with', 'update_content_post'],
+          'set_sports_auto_publish_control', 'set_sports_news_scoring_config', 'shares_workspace_with', 'update_content_post'],
   'authenticated can execute exactly the intended SECURITY DEFINER functions');
 select pg_temp.assert(
   (select count(*) = 2 from pg_constraint
