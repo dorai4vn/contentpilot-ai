@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * FN01 light design tokens. Theme selection is introduced in FN02.
+ * Semantic design tokens shared by the control center.
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -14,6 +14,17 @@
   --accent: #d6f5e5;
   --muted: #526963;
   color-scheme: light;
+}
+
+html.dark {
+  --background: #101820;
+  --foreground: #f1f5f9;
+  --surface: #1b2632;
+  --border: #354655;
+  --primary: #34d399;
+  --accent: #193d34;
+  --muted: #bccbd5;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -41,6 +52,7 @@ body {
 
 .football-shell { background: var(--background); color: var(--foreground); }
 .football-topbar { border-color: var(--border); }
+.theme-control { max-width: 100px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); font-size: 12px; font-weight: 650; }
 .football-shell-body { display: flex; width: 100%; max-width: 1600px; margin-inline: auto; flex: 1; min-width: 0; }
 .football-sidebar { width: 248px; flex: none; border-right: 1px solid var(--border); background: var(--surface); }
 .football-sidebar-inner { position: sticky; top: 64px; padding: 22px 14px; }
@@ -55,6 +67,7 @@ body {
 .football-nav-link { display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 10px 11px; border-radius: 9px; color: var(--muted); font-size: 13px; font-weight: 600; transition: background-color 180ms, color 180ms; }
 .football-nav-link:hover { background: var(--background); color: var(--foreground); }
 .football-nav-link.is-active { background: var(--accent); color: #065f46; }
+html.dark .football-nav-link.is-active { color: #a7f3d0; }
 .football-nav-count { margin-left: auto; padding: 2px 6px; border-radius: 99px; background: #fff3d6; color: #805300; font-size: 11px; }
 .football-main { width: 100%; min-width: 0; padding: 32px clamp(20px, 4vw, 56px) 64px; }
 .football-page { max-width: 1100px; margin-inline: auto; }
@@ -64,6 +77,8 @@ body {
 .football-page-header p:last-child { margin-top: 7px; color: var(--muted); font-size: 14px; }
 .football-action { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 10px 14px; border-radius: 9px; background: var(--primary); color: white; font-size: 13px; font-weight: 700; }
 .football-action:hover { background: #066c4d; }
+html.dark .football-action { background: #087f5b; color: #fff; }
+html.dark .football-action:hover { background: #066c4d; }
 .football-panel { overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 2px 10px rgb(21 43 39 / .035); }
 .football-panel-heading { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
 .football-panel-heading h2 { font-size: 15px; font-weight: 700; } .football-panel-heading p { margin-top: 3px; color: var(--muted); font-size: 12px; }
@@ -76,6 +91,32 @@ body {
 .football-image-indicator { color: var(--primary); }
 .football-score { align-self: center; flex: none; color: var(--primary); font-size: 12px; white-space: nowrap; } .football-score strong { font-size: 22px; font-weight: 750; }
 .football-empty { padding: 52px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* Existing Content Studio utilities use fixed light colors. Scope their dark
+ * equivalents to the semantic surface, text and status roles. */
+html.dark :is(.bg-white, .bg-slate-50) { background-color: var(--surface); }
+html.dark .bg-slate-100 { background-color: #263645; }
+html.dark .bg-slate-200 { background-color: #344858; }
+html.dark :is(.text-slate-900, .text-slate-800, .text-slate-700) { color: var(--foreground); }
+html.dark :is(.text-slate-600, .text-slate-500, .text-slate-400) { color: var(--muted); }
+html.dark :is(.border-slate-100, .border-slate-200, .border-slate-300) { border-color: var(--border); }
+html.dark :is(.ring-slate-200, .ring-slate-300) { --tw-ring-color: var(--border); }
+html.dark :is(.bg-indigo-50, .bg-indigo-100, .bg-emerald-50) { background-color: var(--accent); }
+html.dark :is(.text-indigo-600, .text-indigo-700, .text-emerald-600, .text-emerald-700) { color: var(--primary); }
+html.dark :is(.border-indigo-100, .border-indigo-200, .border-emerald-200) { border-color: #276451; }
+html.dark :is(.bg-amber-50, .bg-amber-100) { background-color: #3a301c; }
+html.dark :is(.text-amber-700, .text-amber-800, .text-amber-900) { color: #fbd38d; }
+html.dark .border-amber-200 { border-color: #765729; }
+html.dark .bg-red-50 { background-color: #42272d; }
+html.dark :is(.text-red-600, .text-red-700, .text-red-800) { color: #fca5a5; }
+html.dark .border-red-200 { border-color: #834d55; }
+html.dark :is(input, textarea, select) { color-scheme: dark; }
+html.dark .football-shell :is(input, textarea, select) { border-color: var(--border); background-color: var(--surface); color: var(--foreground); }
+html.dark .football-shell :is(input, textarea)::placeholder { color: var(--muted); }
+html.dark .football-shell .bg-indigo-600 { background-color: #087f5b; }
+html.dark .football-shell .hover\:bg-indigo-500:hover { background-color: #066c4d; }
+html.dark :is(.hover\:bg-slate-50, .hover\:bg-slate-100):hover { background-color: #304353; }
+html.dark .hover\:bg-indigo-50:hover { background-color: var(--accent); }
 @media (max-width: 767px) {
   .football-shell-body { display: block; }
   .football-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); }
