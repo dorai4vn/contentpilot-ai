@@ -22,13 +22,7 @@ import {
   requestPublishFormSchema,
 } from "@/lib/validation/publish-actions";
 
-import {
-  type ActionResult,
-  type ActionState,
-  failure,
-  parseForm,
-  runAction,
-} from "./action-result";
+import { type ActionResult, type ActionState, failure, parseForm, runAction } from "./action-result";
 
 /**
  * Server Actions for M4 human approval of publishing — the HUMAN path only.
@@ -62,11 +56,7 @@ export type PublishActionData = {
   postVersion?: number;
 };
 
-function revalidatePublishPaths(
-  workspaceId: string,
-  postId: string,
-  projectId?: string,
-) {
+function revalidatePublishPaths(workspaceId: string, postId: string, projectId?: string) {
   revalidatePath(contentPaths.post(workspaceId, postId));
   revalidatePath(contentPaths.approvals(workspaceId));
   revalidatePath(contentPaths.workspace(workspaceId));
@@ -88,13 +78,9 @@ function requestDone(request: PublishRequest): PublishActionData {
  * the page the form came from (checked against the stored row, never trusted
  * from the form). Anything else is reported as not_found.
  */
-async function requestInWorkspace(
-  requestId: string,
-  workspaceId: string,
-): Promise<PublishRequest> {
+async function requestInWorkspace(requestId: string, workspaceId: string): Promise<PublishRequest> {
   const detail = await getPublishRequest({ requestId });
-  if (!detail || detail.request.workspaceId !== workspaceId)
-    throw new ContentError("not_found");
+  if (!detail || detail.request.workspaceId !== workspaceId) throw new ContentError("not_found");
   return detail.request;
 }
 
@@ -106,17 +92,12 @@ export async function requestPublishAction(
   await requireUser();
   const input = parseForm(requestPublishFormSchema, formData);
   if (!input.ok) return input.result;
-  const { workspaceId, postId, expectedVersion, reason, destinationId } =
-    input.data;
+  const { workspaceId, postId, expectedVersion, reason, destinationId } = input.data;
   // Human request: source "user" (the data-layer default). The workspace option
   // makes the data layer verify the post belongs to this workspace, and the
   // destination must be an active destination of that workspace.
   return runAction(
-    () =>
-      requestPostPublish(
-        { postId, expectedVersion, reason, destinationId },
-        { workspaceId },
-      ),
+    () => requestPostPublish({ postId, expectedVersion, reason, destinationId }, { workspaceId }),
     requestDone,
   );
 }
@@ -133,16 +114,11 @@ export async function approvePublishAction(
   await requireUser();
   const input = parseForm(approvePublishFormSchema, formData);
   if (!input.ok) return input.result;
-  const { workspaceId, requestId, expectedPostVersion, expectedDestinationId } =
-    input.data;
+  const { workspaceId, requestId, expectedPostVersion, expectedDestinationId } = input.data;
   return runAction(
     async () => {
       await requestInWorkspace(requestId, workspaceId);
-      return approvePublishRequest({
-        requestId,
-        expectedPostVersion,
-        expectedDestinationId,
-      });
+      return approvePublishRequest({ requestId, expectedPostVersion, expectedDestinationId });
     },
     (post: ApprovedPost): PublishActionData => {
       revalidatePublishPaths(post.workspaceId, post.id, post.projectId);

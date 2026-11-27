@@ -1,12 +1,7 @@
 import { z } from "zod";
 
 import { uuidSchema } from "./content";
-import {
-  publishApproveSchema,
-  publishRejectSchema,
-  publishRequestCreateSchema,
-  publishRequestRefSchema,
-} from "./publish";
+import { publishApproveSchema, publishRejectSchema, publishRequestCreateSchema, publishRequestRefSchema } from "./publish";
 
 /**
  * Form schemas of the M4 publish-approval Server Actions (human path only).
@@ -37,14 +32,10 @@ export const approvePublishFormSchema = publishApproveSchema.extend({
 });
 export type ApprovePublishForm = z.output<typeof approvePublishFormSchema>;
 
-export const rejectPublishFormSchema = publishRejectSchema.extend({
-  workspaceId: uuidSchema,
-});
+export const rejectPublishFormSchema = publishRejectSchema.extend({ workspaceId: uuidSchema });
 export type RejectPublishForm = z.output<typeof rejectPublishFormSchema>;
 
-export const cancelPublishFormSchema = publishRequestRefSchema.extend({
-  workspaceId: uuidSchema,
-});
+export const cancelPublishFormSchema = publishRequestRefSchema.extend({ workspaceId: uuidSchema });
 export type CancelPublishForm = z.output<typeof cancelPublishFormSchema>;
 
 /** Upper bound of one bulk approval (owner decision on issue #26). */
