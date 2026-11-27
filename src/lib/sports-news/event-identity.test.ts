@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildEventIdentity, buildEventPayload, classifyEvent, parseStoredIdentity, type KnownEvent } from "./event-identity";
+import { buildEventIdentity, buildEventPayload, classifyEvent, manualReviewReason, parseStoredIdentity, type KnownEvent } from "./event-identity";
 
 const at = (iso: string) => Date.parse(iso);
 const item = (title: string, summary: string, iso = "2026-11-27T10:00:00+07:00") => ({ title, summary, publishedAt: at(iso) });
@@ -172,5 +172,53 @@ describe("event payload", () => {
     expect(fresh).not.toHaveProperty("matchedEventKey");
     const vague = buildEventIdentity(item("Tin nóng bóng đá hôm nay", "Nhiều tin."));
     expect(buildEventPayload(vague, classifyEvent(vague, []))).toMatchObject({ specific: false });
+  });
+});
+
+describe("material facts (deterministic, no AI)", () => {
+  const saka = known("Bukayo Saka chấn thương, Arsenal lo lắng", "Saka bị chấn thương đùi.", "https://a.vn/saka");
+
+  it("a newly announced injury duration is a follow-up, a reworded repeat is a duplicate", () => {
+    const duration = verdict("Bukayo Saka chấn thương, nghỉ 6 tuần", "Arsenal cho biết Saka sẽ nghỉ 6 tuần.", [saka]);
+    expect(duration.decision).toBe("follow_up");
+    expect(codes(duration)).toContain("new_material_facts");
+    expect(buildEventIdentity(item("Bukayo Saka chấn thương, nghỉ 6 tuần", "Saka nghỉ.")).facts).toEqual(["duration:6w"]);
+    expect(verdict("Saka chấn thương: Arsenal lo ngại", "Bukayo Saka bị chấn thương đùi.", [saka]).decision).toBe("duplicate");
+  });
+
+  it("a different duration for the same injury is a conflicting fact (flagged for manual review)", () => {
+    const six = known("Bukayo Saka chấn thương, nghỉ 6 tuần", "Saka nghỉ 6 tuần.", "https://a.vn/6");
+    const result = verdict("Bukayo Saka chấn thương, nghỉ 3 tháng", "Saka nghỉ 3 tháng.", [six]);
+    expect(result.decision).toBe("follow_up");
+    expect(codes(result)).toContain("fact_changed");
+    expect(manualReviewReason(buildEventIdentity(item("Bukayo Saka chấn thương, nghỉ 3 tháng", "Saka nghỉ 3 tháng.")), result)).toBe("uncertain_facts");
+  });
+
+  it("a confirmed transfer fee without a status change is a follow-up; the same fee in other words is not", () => {
+    const signed = known("Chelsea chính thức ký Erling Haaland", "Erling Haaland gia nhập Chelsea.", "https://a.vn/haa");
+    const fee = verdict("Chelsea chính thức ký Erling Haaland với giá 60 triệu euro", "Erling Haaland gia nhập Chelsea.", [signed]);
+    expect(fee.decision).toBe("follow_up");
+    expect(buildEventIdentity(item("Chelsea chính thức ký Erling Haaland với giá 60 triệu euro", "Erling Haaland gia nhập Chelsea.")).facts).toContain("fee:60m");
+    const withFee = known("Chelsea chính thức ký Erling Haaland với giá 60 triệu euro", "Erling Haaland gia nhập Chelsea.", "https://a.vn/fee");
+    expect(verdict("Chelsea officially sign Erling Haaland for €60m", "Erling Haaland joins Chelsea.", [withFee]).decision).toBe("duplicate");
+  });
+
+  it("a standings implication on a same-score report is a follow-up", () => {
+    const base = known("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/m");
+    expect(verdict("Lille hạ Bayern 1-0, vào chung kết Champions League", "Lille đi tiếp.", [base]).decision).toBe("follow_up");
+    expect(verdict("Bayern thua Lille 0-1 ở Champions League", "Bayern Munich gục ngã.", [base]).decision).toBe("duplicate");
+  });
+
+  it("the same two teams in two different known competitions are different matches", () => {
+    const league = known("Arsenal thắng Chelsea 1-0 ở Premier League", "Arsenal hạ Chelsea.", "https://a.vn/l");
+    expect(verdict("Arsenal thắng Chelsea 1-0 ở Europa League", "Arsenal hạ Chelsea.", [league]).decision).toBe("new");
+  });
+
+  it("manualReviewReason: regular items have none, unresolved/follow-up/reconsidered are manual", () => {
+    const fresh = buildEventIdentity(item("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich."));
+    expect(manualReviewReason(fresh, classifyEvent(fresh, []))).toBeNull();
+    expect(manualReviewReason(fresh, classifyEvent(fresh, []), true)).toBe("reconsidered");
+    const vague = buildEventIdentity(item("Tin nóng bóng đá hôm nay", "Nhiều tin."));
+    expect(manualReviewReason(vague, classifyEvent(vague, []))).toBe("unresolved_identity");
   });
 });

@@ -329,3 +329,142 @@ select pg_temp.check_event(
   and not has_function_privilege('anon', 'contentpilot_private.sports_item_blocks_event(uuid, uuid)', 'EXECUTE')
   and not has_schema_privilege('authenticated', 'contentpilot_private', 'USAGE'),
   'the blocking helper is private: no client can execute it');
+
+-- ===========================================================================================================
+-- FN05 acceptance QC: published/delivered posts keep blocking after archive; manual-review-only guard.
+-- ===========================================================================================================
+create function pg_temp.ev2(k text, c text, decision text default 'new', specific boolean default true, parent text default null)
+returns jsonb language sql as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'decision', decision, 'specific', specific, 'eventKey', md5(k) || md5(k), 'clusterKey', md5(c) || md5(c),
+    'matchedEventKey', case when parent is null then null else md5(parent) || md5(parent) end,
+    'identity', jsonb_build_object('version', 'event-v3', 'subjectKind', 'match'),
+    'reasons', case when decision = 'follow_up' then '[{"code":"new_material_facts"}]'::jsonb else '[]'::jsonb end,
+    'evidence', jsonb_build_object('matchedTitle', 'x')))
+$$;
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://pub.vn/1', repeat('d1',32),
+  8, 'Đã đăng', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('d', 'e')) as pub_post \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://dlv.vn/1', repeat('d2',32),
+  8, 'Đã giao', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('1d', '2e')) as dlv_post \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://uns.vn/1', repeat('d3',32),
+  8, 'Chưa gửi', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('3d', '4e')) as uns_post \gset
+select pg_temp.check_event(:'pub_post' is not null and :'dlv_post' is not null and :'uns_post' is not null, 'fixtures for blocking states are created');
+
+-- A genuinely approved + queued delivery (real approval path) for dlv_post.
+select set_config('request.jwt.claim.sub', :'owner', false);
+select id as dlv_request from public.content_publish_requests where post_id = :'dlv_post' \gset
+select status from public.approve_publish_request(:'dlv_request', 1, :'channel');
+reset role;
+
+-- published post (status published) and an archived copy of each state
+set session_replication_role = replica;
+update public.content_posts set status = 'published', published_at = now(), archived_at = now() where id = :'pub_post';
+update public.content_posts set archived_at = now() where id in (:'dlv_post', :'uns_post');
+set session_replication_role = origin;
+select pg_temp.check_event(contentpilot_private.sports_item_blocks_event(:'ws', :'pub_post'),
+  'a PUBLISHED post still blocks after it is archived');
+select pg_temp.check_event(contentpilot_private.sports_item_blocks_event(:'ws', :'dlv_post'),
+  'a post with an approved queued/sending/succeeded delivery still blocks after it is archived');
+select pg_temp.check_event(not contentpilot_private.sports_item_blocks_event(:'ws', :'uns_post'),
+  'an archived post that was never sent does not block (manual reconsideration)');
+
+-- temporary auto-publish ledger: sending/succeeded/uncertain block an archived post, failed does not.
+select id as auto_window from contentpilot_private.sports_auto_publish_windows where project_id = :'project' limit 1 \gset
+select id as uns_request from public.content_publish_requests where post_id = :'uns_post' \gset
+insert into contentpilot_private.sports_auto_publish_deliveries(window_id, request_id, slot, state)
+values (:'auto_window', :'uns_request', 3, 'failed');
+select pg_temp.check_event(not contentpilot_private.sports_item_blocks_event(:'ws', :'uns_post'),
+  'a failed automatic delivery of an archived post does not block');
+update contentpilot_private.sports_auto_publish_deliveries set state = 'uncertain' where request_id = :'uns_request';
+select pg_temp.check_event(contentpilot_private.sports_item_blocks_event(:'ws', :'uns_post'),
+  'an uncertain automatic delivery blocks even after the post is archived (no duplicate delivery)');
+update contentpilot_private.sports_auto_publish_deliveries set state = 'succeeded' where request_id = :'uns_request';
+select pg_temp.check_event(contentpilot_private.sports_item_blocks_event(:'ws', :'uns_post'),
+  'a succeeded automatic delivery blocks an archived post');
+
+-- the recheck uses it: a later report of the published+archived event is rejected with evidence
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://pub.vn/2', repeat('d4',32),
+  9, 'Báo cáo sau khi đã đăng', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('5d', 'e')) is null,
+  'the database rejects a duplicate of a published event even though the post is archived');
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://dlv.vn/2', repeat('d5',32),
+  9, 'Báo cáo sau giao', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('6d', '2e')) is null,
+  'the database rejects a duplicate of a delivered event even though the post is archived');
+-- a reconsidered (archived, never sent) event is accepted but stamped manual-review-only
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://uns.vn/2', repeat('d6',32),
+  9, 'Xem xét lại', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('7d', '4e')) is null as recon_null \gset
+reset role;
+-- uns_post's ledger row is 'succeeded' now: reset it to prove the non-delivered archived case reconsiders
+select pg_temp.check_event(:'recon_null', 'sanity: a succeeded automatic delivery also rejects the later report');
+delete from contentpilot_private.sports_auto_publish_deliveries where request_id = :'uns_request';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://uns.vn/3', repeat('d7',32),
+  9, 'Xem xét lại', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('8d', '4e')) as recon_post2 \gset
+reset role;
+select pg_temp.check_event(:'recon_post2' is not null
+  and (select manual_review_reason = 'reconsidered' from public.sports_news_items where post_id = :'recon_post2'),
+  'a reconsidered archived/never-sent event is accepted and stamped manual-review-only (reconsidered)');
+
+-- manual_review_reason derivation: unresolved, follow-up, regular, forged
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://mr.vn/1', repeat('e1',32),
+  8, 'Mơ hồ', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('9d', 'ad', 'new', false)) as mr_unres \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://mr.vn/2', repeat('e2',32),
+  8, 'Theo dõi', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('ad', 'bd', 'follow_up', true, '1')) as mr_follow \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://mr.vn/3', repeat('e3',32),
+  8, 'Thường', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb, pg_temp.ev2('bd', 'cd')) as mr_regular \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://mr.vn/4', repeat('e4',32),
+  8, 'Sự thật không chắc', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.ev2('cd', 'dd') || '{"manualReviewReason":"uncertain_facts"}'::jsonb) as mr_uncertain \gset
+reset role;
+select pg_temp.check_event(
+  (select manual_review_reason from public.sports_news_items where post_id = :'mr_unres') = 'unresolved_identity'
+  and (select manual_review_reason from public.sports_news_items where post_id = :'mr_follow') = 'follow_up'
+  and (select manual_review_reason from public.sports_news_items where post_id = :'mr_regular') is null
+  and (select manual_review_reason from public.sports_news_items where post_id = :'mr_uncertain') = 'uncertain_facts',
+  'manual_review_reason is derived/stored for unresolved, follow-up and uncertain facts and null for a regular item');
+do $$
+begin
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000006c3', false);
+  set local role authenticated;
+  perform public.record_sports_news_event_assessment('6c000000-0000-0000-0000-000000000001'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid, 'https://mr.vn/bad', repeat('e5',32), 8, 'Xấu', 'Caption', null, 'RSS',
+    array[]::uuid[], '{}'::jsonb,
+    jsonb_build_object('decision','new','specific',true,'eventKey',repeat('1',64),'clusterKey',repeat('2',64),
+      'manualReviewReason','bogus','identity','{}'::jsonb,'reasons','[]'::jsonb));
+  raise exception 'bogus manual reason permitted';
+exception when invalid_parameter_value then null;
+end $$;
+reset role;
+select pg_temp.check_event(true, 'an unknown manualReviewReason is rejected');
+
+-- DB guard: the temporary auto-publish claim refuses manual-review-only items; a regular item still claims.
+delete from contentpilot_private.sports_auto_publish_deliveries;
+update contentpilot_private.sports_auto_publish_windows set starts_at = clock_timestamp() - interval '1 minute',
+  ends_at = clock_timestamp() + interval '7 hours', max_per_slot = 10, max_per_window = 40
+ where id = :'auto_window';
+update public.sports_news_items set assessment = coalesce(assessment, '{}'::jsonb)
+  || jsonb_build_object('publishedAt', clock_timestamp(), 'rubricVersion', 'sports-v1', 'decision', 'threshold_met'),
+  created_at = clock_timestamp()
+ where post_id in (:'mr_unres', :'mr_follow', :'mr_regular', :'mr_uncertain', :'recon_post2');
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_event(
+  (select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'mr_unres'))
+  and (select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'mr_follow'))
+  and (select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'mr_uncertain'))
+  and (select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'recon_post2')),
+  'unresolved, follow-up, uncertain-facts and reconsidered items can never be claimed for automatic publishing');
+select pg_temp.check_event(
+  (select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'mr_regular')),
+  'a regular eligible item can still be claimed for automatic publishing');
+reset role;
+select pg_temp.check_event(
+  not has_function_privilege('anon', 'public.claim_sports_auto_publish(uuid,uuid,uuid,uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.claim_sports_auto_publish(uuid,uuid,uuid,uuid)', 'EXECUTE'),
+  'claim_sports_auto_publish keeps its original least-privilege grants');

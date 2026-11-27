@@ -7,7 +7,7 @@ const PROJECT = "33333333-3333-4333-8333-333333333333";
 type Row = Record<string, unknown>;
 const db = vi.hoisted(() => ({
   items: [] as Row[], posts: [] as Row[], requests: [] as Row[],
-  rpc: vi.fn(), collect: vi.fn(), assess: vi.fn(), draft: vi.fn(), historyFails: false, evidenceFails: false,
+  rpc: vi.fn(), send: vi.fn(), autoWindow: null as unknown, deliveries: [] as Row[], collect: vi.fn(), assess: vi.fn(), draft: vi.fn(), historyFails: false, evidenceFails: false,
 }));
 
 function thenable(rows: () => Row[], fails = false) {
@@ -24,6 +24,7 @@ vi.mock("@supabase/supabase-js", () => ({
     from: (table: string) => table === "sports_news_items" ? thenable(() => db.items, db.historyFails)
       : table === "content_posts" ? thenable(() => db.posts)
       : table === "content_publish_requests" ? thenable(() => db.requests)
+      : table === "publish_deliveries" ? thenable(() => db.deliveries)
       : thenable(() => []),
   }),
 }));
@@ -34,7 +35,7 @@ vi.mock("./source-photo", () => ({ findSourceSportsPhoto: async () => null }));
 vi.mock("./licensed-photo", () => ({ findSportsPostPhoto: async () => null }));
 vi.mock("./feeds", () => ({ collectSportsNews: db.collect }));
 vi.mock("./editor", () => ({ assessSportsNews: db.assess, writeSportsDraft: db.draft }));
-vi.mock("./auto-delivery", () => ({ getTemporaryAutoWindow: async () => null, sendTemporarySportsPost: vi.fn() }));
+vi.mock("./auto-delivery", () => ({ getTemporaryAutoWindow: async () => db.autoWindow, sendTemporarySportsPost: db.send }));
 vi.mock("./review-notices", () => ({ readReviewNoticeConfig: () => null, sendReviewNotices: async () => ({}) }));
 
 import { readSportsNewsConfig, runSportsNews } from "./worker";
@@ -49,11 +50,12 @@ const clean = (title: string) => title.replace(/\[\d+\]\s*/, "");
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID;
+  delete process.env.SPORTS_NEWS_SOCIAL_TOKENS;
   Object.assign(process.env, {
     SPORTS_NEWS_WORKSPACE_ID: WS, SPORTS_NEWS_PROJECT_ID: PROJECT, SPORTS_NEWS_WORKER_EMAIL: "w@example.com",
     SPORTS_NEWS_WORKER_PASSWORD: "pw", SPORTS_NEWS_MIN_SCORE: "8",
   });
-  db.items = []; db.posts = []; db.requests = []; db.historyFails = false; db.evidenceFails = false;
+  db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false;
   db.assess.mockImplementation(async (item: { title: string }) => {
     const n = level(item.title);
     return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, reason: "r" };
@@ -72,7 +74,7 @@ const evidence = () => db.rpc.mock.calls.filter(([n]) => n === "record_sports_ne
 const feed = (...articles: ReturnType<typeof article>[]) => db.collect.mockResolvedValue({ articles, unavailableSources: [] });
 
 /** Seeds one already-recorded item (with a real post unless `post` is false) into the fake history. */
-function seed(title: string, summary: string, url: string, opts: { post?: boolean; archived?: boolean; requests?: readonly string[]; identity?: boolean } = {}) {
+function seed(title: string, summary: string, url: string, opts: { post?: boolean; archived?: boolean; published?: boolean; delivery?: string; requests?: readonly string[]; identity?: boolean } = {}) {
   const post = opts.post !== false;
   const id = `seed-${url}`;
   const identity = buildEventIdentity({ title, summary, publishedAt: published() });
@@ -81,7 +83,8 @@ function seed(title: string, summary: string, url: string, opts: { post?: boolea
     post_id: post ? id : null, assessment: { title, publishedAt: new Date(published()).toISOString() }, created_at: new Date().toISOString(),
   });
   if (post) {
-    db.posts.push({ id, title: `Bài: ${title}`, body: summary, archived_at: opts.archived ? new Date().toISOString() : null });
+    db.posts.push({ id, title: `Bài: ${title}`, body: summary, status: opts.published ? "published" : "draft", archived_at: opts.archived ? new Date().toISOString() : null });
+    if (opts.delivery) db.deliveries.push({ post_id: id, status: opts.delivery });
     for (const status of opts.requests ?? ["pending"]) db.requests.push({ post_id: id, status });
   }
 }
@@ -197,5 +200,144 @@ describe("runSportsNews semantic deduplication", () => {
     db.historyFails = true;
     feed(article("[9] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich.", "https://b.vn/1"));
     await expect(runSportsNews(readSportsNewsConfig())).rejects.toThrow("sports_news_history_failed");
+  });
+  it("a published or delivered post keeps blocking after archive; an unsent archived post is reconsidered", async () => {
+    const title = "Lille hạ Bayern 1-0 ở Champions League";
+    for (const [opts, expected] of [
+      [{ archived: true, published: true }, 0], [{ archived: true, delivery: "succeeded" }, 0],
+      [{ archived: true, delivery: "queued" }, 0], [{ archived: true, delivery: "sending" }, 0],
+      [{ archived: true, delivery: "failed" }, 1], [{ archived: true, delivery: "cancelled" }, 1],
+      [{ archived: true, requests: ["rejected"] }, 1], [{ published: true }, 0],
+    ] as const) {
+      db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.rpc.mockClear();
+      seed(title, "Lille thắng Bayern Munich.", "https://a.vn/1", opts);
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/1"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report.drafted, JSON.stringify(opts)).toBe(expected);
+    }
+  });
+
+  describe("manual review only (auto-publish window enabled)", () => {
+    const TELEGRAM = "44444444-4444-4444-8444-444444444444";
+    beforeEach(() => {
+      process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID = TELEGRAM;
+      process.env.SPORTS_NEWS_SOCIAL_TOKENS = JSON.stringify({ [TELEGRAM]: "token" });
+      db.autoWindow = { id: "w", starts_at: new Date(0).toISOString(), ends_at: new Date(Date.now() + 3600_000).toISOString() };
+    });
+    const sentIds = () => db.send.mock.calls.map(([, , , draft]) => (draft as { id: string }).id);
+
+    it("regular eligible reports are still auto-published", async () => {
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(sentIds()).toEqual(["post-https://b.vn/regular"]);
+      expect(report).toMatchObject({ drafted: 1, autoPublished: 1 });
+    });
+
+    it("unresolved identities, follow-ups and reconsidered archived/rejected events are never sent", async () => {
+      seed("Chelsea quan tâm Erling Haaland", "Tin đồn chuyển nhượng Erling Haaland.", "https://a.vn/rumor");
+      seed("Arsenal thắng Chelsea 1-0 ở Ngoại hạng Anh", "Arsenal hạ Chelsea.", "https://a.vn/old", { archived: true });
+      feed(
+        article("[10] Chelsea chính thức ký Erling Haaland", "Chuyển nhượng hoàn tất, Erling Haaland gia nhập Chelsea.", "https://b.vn/followup"),
+        article("[9] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
+        article("[8] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
+        article("[8] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
+      );
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report.drafted).toBe(4); // all of them still reach manual review
+      expect(sentIds()).toEqual(["post-https://b.vn/regular"]);
+      const reasons = Object.fromEntries(recorded().map((r) => [r.p_source_url, (r.p_event as { manualReviewReason?: string }).manualReviewReason]));
+      expect(reasons).toMatchObject({
+        "https://b.vn/followup": "follow_up", "https://b.vn/vague": "unresolved_identity", "https://b.vn/reconsidered": "reconsidered",
+      });
+      expect(reasons["https://b.vn/regular"]).toBeUndefined();
+    });
+
+    it("a same-status report that adds a material fact is a manual follow-up, not an auto-published item", async () => {
+      seed("Bukayo Saka chấn thương, Arsenal lo lắng", "Saka bị chấn thương đùi.", "https://a.vn/saka");
+      feed(article("[10] Bukayo Saka chấn thương, nghỉ 6 tuần", "Arsenal cho biết Saka bị chấn thương và sẽ nghỉ 6 tuần.", "https://b.vn/saka6"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ followUps: 1, semanticDuplicates: 0, drafted: 1, autoPublished: 0 });
+      expect(sentIds()).toEqual([]);
+      expect(recorded()[0].p_event).toMatchObject({ decision: "follow_up", reasons: expect.arrayContaining([expect.objectContaining({ code: "new_material_facts" })]) });
+    });
+
+    it("a published+archived event is not reported again, so nothing is sent twice", async () => {
+      seed("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/1", { archived: true, published: true });
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/1"));
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ drafted: 0, semanticDuplicates: 1, autoPublished: 0 });
+      expect(db.send).not.toHaveBeenCalled();
+    });
+  });
+
+  it("same-run follow-up: result scoring below its preview is linked, whatever the order, and is manual only", async () => {
+    const preview = article("[10] Nhận định Lille vs Bayern tại Champions League", "Soi kèo Lille Bayern Munich.", "https://a.vn/preview");
+    const result = article("[9] Lille hạ Bayern 2-1 tại Champions League", "Lille thắng Bayern Munich.", "https://b.vn/result");
+    for (const order of [[preview, result], [result, preview]]) {
+      db.rpc.mockClear();
+      feed(...order);
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ drafted: 2 });
+      const byUrl = Object.fromEntries(recorded().map((r) => [r.p_source_url, r.p_event as { decision: string; manualReviewReason?: string }]));
+      expect(byUrl["https://b.vn/result"]).toMatchObject({ decision: "follow_up", manualReviewReason: "follow_up" });
+    }
+  });
+
+  it("two distinct events in one run are both materialized (no false merge)", async () => {
+    feed(
+      article("[10] Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/1"),
+      article("[9] Arsenal thắng Chelsea 2-1 ở Premier League", "Arsenal hạ Chelsea.", "https://a.vn/2"),
+    );
+    expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ drafted: 2, semanticDuplicates: 0 });
+  });
+
+  describe("failures and unselected reports leave the event eligible", () => {
+    const strong = article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/strong");
+    const weaker = article("[9] Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/weaker");
+
+    it("if the top draft fails, the weaker report of the same event is used within the draft budget", async () => {
+      db.draft.mockImplementationOnce(async () => { throw new Error("ai down"); });
+      feed(strong, weaker);
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ drafted: 1, itemFailures: 1 });
+      expect(recorded().filter((r) => r.p_title).map((r) => r.p_source_url)).toEqual(["https://a.vn/weaker"]);
+      expect(db.draft).toHaveBeenCalledTimes(2);
+      expect(evidence()).toHaveLength(0); // no skip evidence persisted as final
+    });
+
+    it("if every attempt fails, no skip evidence is stored and nothing blocks the next run", async () => {
+      db.draft.mockRejectedValue(new Error("ai down"));
+      feed(strong, weaker);
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ drafted: 0, semanticDuplicates: 0, eventEvidenceFailures: 0 });
+      expect(evidence()).toHaveLength(0);
+      expect(recorded().filter((r) => r.p_title)).toHaveLength(0);
+    });
+
+    it("a failed record call also falls back, and a database-rejected duplicate does not", async () => {
+      let calls = 0;
+      db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+        if (name === "claim_social_deliveries") return { data: [], error: null };
+        if (name === "record_sports_news_event_duplicate") return { data: true, error: null };
+        calls += 1;
+        if (calls === 1) throw new Error("db down");
+        return { data: args.p_title ? `post-${String(args.p_source_url)}` : null, error: null };
+      });
+      feed(strong, weaker);
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ drafted: 1 });
+      db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) =>
+        name === "claim_social_deliveries" ? { data: [], error: null } : name === "record_sports_news_event_duplicate" ? { data: true, error: null }
+          : { data: args.p_title ? null : null, error: null });
+      db.draft.mockClear();
+      feed(strong, weaker);
+      await runSportsNews(readSportsNewsConfig());
+      expect(db.draft).toHaveBeenCalledTimes(1); // null = event already exists: no fallback
+    });
+
+    it("a weaker report is persisted as a skip only after its event actually became a post", async () => {
+      feed(strong, weaker);
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ drafted: 1, semanticDuplicates: 1 });
+      expect(evidence()).toHaveLength(1);
+    });
   });
 });

@@ -94,3 +94,20 @@ Quyết định: `duplicate` (cùng sự kiện, không có gì mới → bỏ q
 **Cách ly/ACL**: bảng bằng chứng bật RLS (thành viên chỉ đọc); hai RPC `SECURITY DEFINER` chỉ cấp cho `authenticated`, kiểm tra worker đã đăng ký; hàm chặn nằm ở schema private, không client nào gọi được. Lỗi ghi bằng chứng được đếm vào `eventEvidenceFailures`/`itemFailures`.
 
 **Giới hạn đã biết**: từ điển đội/giải nhỏ (đội ngoài từ điển → không cụ thể → không gộp); tên người dựa vào chữ hoa trong tiêu đề; tỷ số không phân biệt chủ/khách; khóa cụm theo ngày Dubai chính xác (±1 ngày chỉ ở lớp TS); hai trận giống hệt cặp đội trong cùng ngày bị coi là một; tiêu đề trộn nhiều loại tin không bị gộp (an toàn nhưng có thể bỏ sót trùng). Áp dụng migration trước khi triển khai worker mới.
+
+## FN05 acceptance remediation (blocking, manual-only, facts, fallback)
+
+- **Blocking**: a post blocks later reports if it is published, has a queued/sending/succeeded delivery, or has a
+  sending/succeeded/uncertain temporary auto-publish delivery, **even when archived**. Otherwise it blocks only while
+  not archived and not fully rejected. An archived/rejected, never-sent post may be reconsidered. The auto-publish
+  ledger is private, so the TS pre-filter cannot see it: the database recheck (`sports_item_blocks_event`) is
+  authoritative and rejects the duplicate with `database_recheck` evidence.
+- **Manual review only**: `sports_news_items.manual_review_reason` (`unresolved_identity`, `follow_up`,
+  `reconsidered`, `uncertain_facts`) is set by the worker and re-derived by the database.
+  `claim_sports_auto_publish` refuses such items, and the worker only sends regular eligible drafts to the window.
+- **Material facts** (`facts`, part of `eventKey`): injury duration/diagnosis, transfer fee, contract, standings
+  implication, from fixed patterns only (no AI). New fact → follow-up; changed value → `fact_changed`.
+  Limitation: facts outside these patterns are not detected, so such a rewording is a duplicate.
+- **Same-run fallback**: weaker reports of one event are alternates; skip evidence is stored only after the event
+  became a post. If the lead fails, alternates are tried in rank order while total draft calls stay
+  ≤ `SPORTS_NEWS_MAX_PER_RUN`.

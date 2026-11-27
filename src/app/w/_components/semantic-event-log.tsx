@@ -15,6 +15,9 @@ const REASON_LABELS: Record<string, string> = {
   score_changed: "Tỷ số thay đổi",
   event_type_changed: "Từ nhận định sang kết quả",
   status_upgraded: "Tin đồn → chính thức",
+  new_material_facts: "Có dữ kiện mới (thời gian nghỉ, phí, hợp đồng, bảng xếp hạng…)",
+  fact_changed: "Dữ kiện thay đổi (cần người duyệt)",
+  same_run_follow_up: "Diễn biến tiếp theo trong cùng lượt quét",
 };
 
 /** Structured evidence of semantic skips and follow-ups, shown next to the news feed (read-only). */

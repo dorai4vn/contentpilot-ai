@@ -59,3 +59,25 @@ if [[ "$HIGH" != "1" || "$LOW" != "$((N / 2))" ]]; then
   exit 1
 fi
 echo "  ok - concurrent low-score and high-score reports: low ones never block, exactly one post is created"
+
+# Concurrent DISTINCT events (different clusters) must all materialize: the project lock serializes, it never merges.
+for i in $(seq 1 $N); do
+  (
+    K=$(printf "%064x" $((7000+i)))
+    C=$(printf "%064x" $((8000+i)))
+    E="{\"decision\":\"new\",\"specific\":true,\"eventKey\":\"$K\",\"clusterKey\":\"$C\",\"identity\":{\"version\":\"event-v3\"},\"reasons\":[]}"
+    psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -o /dev/null <<SQL
+set role authenticated;
+select set_config('request.jwt.claim.sub', '$WORKER', false);
+select public.record_sports_news_event_assessment('$WS', '$PROJECT', 'https://distinct.example/$i', '$(printf "%064x" $((11000+i)))',
+  8, 'Distinct $i', 'Caption', null, 'RSS', array[]::uuid[], '{}'::jsonb, '$E'::jsonb);
+SQL
+  ) &
+done
+wait
+DISTINCT=$(psql "$TEST_DATABASE_URL" -X -At -c "select count(*) from public.content_posts where title like 'Distinct %'")
+if [[ "$DISTINCT" != "$N" ]]; then
+  echo "ASSERTION FAILED: expected $N posts for $N distinct concurrent events, got $DISTINCT" >&2
+  exit 1
+fi
+echo "  ok - $N concurrent distinct events all materialize (no false merge under concurrency)"
