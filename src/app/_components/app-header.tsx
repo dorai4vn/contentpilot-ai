@@ -1,4 +1,4 @@
-import { LogOut, Sparkles, UserRound } from "lucide-react";
+import { LogOut, Trophy, UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { signOut } from "@/app/(auth)/actions";
@@ -7,12 +7,10 @@ import { signOut } from "@/app/(auth)/actions";
 export function BrandMark({ className = "" }: { className?: string }) {
   return (
     <span className={`inline-flex items-center gap-2 font-semibold tracking-tight text-slate-900 ${className}`}>
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
-        <Sparkles className="h-4 w-4" aria-hidden />
+      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm">
+        <Trophy className="h-4 w-4" aria-hidden />
       </span>
-      <span>
-        ContentPilot <span className="text-indigo-600">AI</span>
-      </span>
+      <span>Football News <span className="text-emerald-700">Control Center</span></span>
     </span>
   );
 }
@@ -21,9 +19,9 @@ export function BrandMark({ className = "" }: { className?: string }) {
 export function AppHeader({ email }: { email: string | null }) {
   const initial = (email ?? "?").trim().charAt(0).toUpperCase() || "?";
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/dashboard" className="rounded-lg" aria-label="ContentPilot AI — Bảng điều khiển">
+    <header className="football-topbar sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <div className="mx-auto flex h-16 max-w-screen-2xl items-center justify-between gap-4 px-4 sm:px-6">
+        <Link href="/dashboard" className="rounded-lg" aria-label="Football News Control Center — Bảng điều khiển">
           <BrandMark />
         </Link>
         <div className="flex items-center gap-1.5 text-sm sm:gap-2">

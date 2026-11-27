@@ -18,16 +18,16 @@ export default async function WorkspaceLayout({ children, params }: LayoutProps<
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="football-shell flex flex-1 flex-col">
       <AppHeader email={user.email} />
-      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col lg:flex-row">
+      <div className="football-shell-body">
         <WorkspaceNav
           workspaceId={workspace.id}
           workspaceName={workspace.name}
           roleLabel={ROLE_LABELS[workspace.role]}
           pendingCount={pendingCount}
         />
-        <main className="w-full min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <main id="main-content" className="football-main">{children}</main>
       </div>
     </div>
   );

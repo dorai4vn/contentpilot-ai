@@ -72,7 +72,7 @@ vi.mock("@/app/_actions/content/projects", () => ({
 
 import ApprovalReviewPage from "./[workspaceId]/approvals/[requestId]/page";
 import ApprovalsPage from "./[workspaceId]/approvals/page";
-import WorkspacePage from "./[workspaceId]/page";
+import WorkspacePage from "./[workspaceId]/studio/page";
 import PostEditorPage from "./[workspaceId]/posts/[postId]/page";
 
 const ME = "11111111-1111-4111-8111-111111111111";
