@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 import { uuidSchema } from "./content";
-import { publishApproveSchema, publishRejectSchema, publishRequestCreateSchema, publishRequestRefSchema } from "./publish";
+import {
+  publishApproveSchema,
+  publishRejectSchema,
+  publishRequestCreateSchema,
+  publishRequestRefSchema,
+} from "./publish";
 
 /**
  * Form schemas of the M4 publish-approval Server Actions (human path only).
@@ -32,8 +37,47 @@ export const approvePublishFormSchema = publishApproveSchema.extend({
 });
 export type ApprovePublishForm = z.output<typeof approvePublishFormSchema>;
 
-export const rejectPublishFormSchema = publishRejectSchema.extend({ workspaceId: uuidSchema });
+export const rejectPublishFormSchema = publishRejectSchema.extend({
+  workspaceId: uuidSchema,
+});
 export type RejectPublishForm = z.output<typeof rejectPublishFormSchema>;
 
-export const cancelPublishFormSchema = publishRequestRefSchema.extend({ workspaceId: uuidSchema });
+export const cancelPublishFormSchema = publishRequestRefSchema.extend({
+  workspaceId: uuidSchema,
+});
 export type CancelPublishForm = z.output<typeof cancelPublishFormSchema>;
+
+/** Upper bound of one bulk approval (owner decision on issue #26). */
+export const BULK_APPROVE_MAX = 30;
+
+/**
+ * Bulk approval: the same per-item evidence as the single approval (request,
+ * version and destination the approver saw), repeated per item. Duplicated
+ * request ids are rejected so one request can never be submitted twice in a batch.
+ */
+export const bulkApprovePublishSchema = z
+  .strictObject({
+    workspaceId: uuidSchema,
+    confirm: z.literal("approve", { message: "Thiếu xác nhận phê duyệt." }),
+    items: z
+      .array(
+        z.strictObject({
+          requestId: uuidSchema,
+          expectedPostVersion: publishApproveSchema.shape.expectedPostVersion,
+          expectedDestinationId: uuidSchema,
+        }),
+      )
+      .min(1, "Chưa chọn yêu cầu nào.")
+      .max(
+        BULK_APPROVE_MAX,
+        `Mỗi lần chỉ duyệt tối đa ${BULK_APPROVE_MAX} yêu cầu.`,
+      ),
+  })
+  .refine(
+    (v) => new Set(v.items.map((i) => i.requestId)).size === v.items.length,
+    {
+      message: "Danh sách có yêu cầu bị trùng.",
+      path: ["items"],
+    },
+  );
+export type BulkApprovePublishInput = z.input<typeof bulkApprovePublishSchema>;
