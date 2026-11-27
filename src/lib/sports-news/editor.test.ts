@@ -86,18 +86,22 @@ it("prompt drops the 1–2 sentence / 620 rule, sets word targets and the shared
   const { messages, max_completion_tokens } = complete.mock.calls[0][0];
   const system: string = messages[0].content;
   expect(system).not.toMatch(/620|mỗi đoạn 1–2 câu/);
-  expect(system).toMatch(/120–180 từ/);
-  expect(system).toMatch(/80–120 từ/);
+  expect(system).toMatch(/50–80 từ/);
+  expect(system).toMatch(/80–110 từ/);
+  expect(system).toMatch(/110–140 từ/);
+  expect(system).toMatch(/160–170 từ/);
+  expect(system).not.toMatch(/180–250|150–220|120–180|180–250 từ/);
+  expect(system).toContain("KHÔNG phải mức tối thiểu");
   expect(system).toContain(`${SPORTS_CAPTION_BUDGET} ký tự`);
   expect(system).toContain("không độn chữ");
   expect(system).toContain("không để cụt giữa câu");
-  expect(max_completion_tokens).toBeGreaterThanOrEqual(1400);
+  expect(max_completion_tokens).toBeLessThanOrEqual(1100); // không tăng chi phí đầu ra
 });
 
 it("keeps a realistic full-length multi-paragraph Vietnamese caption intact and within budget", async () => {
   const body = [para(1, 3), para(4, 3), para(7, 2)].join("\n\n");
   const title = "Lille hạ Bayern ở Champions League";
-  expect(words(body)).toBeGreaterThan(120);
+  expect(words(body)).toBeGreaterThan(100);
   reply({ ...base, title, body });
   const r = await writeSportsDraft(item(title, "x"));
   expect(r.body).toBe(body);
