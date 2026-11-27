@@ -24,6 +24,8 @@ export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCou
   const studioItems: NavItem[] = [
     { href: `${base}/studio`, label: "Nội dung", icon: PanelsTopLeft, testId: "nav-studio", match: (path) => path.startsWith(`${base}/studio`) || path.startsWith(`${base}/p/`) || path.startsWith(`${base}/posts/`) },
     { href: `${base}/agent`, label: "Trợ lý AI", icon: Bot, testId: "nav-agent", match: (path) => path.startsWith(`${base}/agent`) },
+  ];
+  const footerItems: NavItem[] = [
     { href: `${base}/settings`, label: "Cài đặt", icon: Settings, testId: "nav-settings", match: (path) => path.startsWith(`${base}/settings`) },
   ];
 
@@ -49,6 +51,7 @@ export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCou
           <div className="football-nav-group"><p>Bóng đá</p>{links(newsItems)}</div>
           <div className="football-nav-group"><p>Content Studio</p>{links(studioItems)}</div>
         </nav>
+        <nav aria-label="Cài đặt không gian làm việc" className="football-sidebar-footer" data-testid="sidebar-footer">{links(footerItems)}</nav>
       </div>
     </aside>
   );
