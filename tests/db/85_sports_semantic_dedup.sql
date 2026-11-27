@@ -144,3 +144,78 @@ exception when insufficient_privilege then null;
 end $$;
 select pg_temp.check_event(true, 'event evidence cannot be written directly by clients');
 reset role;
+
+-- Exact ACLs of the two FN05 RPCs: only `authenticated` may execute them (anon/public/service_role may not),
+-- and execution alone grants nothing: authorization is the registered-worker check inside the function.
+select pg_temp.check_event(
+  (select bool_and(has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                   and not has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   and not has_function_privilege('public', p.oid, 'EXECUTE')
+                   and p.prosecdef and 'search_path=""' = any (p.proconfig)) and count(*) = 2
+     from pg_proc p where p.pronamespace = 'public'::regnamespace
+      and p.proname in ('record_sports_news_event_assessment', 'record_sports_news_event_duplicate')),
+  'FN05 RPC ACLs: authenticated only, security definer, pinned search_path');
+
+-- anon cannot call them at all.
+set role anon;
+do $$
+begin
+  perform public.record_sports_news_event_duplicate('6c000000-0000-0000-0000-000000000001'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid, 'https://anon.vn/1', repeat('a',64),
+    '{"decision":"new","eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasons":[]}'::jsonb);
+  raise exception 'anon call permitted';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+select pg_temp.check_event(true, 'anon cannot execute the FN05 RPCs');
+
+-- A signed-in workspace member who is not the registered worker, and a signed-in outsider, are both refused.
+select set_config('contentpilot.ws', :'ws', false);
+select set_config('contentpilot.project', :'project', false);
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+do $$
+begin
+  perform public.record_sports_news_event_assessment(current_setting('contentpilot.ws')::uuid,
+    current_setting('contentpilot.project')::uuid, 'https://member.vn/1', repeat('c',64), 8, null, null, null, null,
+    array[]::uuid[], '{}'::jsonb, '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+  raise exception 'non-worker member permitted';
+exception when insufficient_privilege then null;
+end $$;
+do $$
+begin
+  perform public.record_sports_news_event_duplicate(current_setting('contentpilot.ws')::uuid,
+    current_setting('contentpilot.project')::uuid, 'https://member.vn/2', repeat('d',64),
+    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+  raise exception 'non-worker member permitted';
+exception when insufficient_privilege then null;
+end $$;
+select set_config('request.jwt.claim.sub', :'outsider', false);
+do $$
+begin
+  perform public.record_sports_news_event_duplicate(current_setting('contentpilot.ws')::uuid,
+    current_setting('contentpilot.project')::uuid, 'https://outsider.vn/1', repeat('e',64),
+    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+  raise exception 'outsider permitted';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+select pg_temp.check_event(
+  not exists (select 1 from public.sports_news_event_matches where source_url like 'https://member.vn/%' or source_url like 'https://outsider.vn/%'
+              or source_url like 'https://anon.vn/%'),
+  'refused callers leave no event evidence behind');
+
+-- Cross-workspace project id: the worker of workspace 2 naming workspace 1's project is rejected (pair mismatch).
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker2', false);
+do $$
+begin
+  perform public.record_sports_news_event_duplicate('6c000000-0000-0000-0000-00000000000a'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid, 'https://cross.vn/1', repeat('f',64),
+    '{"decision":"new","eventKey":"1111111111111111111111111111111111111111111111111111111111111111","clusterKey":"2222222222222222222222222222222222222222222222222222222222222222","reasons":[]}'::jsonb);
+  raise exception 'cross-workspace project permitted';
+exception when invalid_parameter_value then null;
+end $$;
+reset role;
+select pg_temp.check_event(true, 'a worker cannot target another workspace''s project through its own workspace id');
