@@ -1,16 +1,17 @@
 "use client";
 
-import { ArrowLeft, Bot, ClipboardCheck, LayoutDashboard, Newspaper, PanelsTopLeft, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Bot, ClipboardCheck, LayoutDashboard, Newspaper, PanelsTopLeft, Settings2, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 type NavItem = { href: string; label: string; icon: LucideIcon; testId: string; match: (path: string) => boolean };
 
-export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCount }: {
+export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCount, automationAvailable }: {
   workspaceId: string;
   workspaceName: string;
   roleLabel: string;
   pendingCount: number | null;
+  automationAvailable: boolean;
 }) {
   const pathname = usePathname() ?? "";
   const base = `/w/${workspaceId}`;
@@ -18,6 +19,7 @@ export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCou
     { href: base, label: "Tổng quan", icon: LayoutDashboard, testId: "nav-overview", match: (path) => path === base },
     { href: `${base}/news`, label: "Luồng tin", icon: Newspaper, testId: "nav-news", match: (path) => path.startsWith(`${base}/news`) },
     { href: `${base}/approvals`, label: "Chờ duyệt", icon: ClipboardCheck, testId: "nav-approvals", match: (path) => path.startsWith(`${base}/approvals`) },
+    ...(automationAvailable ? [{ href: `${base}/automation`, label: "Tự động hóa", icon: Settings2, testId: "nav-automation", match: (path: string) => path.startsWith(`${base}/automation`) }] : []),
   ];
   const studioItems: NavItem[] = [
     { href: `${base}/studio`, label: "Nội dung", icon: PanelsTopLeft, testId: "nav-studio", match: (path) => path.startsWith(`${base}/studio`) || path.startsWith(`${base}/p/`) || path.startsWith(`${base}/posts/`) },
