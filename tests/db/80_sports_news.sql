@@ -217,3 +217,34 @@ select pg_temp.check_news(
   (select status='draft' from public.approve_publish_request(:'human_request',1,:'channel')),
   'human approval still creates a normal publication after expiry');
 reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.1,50,35,15,'strict')=1,
+  'Owner creates the project scoring configuration');
+select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.2,45,40,15,'highest')=2,
+  'each scoring change increments its version');
+select pg_temp.check_news(
+  (select threshold=8.2 and version=2 and fallback_mode='highest' from public.sports_news_scoring_configs where project_id=:'project'),
+  'workspace members can read the effective scoring values');
+do $$
+begin
+  perform public.set_sports_news_scoring_config(
+    '6c000000-0000-0000-0000-000000000001'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid,8.5,50,50,1,'strict');
+  raise exception 'Invalid weights were accepted';
+exception when invalid_parameter_value then null;
+end $$;
+select set_config('request.jwt.claim.sub', :'worker', false);
+do $$
+begin
+  perform public.set_sports_news_scoring_config(
+    '6c000000-0000-0000-0000-000000000001'::uuid,
+    '6c100000-0000-0000-0000-000000000001'::uuid,8,45,40,15,'strict');
+  raise exception 'Member changed scoring';
+exception when insufficient_privilege then null;
+end $$;
+select set_config('request.jwt.claim.sub', :'outsider', false);
+select pg_temp.check_news((select count(*)=0 from public.sports_news_scoring_configs),
+  'scoring configuration remains workspace isolated');
+reset role;

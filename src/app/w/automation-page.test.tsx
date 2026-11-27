@@ -8,7 +8,9 @@ vi.mock("@/lib/sports-news/control-target", () => ({ sportsControlTarget: () => 
   workspaceId: "workspace-1", projectId: "project-1", destinationId: "destination-1",
 }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: mocks.rpc, from: mocks.from }) }));
-vi.mock("@/app/w/[workspaceId]/automation/actions", () => ({ enableAutomation: vi.fn(), emergencyStop: vi.fn() }));
+vi.mock("@/app/w/[workspaceId]/automation/actions", () => ({
+  enableAutomation: vi.fn(), emergencyStop: vi.fn(), saveScoring: vi.fn(), resetScoring: vi.fn(),
+}));
 
 import AutomationPage from "./[workspaceId]/automation/page";
 

@@ -6,6 +6,8 @@ export type NewsAssessment = {
   reason: string;
 };
 
+export type ScoringWeights = { reach: number; eventImportance: number; freshness: number };
+
 export const SPORTS_SCORING_RUBRIC = {
   version: "sports-v1",
   weights: { reach: 0.45, eventImportance: 0.40, freshness: 0.15 },
@@ -14,11 +16,11 @@ export const SPORTS_SCORING_RUBRIC = {
 
 export const SPORTS_NEWS_MAX_PER_RUN = 10;
 
-export function scoreSportsNews(assessment: NewsAssessment, publishedAt: number, now: number) {
+export function scoreSportsNews(assessment: NewsAssessment, publishedAt: number, now: number,
+  weights: ScoringWeights = SPORTS_SCORING_RUBRIC.weights) {
   const ageHours = Math.max(0, now - publishedAt) / 3_600_000;
   const freshness = Math.max(0, 10 - ageHours / SPORTS_SCORING_RUBRIC.hoursPerFreshnessPoint);
   const reach = Math.max(assessment.playerPopularity, assessment.teamPopularity, assessment.competitionPopularity);
-  const weights = SPORTS_SCORING_RUBRIC.weights;
   const score = Math.round((weights.reach * reach + weights.eventImportance * assessment.eventImportance
     + weights.freshness * freshness) * 10) / 10;
   return { score, reach, freshness: Math.round(freshness * 100) / 100 };
@@ -54,12 +56,14 @@ function normalize(value: string) {
 }
 
 export function selectSportsNews<T extends { score: number; priority: number; item: { publishedAt: number } }>(
-  entries: T[], threshold: number,
+  entries: T[], threshold: number, fallbackMode: "highest" | "strict" = "highest",
 ) {
   const ranked = [...entries].sort((a, b) => b.score - a.score
     || a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const qualified = ranked.filter((entry) => entry.score >= threshold);
   return qualified.length
     ? { selected: qualified.slice(0, SPORTS_NEWS_MAX_PER_RUN), fallback: false }
-    : { selected: ranked.slice(0, 1), fallback: ranked.length > 0 };
+    : fallbackMode === "highest"
+      ? { selected: ranked.slice(0, 1), fallback: ranked.length > 0 }
+      : { selected: [], fallback: false };
 }

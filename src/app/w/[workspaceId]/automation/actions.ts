@@ -14,6 +14,14 @@ const limits = z.object({
   perWindow: z.coerce.number().int().min(1).max(40),
 }).refine((value) => value.perWindow >= value.perSlot);
 
+const scoringSchema = z.object({
+  threshold: z.coerce.number().min(0).max(10).refine((value) => Number.isInteger(value * 10)),
+  reach: z.coerce.number().int().min(0).max(100),
+  importance: z.coerce.number().int().min(0).max(100),
+  freshness: z.coerce.number().int().min(0).max(100),
+  fallback: z.enum(["highest", "strict"]),
+}).refine((value) => value.reach + value.importance + value.freshness === 100);
+
 async function update(workspaceId: string, enabled: boolean, formData?: FormData) {
   const path = `/w/${workspaceId}/automation`;
   const { workspace } = await loadWorkspace(workspaceId, path);
@@ -48,4 +56,40 @@ export async function enableAutomation(formData: FormData) {
 export async function emergencyStop(formData: FormData) {
   const workspaceId = z.uuid().parse(formData.get("workspaceId"));
   await update(workspaceId, false);
+}
+
+export async function saveScoring(formData: FormData) {
+  const workspaceId = z.uuid().parse(formData.get("workspaceId"));
+  const path = `/w/${workspaceId}/automation`;
+  const { workspace } = await loadWorkspace(workspaceId, path);
+  if (workspace.role !== "owner" && workspace.role !== "admin") redirect(`${path}?error=forbidden`);
+  const target = sportsControlTarget(workspace.id);
+  if (!target) redirect(`${path}?error=unavailable`);
+  const parsed = scoringSchema.safeParse({
+    threshold: formData.get("threshold"), reach: formData.get("reach"),
+    importance: formData.get("importance"), freshness: formData.get("freshness"),
+    fallback: formData.get("fallback"),
+  });
+  if (!parsed.success) redirect(`${path}?error=scoring`);
+  const client = await createClient();
+  const { error } = await client.rpc("set_sports_news_scoring_config", {
+    p_workspace_id: target.workspaceId, p_project_id: target.projectId,
+    p_threshold: parsed.data.threshold,
+    p_reach_weight: parsed.data.reach,
+    p_importance_weight: parsed.data.importance,
+    p_freshness_weight: parsed.data.freshness,
+    p_fallback_mode: parsed.data.fallback,
+  });
+  if (error) redirect(`${path}?error=save`);
+  revalidatePath(path);
+  redirect(`${path}?status=scoring`);
+}
+
+export async function resetScoring(formData: FormData) {
+  formData.set("threshold", "8");
+  formData.set("reach", "45");
+  formData.set("importance", "40");
+  formData.set("freshness", "15");
+  formData.set("fallback", "highest");
+  await saveScoring(formData);
 }

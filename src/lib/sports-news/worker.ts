@@ -126,6 +126,17 @@ export async function checkSportsNewsSetup(config: Config, channelUsername?: str
 export async function runSportsNews(config: Config, testDate?: string) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
+  const scoringResult = await client.from("sports_news_scoring_configs")
+    .select("version,threshold,reach_weight,importance_weight,freshness_weight,fallback_mode")
+    .eq("workspace_id", config.workspaceId).eq("project_id", config.projectId).maybeSingle();
+  if (scoringResult.error) throw new Error("sports_news_scoring_config_failed");
+  const scoring = scoringResult.data;
+  const threshold = scoring?.threshold ?? config.threshold;
+  const weights = scoring ? {
+    reach: scoring.reach_weight / 100,
+    eventImportance: scoring.importance_weight / 100,
+    freshness: scoring.freshness_weight / 100,
+  } : SPORTS_SCORING_RUBRIC.weights;
   const tokens = { ...config.tokens };
   if (config.telegramDestinationId && !tokens[config.telegramDestinationId]) {
     const { data, error } = await client.from("publishing_destinations").select("id")
@@ -180,16 +191,16 @@ export async function runSportsNews(config: Config, testDate?: string) {
 
   const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority }) => {
     const assessment = await assessSportsNews(item);
-    return { item, key, priority, assessment, ...scoreSportsNews(assessment, item.publishedAt, now) };
+    return { item, key, priority, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
   }));
   const assessed = assessments.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   report.assessed = assessed.length;
   report.itemFailures = assessments.length - assessed.length;
-  const selection = selectSportsNews(assessed, config.threshold);
+  const selection = selectSportsNews(assessed, threshold, scoring?.fallback_mode ?? "highest");
   const fallback = !testDate && selection.fallback;
   const selected = testDate ? (selection.fallback ? [] : selection.selected.slice(0, 1)) : selection.selected;
   const selectedKeys = new Set(selected.map((entry) => entry.key));
-  const decided = testDate ? selected : assessed.filter((entry) => entry.score < config.threshold || selectedKeys.has(entry.key));
+  const decided = testDate ? selected : assessed.filter((entry) => entry.score < threshold || selectedKeys.has(entry.key));
 
   const saved = await Promise.allSettled(
     decided.map(async ({ item, key, priority, assessment, score, reach, freshness }) => {
@@ -211,7 +222,12 @@ export async function runSportsNews(config: Config, testDate?: string) {
         p_assessment: {
           ...assessment, rubricVersion: SPORTS_SCORING_RUBRIC.version, reach, freshness, priority, decision,
           ...(testDate ? { testPublishUntil: new Date(now + 24 * 60 * 60 * 1000).toISOString() } : {}),
-          threshold: config.threshold, title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
+          threshold, scoringVersion: scoring?.version ?? 0, weights, components: {
+            playerPopularity: assessment.playerPopularity, teamPopularity: assessment.teamPopularity,
+            competitionPopularity: assessment.competitionPopularity, eventImportance: assessment.eventImportance,
+            reach, freshness,
+          },
+          title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
         },
         p_destinations: destinations,
       });
