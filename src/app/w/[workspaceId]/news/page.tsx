@@ -14,7 +14,7 @@ export default async function NewsFeedPage({ params }: PageProps<"/w/[workspaceI
   return (
     <div className="football-page">
       <div className="football-page-header">
-        <div><p className="football-eyebrow">Football News Control Center</p><h1>Luồng tin</h1><p>30 tin RSS được ghi nhận gần nhất.</p></div>
+        <div><p className="football-eyebrow">Social Automation</p><h1>Luồng tin</h1><p>30 tin RSS được ghi nhận gần nhất.</p></div>
       </div>
       <section className="football-panel" aria-label="Tin RSS gần đây"><FootballNewsList items={news} workspaceId={workspace.id} /></section>
       <section className="football-panel" aria-label="Nhật ký trùng sự kiện">

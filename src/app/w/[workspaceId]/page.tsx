@@ -6,7 +6,7 @@ import { FootballNewsList } from "../_components/football-news-list";
 import { recentFootballNews } from "../_lib/football-news";
 import { loadWorkspace } from "../_lib/load";
 
-export const metadata: Metadata = { title: "Football News Control Center" };
+export const metadata: Metadata = { title: "Social Automation" };
 
 export default async function FootballOverview({ params }: PageProps<"/w/[workspaceId]">) {
   const { workspaceId } = await params;
@@ -17,7 +17,7 @@ export default async function FootballOverview({ params }: PageProps<"/w/[worksp
     <div className="football-page">
       <div className="football-page-header">
         <div>
-          <p className="football-eyebrow">Football News Control Center</p>
+          <p className="football-eyebrow">Social Automation</p>
           <h1>Tổng quan</h1>
           <p>Tin bóng đá mới được hệ thống quét trong {workspace.name}.</p>
         </div>

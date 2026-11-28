@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Football News Control Center", template: "%s · Football News Control Center" },
+  title: { default: "Social Automation", template: "%s · Social Automation" },
   description: "Điều hành luồng tin bóng đá, biên tập nội dung và quản lý xuất bản.",
 };
 
