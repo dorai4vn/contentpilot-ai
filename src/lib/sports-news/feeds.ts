@@ -10,9 +10,12 @@ export type SportsNewsItem = {
   summary: string;
   publishedAt: number;
   categories?: string;
+  /** Image URL declared by the RSS item (media:content / media:thumbnail / enclosure). Unverified candidate only. */
+  imageUrl?: string;
 };
 
 const parser = new XMLParser({ parseTagValue: false, processEntities: false });
+const attributeParser = new XMLParser({ parseTagValue: false, processEntities: false, ignoreAttributes: false, attributeNamePrefix: "@_" });
 const maxBytes = 512 * 1024;
 const day = 24 * 60 * 60 * 1000;
 
@@ -56,6 +59,23 @@ function sourceUrl(value: unknown, host: string): string | null {
   }
 }
 
+function rssMediaUrl(item: unknown): string | undefined {
+  if (!item || typeof item !== "object") return undefined;
+  const fields = item as Record<string, unknown>;
+  for (const key of ["media:content", "media:thumbnail", "enclosure"]) {
+    for (const entry of [fields[key] ?? []].flat()) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const type = record["@_type"];
+      const url = record["@_url"];
+      if (typeof url !== "string" || url.length > 500 || (typeof type === "string" && !/^image\//i.test(type))) continue;
+      if (key === "enclosure" && typeof type !== "string") continue;
+      if (/^https:\/\//i.test(he.decode(url.trim()))) return he.decode(url.trim());
+    }
+  }
+  return undefined;
+}
+
 export function parseSportsFeed(xml: string, source: SportsFeedSource, now: number): SportsNewsItem[] {
   if (/<!\s*(DOCTYPE|ENTITY)\b/i.test(xml) || XMLValidator.validate(xml) !== true) {
     throw new Error("invalid_sports_feed");
@@ -63,8 +83,9 @@ export function parseSportsFeed(xml: string, source: SportsFeedSource, now: numb
   const channel = parser.parse(xml)?.rss?.channel;
   if (!channel || typeof channel !== "object") throw new Error("invalid_sports_feed");
   const items: unknown[] = [channel.item ?? []].flat();
+  const mediaItems: unknown[] = [attributeParser.parse(xml)?.rss?.channel?.item ?? []].flat();
   const host = new URL(source.url).hostname;
-  return items.slice(0, 100).flatMap((item) => {
+  return items.slice(0, 100).flatMap((item, index) => {
     if (!item || typeof item !== "object") return [];
     const fields = item as Record<string, unknown>;
     const url = sourceUrl(fields.link, host);
@@ -75,7 +96,7 @@ export function parseSportsFeed(xml: string, source: SportsFeedSource, now: numb
       .filter(Boolean).join(", ").slice(0, 300);
     if (!url || !title || !summary || !Number.isFinite(publishedAt) ||
       publishedAt < now - 2 * day || publishedAt > now + 5 * 60 * 1000) return [];
-    return [{ source: source.name, url, title, summary, publishedAt, ...(categories ? { categories } : {}) }];
+    return [{ source: source.name, url, title, summary, publishedAt, ...(categories ? { categories } : {}), ...(rssMediaUrl(mediaItems[index]) ? { imageUrl: rssMediaUrl(mediaItems[index]) } : {}) }];
   });
 }
 
