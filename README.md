@@ -3,6 +3,8 @@
 ContentPilot AI là ứng dụng quản lý nội dung tích hợp AI Agent, cho phép người dùng đăng nhập, quản lý dự án và bài viết trong workspace, giao nhiệm vụ thao tác dữ liệu thật cho AI và kiểm soát hành động xuất bản bằng cơ chế Human Approval (con người phê duyệt).
 Trạng thái: M1–M4 đã triển khai trên môi trường Production và được kiểm thử thực tế. M5 (xuất bản Telegram/Discord) là định hướng phát triển tiếp theo, chưa triển khai.
 
+Football News Control Center (tin bóng đá từ RSS, chấm điểm, chống trùng sự kiện, Temporary Auto Publish) là hướng phát triển riêng, **chưa nằm trong phạm vi đã xác minh trên Production ở trên**. Phần chống trùng sự kiện theo ngữ nghĩa (FN05) đã được squash merge vào `main` (PR #34, commit `44ebaf37`); Owner xác nhận migration và triển khai Production cho FN05 đã được xác minh. Tuy nhiên **chưa có bằng chứng kiểm chứng ngữ nghĩa trên bài báo thật**, và tại thời điểm kiểm tra release Temporary Auto Publish đang tắt. Human Approval vẫn là chế độ mặc định.
+
 - Ứng dụng trực tuyến: https://contentpilot-social.vercel.app
 - Mã nguồn: https://github.com/dorai4vn/contentpilot-ai
 - Công nghệ: Next.js 16 (App Router, TypeScript, Tailwind CSS 4), Supabase (PostgreSQL, Authentication, Row Level Security), Vercel, Vitest và GitHub Actions.
@@ -19,6 +21,8 @@ Giai đoạn	Chức năng	Trạng thái
 - M3: AI Agent	AI đọc, tạo và cập nhật dữ liệu thật; ghi nhật ký hoạt động	✅ Hoàn thành
 - M4: Human Approval	Tạo yêu cầu xuất bản, phê duyệt bởi Owner/Admin, chặn AI tự duyệt, ghi nhận kết quả	✅ Hoàn thành, đã kiểm thử trên Production
 - M5: Xuất bản ra nền tảng ngoài	Telegram/Discord/Facebook/Instagram Publisher	📌 Định hướng tương lai, chưa nằm trong bài tập Capstone 2
+- Football News Control Center (RSS thể thao, chấm điểm, Temporary Auto Publish)	Mã nguồn có trong repository; chưa được xác nhận độc lập là đã chạy gửi ngoài thật	🔧 Đang phát triển, không thuộc phần Production đã xác minh
+- FN05: Khử trùng sự kiện theo ngữ nghĩa	Danh tính sự kiện, bằng chứng, chỉ duyệt thủ công cho ca không chắc chắn	✅ Đã merge và triển khai (Owner xác nhận); ⏳ chưa có bằng chứng kiểm chứng trên bài báo thật
 
 
 **3. Các chức năng chính**
@@ -54,7 +58,7 @@ Quy trình:
 
 **5. Log và history để kiểm tra.**
 
-Giới hạn quan trọng: AI Agent được phép đề xuất hoặc tạo yêu cầu xuất bản, nhưng không được tự phê duyệt. Bản hiện tại chỉ hỗ trợ xuất bản nội bộ; chưa tự đăng lên Telegram, Discord hoặc Facebook.
+Giới hạn quan trọng: AI Agent được phép đề xuất hoặc tạo yêu cầu xuất bản, nhưng không được tự phê duyệt. Phạm vi M1–M4 đã xác minh chỉ hỗ trợ xuất bản nội bộ; chưa tự đăng lên Telegram, Discord hoặc Facebook. Việc gửi Telegram của Football News Control Center là hướng phát triển riêng (xem mục 10), mặc định vẫn qua Human Approval.
 
 **4. Kết quả kiểm thử Production**
 
@@ -139,6 +143,13 @@ Workflow CI được lưu trong .github/workflows/. Cần cấu hình môi trư�
 - GitHub: https://github.com/dorai4vn/contentpilot-ai
 
 **10. Hướng phát triển tiếp theo**
-Tính năng thử nghiệm RSS thể thao và xuất bản sau khi duyệt được mô tả trong [Tin thể thao từ RSS](docs/architecture/sports-news.md).
+Tính năng thử nghiệm RSS thể thao và xuất bản sau khi duyệt được mô tả trong [Tin thể thao từ RSS](docs/architecture/sports-news.md). Tóm tắt theo code hiện tại (chưa phải kết quả Production):
 
-M5 — Telegram/Discord/Facebook/Instagram Publisher: thêm điểm xuất bản bên ngoài, lưu thông tin kết nối an toàn, worker xử lý hàng đợi, retry có kiểm soát, chống gửi trùng ở mức khả thi và nhật ký lỗi. Mọi hoạt động gửi ra nền tảng ngoài vẫn phải đi qua Human Approval M4. Do bận đi kiếm tiền nên M5 tạm thời chưa thể triển khai trong phiên bản nộp bài này. Có thời gian em sẽ phát triển tiếp.
+- Mỗi lượt chỉ xét bài xuất bản cùng ngày Asia/Dubai (bài có timestamp tương lai bị loại); mốc 48 giờ chỉ dùng làm lịch sử chống trùng.
+- Điểm 0–10 theo barem mặc định 45/40/15 (độ nhận diện / tầm quan trọng / độ mới), ngưỡng mặc định 8, cấu hình riêng theo workspace/dự án; quyết định cũ không bị chấm lại âm thầm khi đổi cấu hình.
+- Hạn mức mỗi lượt: tối đa 10 lần AI viết bản nháp (`SPORTS_NEWS_MAX_PER_RUN = 10`). Theo mặc định mọi bản nháp cần Owner/Admin duyệt đúng phiên bản; ngoại lệ duy nhất là bản đủ điều kiện trong cửa sổ Temporary Auto Publish đang hiệu lực (bullet kế tiếp).
+- Temporary Auto Publish **không bật mặc định**: chỉ là cửa sổ có thời hạn do Owner/Admin chủ động bật, tối đa 8 giờ, tối đa 10 lần thử gửi mỗi lượt, 10 bài mỗi khoảng hai giờ và 40 bài mỗi cửa sổ; có thể tắt ngay. Tin chưa rõ danh tính, tin tiếp nối, tin không chắc chắn và tin được xét lại luôn chỉ duyệt thủ công, và cơ sở dữ liệu chặn chúng khỏi Auto Publish.
+- Chế độ test có giới hạn riêng và không bao giờ vào Auto Publish.
+- Chưa có xác nhận độc lập về việc gửi thật ra kênh ngoài hay kiểm chứng giấy phép ảnh; module kiểm chứng giấy phép ảnh và kiểm chứng sự thật của tin nằm ngoài phạm vi.
+
+M5 — Telegram/Discord/Facebook/Instagram Publisher: thêm điểm xuất bản bên ngoài, lưu thông tin kết nối an toàn, worker xử lý hàng đợi, retry có kiểm soát, chống gửi trùng ở mức khả thi và nhật ký lỗi. Mặc định mọi hoạt động gửi ra nền tảng ngoài đi qua Human Approval M4; ngoại lệ hiện có duy nhất là cửa sổ Temporary Auto Publish có thời hạn của Football News (mục trên), M5 không mở rộng ngoại lệ này. Do bận đi kiếm tiền nên M5 tạm thời chưa thể triển khai trong phiên bản nộp bài này. Có thời gian em sẽ phát triển tiếp.
