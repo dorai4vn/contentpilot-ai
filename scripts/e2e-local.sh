@@ -19,7 +19,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 SUITES=("$@")
-if [[ ${#SUITES[@]} -eq 0 ]]; then SUITES=(smoke content agent-ui approval-ui bulk-approval profiles); fi
+if [[ ${#SUITES[@]} -eq 0 ]]; then SUITES=(smoke content agent-ui approval-ui bulk-approval profiles automation-qa); fi
 PORT="${E2E_PORT:-3100}"
 LOCAL_RE='^(https?://|postgres(ql)?://[^@]*@)(localhost|127\.0\.0\.1)(:[0-9]+)?(/|$)'
 
@@ -55,6 +55,10 @@ export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_KEY"
 export OPENAI_API_KEY="sk-test-local-dummy-00000000000000000000"
 export OPENAI_MODEL="test-model"
 export OPENAI_BASE_URL="http://127.0.0.1:9/v1"
+# Fixed local-only ids so the Automation page (FN08) is available to the automation-qa suite.
+export SPORTS_NEWS_WORKSPACE_ID="7c000000-0000-4000-8000-000000000001"
+export SPORTS_NEWS_PROJECT_ID="7c100000-0000-4000-8000-000000000001"
+export SPORTS_NEWS_TELEGRAM_DESTINATION_ID="7c600000-0000-4000-8000-000000000001"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   echo "==> Building the app against the local Supabase stack"
