@@ -438,15 +438,19 @@ export type Database = {
       };
       get_sports_automation_mode: {
         Args: { p_workspace_id: string; p_project_id: string };
-        Returns: { mode: string; daily_quota: number; version: number; updated_at: string | null }[];
+        Returns: { mode: string; daily_quota: number; version: number; updated_at: string | null; scan_interval_hours: number; posts_per_scan: number; last_scan_at: string | null }[];
       };
       list_sports_automation_events: {
         Args: { p_workspace_id: string; p_project_id: string };
-        Returns: { from_mode: string; to_mode: string; daily_quota: number; created_at: string }[];
+        Returns: { from_mode: string; to_mode: string; daily_quota: number; created_at: string; scan_interval_hours: number | null; posts_per_scan: number | null }[];
       };
       set_sports_automation_mode: {
-        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_mode: string; p_daily_quota: number };
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_mode: string; p_daily_quota: number; p_scan_interval_hours?: number | null; p_posts_per_scan?: number | null };
         Returns: number;
+      };
+      begin_sports_scan: {
+        Args: { p_workspace_id: string; p_project_id: string };
+        Returns: { due: boolean; posts_per_scan: number; scan_interval_hours: number }[];
       };
       claim_sports_auto_publish: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_post_id: string };

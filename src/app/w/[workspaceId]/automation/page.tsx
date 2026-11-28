@@ -30,7 +30,7 @@ export default async function AutomationPage({ params, searchParams }: PageProps
   ]);
   if (windowResult.error || projectResult.error || destinationResult.error || scoringResult.error || modeResult.error || eventsResult.error) throw new Error("automation_control_read_failed");
   const active = windowResult.data?.[0] ?? null;
-  const current = modeResult.data?.[0] ?? { mode: "off", daily_quota: 40, version: 0, updated_at: null };
+  const current = modeResult.data?.[0] ?? { mode: "off", daily_quota: 20, version: 0, updated_at: null, scan_interval_hours: 2, posts_per_scan: 2, last_scan_at: null };
   const mode = current.mode === "semi" || current.mode === "auto" ? current.mode : "off";
   const events = eventsResult.data ?? [];
   const when = (value: string) => new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
@@ -49,7 +49,7 @@ export default async function AutomationPage({ params, searchParams }: PageProps
         </div>
         <div className="football-control-details">
           {mode === "auto" && active ? <p><Clock3 size={16} aria-hidden="true" /> Liên tục từ <time dateTime={active.starts_at}>{when(active.starts_at)}</time>, đến khi đổi chế độ</p> : null}
-          <p>Tối đa 3 bài mỗi lượt quét (2 giờ) · {current.daily_quota} bài mỗi ngày</p>
+          <p>Tối đa {current.posts_per_scan} bài mỗi lượt quét (mỗi {current.scan_interval_hours} giờ, gộp mọi nguồn RSS) · tối đa {current.daily_quota} bài mỗi ngày (giới hạn cứng, không phải mục tiêu)</p>
         </div>
       </section>
       {canManage ? <section className="football-panel p-6" aria-label="Phương thức xuất bản">
@@ -63,14 +63,16 @@ export default async function AutomationPage({ params, searchParams }: PageProps
             <label><input type="radio" name="mode" value="semi" defaultChecked={mode === "semi"} /><span><strong>Semi Publish</strong>Tự quét, chấm điểm, loại trùng, viết caption và xử lý ảnh; người duyệt phải phê duyệt trước khi gửi.</span></label>
             <label><input type="radio" name="mode" value="off" defaultChecked={mode === "off"} /><span><strong>Off</strong>Dừng quét RSS, gọi AI, xử lý ảnh và gửi bài trước mọi cuộc gọi ngoài. Việc đang chạy dừng ở điểm kiểm tra an toàn.</span></label>
           </fieldset>
-          <label className="football-quota">Hạn mức mỗi ngày (1–120)<input name="dailyQuota" type="number" min="1" max="120" step="1" defaultValue={current.daily_quota} required /></label>
+          <label className="football-quota">Daily Limit — bài mỗi ngày (1–120)<input name="dailyQuota" type="number" min="1" max="120" step="1" defaultValue={current.daily_quota} required /></label>
+          <label className="football-quota">Scan Interval — giờ giữa hai lượt quét (2–24, bước 2)<input name="scanIntervalHours" type="number" min="2" max="24" step="2" defaultValue={current.scan_interval_hours} required /></label>
+          <label className="football-quota">Posts per Scan — bài mỗi lượt, tổng mọi nguồn (1–10)<input name="postsPerScan" type="number" min="1" max="10" step="1" defaultValue={current.posts_per_scan} required /></label>
           <button type="submit" className="football-action">Lưu</button>
         </form>
       </section> : null}
-      {canManage && mode === "auto" ? <section className="football-panel p-6" aria-label="Dừng khẩn cấp"><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle size={18} aria-hidden="true" /> Emergency Stop</h2><p className="mt-2 text-sm text-slate-600">Dừng tự đăng ngay và chuyển về Off: không quét RSS, không gọi AI, không gửi bài.</p><form action={emergencyStop} className="mt-4"><input type="hidden" name="workspaceId" value={workspace.id} /><input type="hidden" name="dailyQuota" value={current.daily_quota} /><button type="submit" className="football-stop">Dừng khẩn cấp (Off)</button></form></section> : null}
+      {canManage && mode === "auto" ? <section className="football-panel p-6" aria-label="Dừng khẩn cấp"><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle size={18} aria-hidden="true" /> Emergency Stop</h2><p className="mt-2 text-sm text-slate-600">Dừng tự đăng ngay và chuyển về Off: không quét RSS, không gọi AI, không gửi bài.</p><form action={emergencyStop} className="mt-4"><input type="hidden" name="workspaceId" value={workspace.id} /><input type="hidden" name="dailyQuota" value={current.daily_quota} /><input type="hidden" name="scanIntervalHours" value={current.scan_interval_hours} /><input type="hidden" name="postsPerScan" value={current.posts_per_scan} /><button type="submit" className="football-stop">Dừng khẩn cấp (Off)</button></form></section> : null}
       <section className="football-panel p-6" aria-label="Nhật ký chế độ">
         <h2 className="text-lg font-bold">Lịch sử thao tác</h2>
-        {events.length ? <ul className="football-mode-log">{events.map((event) => <li key={event.created_at}><time dateTime={event.created_at}>{when(event.created_at)}</time><span>{event.from_mode.toUpperCase()} → {event.to_mode.toUpperCase()} · {event.daily_quota}/ngày</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">Chưa có thay đổi chế độ nào.</p>}
+        {events.length ? <ul className="football-mode-log">{events.map((event) => <li key={event.created_at}><time dateTime={event.created_at}>{when(event.created_at)}</time><span>{event.from_mode.toUpperCase()} → {event.to_mode.toUpperCase()} · {event.daily_quota}/ngày{event.scan_interval_hours ? ` · ${event.scan_interval_hours}h · ${event.posts_per_scan} bài/lượt` : ""}</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">Chưa có thay đổi chế độ nào.</p>}
       </section>
       <section className="football-panel p-6" aria-label="Cấu hình chấm điểm">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Tiêu chuẩn xuất bản</h2><p className="mt-1 text-sm text-slate-600">Áp dụng từ lượt quét tiếp theo. Bài cũ giữ điểm và cấu hình lúc được chấm.</p></div><span className="text-xs text-slate-500">Phiên bản {scoring?.version ?? 0}</span></div>

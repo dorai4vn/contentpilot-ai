@@ -28,15 +28,15 @@ SQL
 setmode() {
   q -o /dev/null <<SQL
 $(as $OWNER)
-select public.set_sports_automation_mode('$WS','$PROJECT','$CHANNEL','$1',$2);
+select public.set_sports_automation_mode('$WS','$PROJECT','$CHANNEL','$1',$2,${3:-null},${4:-null});
 SQL
 }
 
 N=8
-# Earlier fixtures used the current 2h slot (cap 3 per slot): move them out of it.
+# Earlier fixtures used the current 2h slot (cap = posts per scan): move them out of it.
 q -c "update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000"
 BASE=$(today)
-setmode auto $((BASE + 3))
+setmode auto $((BASE + 3)) 2 3
 for i in $(seq 1 $N); do draft $i; done
 OUT=$(mktemp -d)
 for i in $(seq 1 $N); do ( claim $i > "$OUT/$i" ) & done
@@ -49,7 +49,7 @@ fi
 echo "  ok - $N concurrent auto claims never exceed the daily quota (3)"
 
 # Mode switch racing with claims: after the switch to Off commits, nothing is claimable.
-setmode auto 120
+setmode auto 120 2 3
 for i in $(seq 21 $((20 + N))); do draft $i; done
 rm -f "$OUT"/*
 for i in $(seq 21 $((20 + N))); do ( claim $i > "$OUT/$i" ) & done
@@ -70,4 +70,23 @@ if [[ "$OPEN" != "0" || "$AFTER" != "0" || "$DUP" != "0" ]]; then
 fi
 echo "  ok - concurrent switch to Off leaves no open window, no claim and no duplicate delivery"
 setmode semi 40
+
+# FN09 scan gate: of N concurrent scheduler ticks exactly one scan is due; none while Off.
+scan() { q <<SQL
+$(as $WORKER)
+select due from public.begin_sports_scan('$WS','$PROJECT');
+SQL
+}
+setmode semi 40 2 2
+q -c "update contentpilot_private.sports_automation_modes set last_scan_at = null where project_id='$PROJECT'"
+mkdir -p "$OUT"; rm -f "$OUT"/*
+for i in $(seq 1 $N); do ( scan | tail -1 > "$OUT/s$i" ) & done
+wait
+DUE=$(cat "$OUT"/s* | grep -c '^t$' || true)
+if [[ "$DUE" != "1" ]]; then echo "ASSERTION FAILED: $N concurrent ticks produced $DUE scans (expected exactly 1)" >&2; exit 1; fi
+echo "  ok - $N concurrent scheduler ticks start exactly one scan"
+setmode off 40 2 2
+if [[ "$(scan | tail -1)" != "f" ]]; then echo "ASSERTION FAILED: scan due while Off" >&2; exit 1; fi
+echo "  ok - no scan is due while Off"
+setmode semi 40 2 2   # leave Semi for the next concurrency test, as before
 rm -rf "$OUT"

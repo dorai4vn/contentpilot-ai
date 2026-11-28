@@ -22,7 +22,7 @@ import { findSportsPostPhoto } from "./licensed-photo";
 import { findSourceSportsPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
-import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_DRAFT_CALL_BUDGET, SPORTS_SCORING_RUBRIC } from "./scoring";
+import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_DRAFT_CALL_BUDGET, SPORTS_NEWS_OUTPUT_PER_SCAN, SPORTS_SCORING_RUBRIC } from "./scoring";
 
 const configSchema = z.object({
   workspaceId: z.uuid(),
@@ -197,6 +197,19 @@ export async function runSportsNews(config: Config, testDate?: string) {
   if (await readAutomationMode(client, config.workspaceId, config.projectId) === "off") {
     return { mode: "off" as const, skipped: "automation_off" as const, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, autoPublishActive: false, autoPublishUntil: null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: [] as string[], assessed: 0, drafted: 0, itemFailures: 0 };
   }
+  // FN09 scan gate (DB-side, row-locked): a tick before the configured interval, a concurrent tick or an
+  // unconfigured project does no RSS/AI/image work. Approved deliveries still flow via the delivery-only run.
+  // Manual test runs (testDate) never touch the cadence.
+  let postsPerScan = SPORTS_NEWS_OUTPUT_PER_SCAN;
+  if (!testDate) {
+    const gate = await client.rpc("begin_sports_scan", { p_workspace_id: config.workspaceId, p_project_id: config.projectId });
+    if (gate.error || !gate.data?.[0]) throw new Error("sports_news_scan_gate_failed");
+    if (!gate.data[0].due) {
+      const deliveryOnly = await runSportsDelivery(config);
+      return { autoPublishUntil: null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: [] as string[], assessed: 0, drafted: 0, itemFailures: 0, ...deliveryOnly, mode: deliveryOnly.mode, skipped: "scan_not_due" as const };
+    }
+    postsPerScan = gate.data[0].posts_per_scan;
+  }
   const scoringResult = await client.from("sports_news_scoring_configs")
     .select("version,threshold,reach_weight,importance_weight,freshness_weight,engagement_weight,fallback_mode")
     .eq("workspace_id", config.workspaceId).eq("project_id", config.projectId).maybeSingle();
@@ -314,7 +327,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     accepted.push({ identity: entry.identity, sourceUrl: entry.item.url, title: entry.item.title, origin: "stored" });
     leads.push(entry);
   }
-  const selection = selectSportsNews(leads, threshold, scoring?.fallback_mode ?? "highest");
+  const selection = selectSportsNews(leads, threshold, scoring?.fallback_mode ?? "highest", postsPerScan);
   const fallback = !testDate && selection.fallback;
   const selected = testDate ? (selection.fallback ? [] : selection.selected.slice(0, 1)) : selection.selected;
   const selectedKeys = new Set(selected.map((entry) => entry.key));
@@ -432,7 +445,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     // reconsidered (previously archived/rejected) events are manual review only; the database enforces it too.
     // Persistent Auto (owner-approved FN08) also permits those; confirmed duplicates never become drafts.
     const eligible = autoWindow.persistent ? drafts : drafts.filter((draft) => draft.manual === null);
-    const sent = await Promise.allSettled(eligible.slice(0, AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
+    const sent = await Promise.allSettled(eligible.slice(0, autoWindow.persistent ? postsPerScan : AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
       sendTemporarySportsPost(client, autoTarget, tokens[autoTarget.destinationId], draft)));
     report.autoPublished = sent.filter((item) => item.status === "fulfilled" && item.value).length;
     report.autoPublishFailures = sent.length - report.autoPublished;

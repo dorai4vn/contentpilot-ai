@@ -89,7 +89,9 @@ async function pickMode(page, value, quota) {
     check(await shown(page.locator('section[aria-label="Chế độ Auto Post"] h2:text-is("Off")')), "default mode shown is Off");
     check(await page.locator('input[name="mode"][value="off"]').isChecked(), "Off radio preselected");
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "no Emergency Stop while Off");
-    check(await page.locator('input[name="dailyQuota"]').inputValue() === "40", "default daily quota 40");
+    check(await page.locator('input[name="dailyQuota"]').inputValue() === "20", "default daily limit 20");
+    check(await page.locator('input[name="scanIntervalHours"]').inputValue() === "2", "default scan interval 2h");
+    check(await page.locator('input[name="postsPerScan"]').inputValue() === "2", "default 2 posts per scan");
     check(await page.locator('[aria-current="page"][data-testid="nav-automation"]').count() === 1, "nav marks Automation current");
     await shot(page, "01-off-desktop");
 
@@ -227,7 +229,7 @@ async function pickMode(page, value, quota) {
       });
       if (info) { seen.add(`${info.tag}:${info.name}`); if (!info.visible && info.tag !== "INPUT") focusVisibleOk = false; }
     }
-    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
+    check(["INPUT:mode", "INPUT:dailyQuota", "INPUT:scanIntervalHours", "INPUT:postsPerScan", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
     check(focusVisibleOk, "focused buttons/links show a visible focus indicator");
     // Keyboard-only mode change: arrow key on radio group then Enter on the button.
     await m.locator('input[name="mode"][value="auto"]').focus();
