@@ -44,7 +44,7 @@ export default async function AutomationPage({ params, searchParams }: PageProps
       {query.error ? <p role="alert" className="football-feedback is-error">Không lưu được cấu hình. Kiểm tra quyền và giới hạn rồi thử lại.</p> : null}
       <section className="football-panel p-6" aria-label="Chế độ Auto Post">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div><p className="football-eyebrow">Chế độ hiện tại</p><h2 className="text-xl font-bold">{mode === "auto" ? "Auto Publish" : mode === "semi" ? "Semi Publish" : "Off"}</h2><p className="mt-2 text-sm text-slate-600">{projectResult.data?.name ?? "Dự án RSS"} · {destinationResult.data?.name ?? "Telegram"}</p></div>
+          <div><p className="football-eyebrow">Chế độ hiện tại</p><h2 className="text-xl font-bold">{mode === "auto" ? "Auto Publish" : mode === "semi" ? "Semi Publish" : "Off"}</h2><p className="mt-2 text-sm text-slate-600">ContentPilot AI · Tự động đăng tin mỗi ngày trên các kênh social brand</p></div>
           <span className={`football-state ${mode === "auto" ? "is-on" : ""}`}><Power size={15} aria-hidden="true" />{mode === "auto" ? "Đang tự đăng" : mode === "semi" ? "Chờ duyệt trước khi gửi" : "Đã tắt"}</span>
         </div>
         <div className="football-control-details">
