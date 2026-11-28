@@ -137,6 +137,24 @@ describe("runSportsNews semantic deduplication", () => {
     }
   });
 
+  it("same teams and date in different known competitions both materialize (Vietnamese + English), payload carries the window keys", async () => {
+    seed("Arsenal thắng Chelsea 1-0 ở Premier League", "Arsenal hạ Chelsea.", "https://a.vn/league");
+    feed(article("[10] Arsenal beat Chelsea 1-0 in the Europa League", "Arsenal beat Chelsea.", "https://b.com/europe"));
+    const report = await runSportsNews(readSportsNewsConfig());
+    expect(report).toMatchObject({ semanticDuplicates: 0, drafted: 1 });
+    const event = recorded()[0].p_event as { clusterKey: string; clusterWindow: string[]; manualReviewReason?: string };
+    expect(event.clusterWindow).toContain(event.clusterKey);
+    expect(event.manualReviewReason).toBeUndefined();
+  });
+
+  it("a report without a competition next to a known-competition match is kept but manual-review only", async () => {
+    seed("Arsenal thắng Chelsea 1-0 ở Premier League", "Arsenal hạ Chelsea.", "https://a.vn/league");
+    feed(article("[10] Arsenal thắng Chelsea 1-0", "Arsenal hạ Chelsea.", "https://b.vn/bare"));
+    const report = await runSportsNews(readSportsNewsConfig());
+    expect(report).toMatchObject({ semanticDuplicates: 0, drafted: 1 });
+    expect(recorded()[0].p_event).toMatchObject({ manualReviewReason: "uncertain_facts" });
+  });
+
   it("different players' injuries and transfers at one club are both processed", async () => {
     seed("Bukayo Saka chấn thương, vắng mặt hai tuần", "Arsenal xác nhận Saka chấn thương đùi.", "https://a.vn/saka");
     feed(

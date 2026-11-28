@@ -65,7 +65,7 @@ for i in $(seq 1 $N); do
   (
     K=$(printf "%064x" $((7000+i)))
     C=$(printf "%064x" $((8000+i)))
-    E="{\"decision\":\"new\",\"specific\":true,\"eventKey\":\"$K\",\"clusterKey\":\"$C\",\"identity\":{\"version\":\"event-v3\"},\"reasons\":[]}"
+    E="{\"decision\":\"new\",\"specific\":true,\"eventKey\":\"$K\",\"clusterKey\":\"$C\",\"identity\":{\"version\":\"event-v4\"},\"reasons\":[]}"
     psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -o /dev/null <<SQL
 set role authenticated;
 select set_config('request.jwt.claim.sub', '$WORKER', false);
@@ -81,3 +81,28 @@ if [[ "$DISTINCT" != "$N" ]]; then
   exit 1
 fi
 echo "  ok - $N concurrent distinct events all materialize (no false merge under concurrency)"
+
+# Same teams/date, DIFFERENT known competitions, reported concurrently: the competition is in the cluster key, so
+# each competition's reports collapse to exactly one post and the two competitions both materialize.
+CL_A=$(printf 'a%.0s' $(seq 64)); CL_B=$(printf 'b%.0s' $(seq 64))
+for i in $(seq 1 $N); do
+  (
+    if (( i % 2 )); then C=$CL_A; NAME=Pl; else C=$CL_B; NAME=Eu; fi
+    K=$(printf "%064x" $((20000+i)))
+    E="{\"decision\":\"new\",\"specific\":true,\"eventKey\":\"$K\",\"clusterKey\":\"$C\",\"clusterWindow\":[\"$C\"],\"identity\":{\"version\":\"event-v4\"},\"reasons\":[]}"
+    psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -o /dev/null <<SQL
+set role authenticated;
+select set_config('request.jwt.claim.sub', '$WORKER', false);
+select public.record_sports_news_event_assessment('$WS', '$PROJECT', 'https://comp.example/$i', '$(printf "%064x" $((21000+i)))',
+  8, 'Comp $NAME $i', 'Caption', null, 'RSS', array[]::uuid[], '{}'::jsonb, '$E'::jsonb);
+SQL
+  ) &
+done
+wait
+PL=$(psql "$TEST_DATABASE_URL" -X -At -c "select count(*) from public.content_posts where title like 'Comp Pl %'")
+EU=$(psql "$TEST_DATABASE_URL" -X -At -c "select count(*) from public.content_posts where title like 'Comp Eu %'")
+if [[ "$PL" != "1" || "$EU" != "1" ]]; then
+  echo "ASSERTION FAILED: expected 1 post per competition, got premier=$PL europa=$EU" >&2
+  exit 1
+fi
+echo "  ok - concurrent same-teams reports in two competitions: exactly one post per competition"

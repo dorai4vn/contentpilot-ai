@@ -7,7 +7,7 @@ import { dubaiDate } from "./publication-day";
  * same identity, so fixtures and regressions are reproducible. It complements (never replaces) the
  * URL and normalized-headline deduplication.
  */
-export const EVENT_IDENTITY_VERSION = "event-v3";
+export const EVENT_IDENTITY_VERSION = "event-v4";
 
 export type EventType = "match_result" | "match_preview" | "transfer" | "injury" | "coach" | "discipline" | "other";
 export type EventStatus = "rumor" | "reported" | "official";
@@ -39,6 +39,12 @@ export type EventIdentity = {
   date: string;
   eventKey: string;
   clusterKey: string;
+  /**
+   * clusterKey computed for date-1, date and date+1 (this event's own clusterKey included). The same-subject rule
+   * accepts reports up to one calendar day apart, so the database recheck matches any of these keys: TS and DB
+   * apply the same date semantics even when two runs race. Order: previous day, same day, next day.
+   */
+  clusterWindow: string[];
 };
 
 export type KnownEvent = {
@@ -283,6 +289,9 @@ export function extractFacts(title: string, summary: string, category: Category)
   return [...facts].sort();
 }
 
+function shiftDate(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export function buildEventIdentity(item: { title: string; summary: string; publishedAt: number; categories?: string }): EventIdentity {
@@ -304,6 +313,7 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
     return {
       version: EVENT_IDENTITY_VERSION, subjectKind: "unresolved", unresolvedReason: reason, teams, people,
       participants: [...teams, ...people], competition, type, status: "reported", scores, facts: [], date, eventKey: key, clusterKey: key,
+      clusterWindow: [key],
     };
   };
   if (cats.found.length === 0) return unresolved("no_event_type");
@@ -324,12 +334,16 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
     if (teams.length > 2) return unresolved("more_than_two_teams", "other", teams);
     const type: EventType = cats.preview && !titleScores.length ? "match_preview" : "match_result";
     const pair = [...teams].sort();
-    const clusterKey = hash([EVENT_IDENTITY_VERSION, "match", type, pair.join(","), date].join("|"));
+    // The competition is part of the key: the same two teams in two different known competitions are different
+    // matches. An unknown competition hashes as "" (it is flagged for manual review by classifyEvent instead).
+    const clusterAt = (d: string) => hash([EVENT_IDENTITY_VERSION, "match", type, pair.join(","), competition ?? "", d].join("|"));
+    const clusterKey = clusterAt(date);
     const facts = extractFacts(title, summary, "match");
     const eventKey = hash([clusterKey, type === "match_result" ? scores.join(",") : "", facts.join(",")].join("|"));
     return {
       version: EVENT_IDENTITY_VERSION, subjectKind: "match", unresolvedReason: null, teams: pair, people: [],
       participants: pair, competition, type, status: "reported", scores: type === "match_result" ? scores : [], facts, date, eventKey, clusterKey,
+      clusterWindow: [clusterAt(shiftDate(date, -1)), clusterKey, clusterAt(shiftDate(date, 1))],
     };
   }
 
@@ -340,12 +354,14 @@ export function buildEventIdentity(item: { title: string; summary: string; publi
   if (people.length > 2) return unresolved("too_many_people", type, teams, people);
   const status = eventStatus(titleFolded);
   const withTeams = type === "transfer" || type === "coach";
-  const clusterKey = hash([EVENT_IDENTITY_VERSION, "person", type, people.join(","), withTeams ? teams.join(",") : "", date].join("|"));
+  const clusterAt = (d: string) => hash([EVENT_IDENTITY_VERSION, "person", type, people.join(","), withTeams ? teams.join(",") : "", d].join("|"));
+  const clusterKey = clusterAt(date);
   const facts = extractFacts(title, summary, category);
   const eventKey = hash([clusterKey, status, facts.join(",")].join("|"));
   return {
     version: EVENT_IDENTITY_VERSION, subjectKind: "person", unresolvedReason: null, teams, people,
     participants: [...teams, ...people], competition, type, status, scores: [], facts, date, eventKey, clusterKey,
+    clusterWindow: [clusterAt(shiftDate(date, -1)), clusterKey, clusterAt(shiftDate(date, 1))],
   };
 }
 
@@ -387,7 +403,8 @@ export function sameSubject(candidate: EventIdentity, known: EventIdentity): { s
   if (candidate.subjectKind === "match") {
     if (!sameSet(candidate.teams, known.teams)) return none;
     // Same two teams in two different known competitions are different matches (e.g. league vs cup).
-    if (candidate.competition && known.competition && candidate.competition !== known.competition) return none;
+    // A known vs an unknown competition is NOT assumed to be the same match (classifyEvent flags it for review).
+    if (candidate.competition !== known.competition) return none;
     return { same: true, reasons: [{ code: "same_team_pair", detail: candidate.teams.join(" vs ") }, dateReason] };
   }
   if (candidate.type !== known.type) return none; // a different kind of news about one player is a different event
@@ -471,7 +488,19 @@ export function classifyEvent(candidate: EventIdentity, known: readonly KnownEve
     reasons.push({ code: "no_new_information", detail: `${old.status}->${candidate.status}` });
     return { decision: "duplicate", matched: entry, reasons };
   }
-  return best ?? { decision: "new", reasons: [{ code: "no_matching_event" }] };
+  if (best) return best;
+  // Same two teams within the date window but the competition is known on only one side: not provably the same
+  // match, so it is kept (no false-positive suppression) and routed to manual review only.
+  if (candidate.subjectKind === "match") {
+    const unverified = known.find((entry) => {
+      const old = entry.identity;
+      return old.version === candidate.version && old.subjectKind === "match" && old.type === candidate.type
+        && sameSet(candidate.teams, old.teams) && daysApart(candidate.date, old.date) <= 1
+        && (candidate.competition === null) !== (old.competition === null);
+    });
+    if (unverified) return { decision: "new", reasons: [{ code: "competition_unverified", detail: `${unverified.identity.competition ?? "none"}|${candidate.competition ?? "none"}` }] };
+  }
+  return { decision: "new", reasons: [{ code: "no_matching_event" }] };
 }
 
 const SUBJECT_KINDS = new Set(["match", "person", "unresolved"]);
@@ -502,6 +531,8 @@ export function parseStoredIdentity(value: unknown): EventIdentity | null {
     scores: strings(v.scores),
     facts: strings(v.facts),
     date: v.date, eventKey: v.eventKey, clusterKey: v.clusterKey,
+    clusterWindow: strings(v.clusterWindow).filter((k) => key.test(k)).length === 3 && strings(v.clusterWindow).includes(v.clusterKey)
+      ? strings(v.clusterWindow) : [v.clusterKey],
   };
 }
 
@@ -515,6 +546,7 @@ export type ManualReviewReason = "unresolved_identity" | "follow_up" | "reconsid
 export function manualReviewReason(identity: EventIdentity, verdict: EventDecision, reconsidered = false): ManualReviewReason | null {
   if (identity.subjectKind === "unresolved") return "unresolved_identity";
   if (verdict.decision === "follow_up") return verdict.reasons.some((r) => r.code === "fact_changed") ? "uncertain_facts" : "follow_up";
+  if (verdict.reasons.some((r) => r.code === "competition_unverified")) return "uncertain_facts";
   return reconsidered ? "reconsidered" : null;
 }
 
@@ -528,6 +560,7 @@ export function buildEventPayload(identity: EventIdentity, verdict: EventDecisio
     ...(manual ? { manualReviewReason: manual } : {}),
     eventKey: identity.eventKey,
     clusterKey: identity.clusterKey,
+    clusterWindow: identity.clusterWindow,
     identity,
     reasons: verdict.reasons,
     ...(matched ? {

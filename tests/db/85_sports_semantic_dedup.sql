@@ -338,7 +338,7 @@ returns jsonb language sql as $$
   select jsonb_strip_nulls(jsonb_build_object(
     'decision', decision, 'specific', specific, 'eventKey', md5(k) || md5(k), 'clusterKey', md5(c) || md5(c),
     'matchedEventKey', case when parent is null then null else md5(parent) || md5(parent) end,
-    'identity', jsonb_build_object('version', 'event-v3', 'subjectKind', 'match'),
+    'identity', jsonb_build_object('version', 'event-v4', 'subjectKind', 'match'),
     'reasons', case when decision = 'follow_up' then '[{"code":"new_material_facts"}]'::jsonb else '[]'::jsonb end,
     'evidence', jsonb_build_object('matchedTitle', 'x')))
 $$;
@@ -468,3 +468,79 @@ select pg_temp.check_event(
   not has_function_privilege('anon', 'public.claim_sports_auto_publish(uuid,uuid,uuid,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.claim_sports_auto_publish(uuid,uuid,uuid,uuid)', 'EXECUTE'),
   'claim_sports_auto_publish keeps its original least-privilege grants');
+
+-- ===========================================================================================================
+-- FN05 competition + date-window semantics: the keys hash the normalized competition, and the recheck matches
+-- the candidate's date-1/date/date+1 cluster keys (same ±1 day rule as the TypeScript classifier).
+-- ===========================================================================================================
+create function pg_temp.evw(k text, c text, win text[]) returns jsonb language sql as $$
+  select jsonb_strip_nulls(jsonb_build_object('decision', 'new', 'specific', true, 'eventKey', md5(k) || md5(k), 'clusterKey', md5(c) || md5(c),
+    'clusterWindow', (select jsonb_agg(md5(w) || md5(w)) from unnest(win) w),
+    'identity', jsonb_build_object('version', 'event-v4', 'subjectKind', 'match'), 'reasons', '[]'::jsonb))
+$$;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+
+-- Premier League (cluster d1, window d0,d1,d2) and Europa League (cluster e1, window e0,e1,e2): same teams and date.
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://cmp.vn/league', repeat('71',32),
+  8, 'Arsenal thắng Chelsea (Premier League)', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.evw('pl-1', 'pl-1', array['pl-0','pl-1','pl-2'])) as cmp_league \gset
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://cmp.com/europe', repeat('72',32),
+  8, 'Arsenal beat Chelsea (Europa League)', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.evw('eu-1', 'eu-1', array['eu-0','eu-1','eu-2'])) as cmp_europe \gset
+select pg_temp.check_event(:'cmp_league' is not null and :'cmp_europe' is not null,
+  'same teams and date in two different competitions both materialize');
+
+-- The next day's report of the SAME competition (its window contains the league cluster d1) is a duplicate...
+select public.record_sports_news_event_assessment(:'ws', :'project', 'https://cmp.vn/league-next', repeat('73',32),
+  8, 'Chelsea thua Arsenal hôm sau', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.evw('pl-3', 'pl-2', array['pl-1','pl-2','pl-3'])) is null as next_day_null \gset
+select pg_temp.check_event(:'next_day_null'
+  and exists (select 1 from public.sports_news_event_matches where source_url = 'https://cmp.vn/league-next'
+    and reasons->0->>'code' = 'same_event_cluster'),
+  'a same-competition report one day apart is rejected through the window key with a structured reason');
+-- ...but two days apart (window d2,d3,d4 shares nothing with d1) is a different event and materializes.
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://cmp.vn/league-late', repeat('74',32),
+  8, 'Arsenal đá lại Chelsea', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.evw('pl-5', 'pl-4', array['pl-3','pl-4','pl-5'])) is not null,
+  'a report two days apart materializes (boundary of the date window)');
+
+-- A payload without clusterWindow keeps the exact-cluster behaviour; a malformed window is rejected.
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws', :'project', 'https://cmp.vn/nowin', repeat('75',32),
+  8, 'Không cửa sổ', 'Caption', null, 'RSS', array[:'channel'::uuid], '{}'::jsonb,
+  pg_temp.evw('pl-6', 'eu-1', null)) is null,
+  'without clusterWindow the exact clusterKey is still enforced');
+do $$
+declare bad jsonb;
+begin
+  set local role authenticated;
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000006c3', false);
+  foreach bad in array array[
+    jsonb_build_array(repeat('1',64), repeat('2',64), repeat('3',64), repeat('4',64)),
+    jsonb_build_array('not-a-key'),
+    jsonb_build_array(),
+    '"x"'::jsonb
+  ] loop
+    begin
+      perform public.record_sports_news_event_assessment('6c000000-0000-0000-0000-000000000001'::uuid,
+        '6c100000-0000-0000-0000-000000000001'::uuid, 'https://cmp.vn/bad', repeat('76',32), 8, 'Xấu', 'Caption', null, 'RSS',
+        array[]::uuid[], '{}'::jsonb,
+        jsonb_build_object('decision','new','specific',true,'eventKey',repeat('1',64),'clusterKey',repeat('2',64),
+          'clusterWindow', bad, 'identity','{}'::jsonb,'reasons','[]'::jsonb));
+      raise exception 'malformed clusterWindow permitted: %', bad;
+    exception when invalid_parameter_value then null;
+    end;
+  end loop;
+end $$;
+reset role;
+select pg_temp.check_event(true, 'malformed clusterWindow payloads are rejected');
+
+-- Cross-workspace isolation: another workspace's worker materializes the same cluster keys independently.
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker2', false);
+select pg_temp.check_event(public.record_sports_news_event_assessment(:'ws2', :'project2', 'https://cmp.vn/other-ws', repeat('77',32),
+  8, 'Cùng cụm, workspace khác', 'Caption', null, 'RSS', array[]::uuid[], '{}'::jsonb,
+  pg_temp.evw('pl-1', 'pl-1', array['pl-0','pl-1','pl-2'])) is not null,
+  'the same cluster in another workspace is not blocked (workspace isolation)');
+reset role;

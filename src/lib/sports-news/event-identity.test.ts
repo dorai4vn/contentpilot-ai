@@ -214,6 +214,46 @@ describe("material facts (deterministic, no AI)", () => {
     expect(verdict("Arsenal thắng Chelsea 1-0 ở Europa League", "Arsenal hạ Chelsea.", [league]).decision).toBe("new");
   });
 
+  it("competition is part of clusterKey/eventKey: same teams and date in two known competitions never share a key", () => {
+    const league = buildEventIdentity(item("Arsenal thắng Chelsea 1-0 ở Premier League", "Arsenal hạ Chelsea."));
+    const europe = buildEventIdentity(item("Arsenal beat Chelsea 1-0 in the Europa League", "Arsenal beat Chelsea."));
+    expect([league.competition, europe.competition]).toEqual(["premier-league", "europa-league"]);
+    expect(league.clusterKey).not.toBe(europe.clusterKey);
+    expect(league.eventKey).not.toBe(europe.eventKey);
+    // no cluster of one competition's three-day window can hit the other's (the DB matches on these keys)
+    expect(league.clusterWindow.some((k) => europe.clusterWindow.includes(k))).toBe(false);
+    expect(classifyEvent(europe, [{ identity: league, sourceUrl: "https://a.vn/l" }]).decision).toBe("new");
+    // reversed team order + other language in the SAME competition is still the same cluster
+    const again = buildEventIdentity(item("Chelsea thua Arsenal 0-1 ở Premier League", "Chelsea gục ngã."));
+    expect(again.clusterKey).toBe(league.clusterKey);
+  });
+
+  it("unknown competition vs known competition is not suppressed but forced to manual review", () => {
+    const league = known("Arsenal thắng Chelsea 1-0 ở Premier League", "Arsenal hạ Chelsea.", "https://a.vn/l");
+    const bare = buildEventIdentity(item("Arsenal thắng Chelsea 1-0", "Arsenal hạ Chelsea."));
+    expect(bare.competition).toBeNull();
+    const result = classifyEvent(bare, [league]);
+    expect(result.decision).toBe("new");
+    expect(codes(result)).toEqual(["competition_unverified"]);
+    expect(manualReviewReason(bare, result)).toBe("uncertain_facts");
+    // two reports that both lack a competition are still duplicates of each other
+    const other = known("Chelsea thua Arsenal 0-1", "Chelsea gục ngã.", "https://b.vn/x");
+    expect(classifyEvent(bare, [other]).decision).toBe("duplicate");
+  });
+
+  it("date boundary: reports one calendar day apart share a window key (DB recheck); two days apart do not", () => {
+    const d1 = buildEventIdentity(item("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng.", "2026-11-27T10:00:00+07:00"));
+    const d2 = buildEventIdentity(item("Bayern thua Lille 0-1 ở Champions League", "Bayern gục ngã.", "2026-11-28T10:00:00+07:00"));
+    const d3 = buildEventIdentity(item("Bayern thua Lille 0-1 ở Champions League", "Bayern gục ngã.", "2026-11-29T10:00:00+07:00"));
+    expect(d1.clusterWindow).toHaveLength(3);
+    expect(d1.clusterWindow[1]).toBe(d1.clusterKey);
+    expect(d1.clusterWindow).toContain(d2.clusterKey);
+    expect(d2.clusterWindow).toContain(d1.clusterKey);
+    expect(d1.clusterWindow).not.toContain(d3.clusterKey);
+    expect(classifyEvent(d2, [{ identity: d1, sourceUrl: "u" }]).decision).toBe("duplicate");
+    expect(classifyEvent(d3, [{ identity: d1, sourceUrl: "u" }]).decision).toBe("new");
+  });
+
   it("manualReviewReason: regular items have none, unresolved/follow-up/reconsidered are manual", () => {
     const fresh = buildEventIdentity(item("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich."));
     expect(manualReviewReason(fresh, classifyEvent(fresh, []))).toBeNull();

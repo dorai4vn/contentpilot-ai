@@ -48,6 +48,11 @@ begin
      or coalesce(p_event->>'eventKey', '') !~ '^[0-9a-f]{64}$'
      or coalesce(p_event->>'clusterKey', '') !~ '^[0-9a-f]{64}$'
      or coalesce(p_event->>'decision', '') not in ('new', 'follow_up')
+     or (p_event ? 'clusterWindow' and (
+           jsonb_typeof(p_event->'clusterWindow') <> 'array'
+           or jsonb_array_length(p_event->'clusterWindow') not between 1 and 3
+           or exists (select 1 from jsonb_array_elements(p_event->'clusterWindow') w
+                      where jsonb_typeof(w) <> 'string' or (w #>> '{}') !~ '^[0-9a-f]{64}$')))
      or (p_event ? 'specific' and coalesce(p_event->>'specific', '') not in ('true', 'false'))
      or (p_event ? 'manualReviewReason' and coalesce(p_event->>'manualReviewReason', '')
          not in ('unresolved_identity', 'follow_up', 'reconsidered', 'uncertain_facts'))
@@ -135,6 +140,7 @@ declare
   v_post uuid;
   v_key text;
   v_cluster text;
+  v_window text[];
   v_specific boolean;
   v_follow boolean := false;
   v_reject text;
@@ -153,6 +159,11 @@ begin
   v_key := p_event->>'eventKey';
   v_cluster := p_event->>'clusterKey';
   v_specific := coalesce(p_event->>'specific', 'false') = 'true';
+  -- Cluster keys for date-1/date/date+1 (the TypeScript same-subject rule accepts reports one day apart). The
+  -- competition is part of every key, so two different known competitions never share a cluster.
+  v_window := case when p_event ? 'clusterWindow'
+    then array(select jsonb_array_elements_text(p_event->'clusterWindow')) else array[v_cluster] end;
+  if not v_cluster = any(v_window) then v_window := v_window || v_cluster; end if;
 
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_project_id::text, 0));
 
@@ -171,7 +182,7 @@ begin
       v_reject := 'same_event_key';
     elsif not v_follow and exists (
       select 1 from public.sports_news_items n
-      where n.project_id = p_project_id and n.cluster_key = v_cluster
+      where n.project_id = p_project_id and n.cluster_key = any(v_window)
         and contentpilot_private.sports_item_blocks_event(n.workspace_id, n.post_id)
     ) then
       v_reject := 'same_event_cluster';
@@ -188,7 +199,7 @@ begin
     elsif exists (
       select 1 from public.sports_news_items n
       where n.project_id = p_project_id and n.post_id is not null
-        and (n.event_key = v_key or n.cluster_key = v_cluster)
+        and (n.event_key = v_key or n.cluster_key = any(v_window))
         and not contentpilot_private.sports_item_blocks_event(n.workspace_id, n.post_id)
     ) then
       v_manual := 'reconsidered';
