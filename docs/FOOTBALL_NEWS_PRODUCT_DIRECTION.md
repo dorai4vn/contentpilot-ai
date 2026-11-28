@@ -30,5 +30,12 @@ Decision date: 2026-11-27. Product owner approved semantic event deduplication, 
 - Prioritize six screens: Overview, News Feed, Automation (including scoring configuration), Review Queue, Activity Logs, Settings. Retain legacy Content Studio as secondary navigation. Desktop-first, responsive mobile, Light/Dark/System with persisted preference.
 - Deliver working backend and real data before visual polish. QC both themes, mobile controls, accessibility and regression behavior before production release.
 
+## Three-mode automation control — FN08 (owner-approved 2026-11-28)
+- **Auto**: persistent (no expiry) until the mode changes. **Semi**: RSS, scoring, dedup, caption and image run automatically; a human approves the exact version before delivery. **Off**: no RSS, AI, image processing or delivery; checked before every external call, in-flight work stops at safe checkpoints.
+- 2h cadence, max 10 per run, configurable daily quota (1–120, Asia/Dubai day), score configuration, dedup and delivery idempotency are unchanged. Auto permits `unresolved_identity`, `uncertain_facts`, `follow_up` and `reconsidered` without manual approval; confirmed duplicates stay blocked. No independent fact checking; test mode stays isolated.
+- Migration `20261128090000_sports_automation_modes.sql`: no mode row means Semi (existing behaviour, never silently Auto). Only Owner/Admin may change the mode (`set_sports_automation_mode`); every transition is audited. Switching modes never replays backlog: Auto only delivers drafts created after it was enabled.
+- The legacy temporary window control remains for Semi and is rejected while Auto/Off. Emergency Stop switches Auto to Semi.
+- The migration has NOT been applied to production; that needs separate owner approval.
+
 ## Release gates
 Regression tests for legacy auth/workspaces/content/approval; cross-workspace authorization tests; semantic dedup fixtures; concurrency/quota/expiry tests; dashboard preview and mobile QA; verify production migration and deployment before claiming completion. Dedicated photo-license verification and news fact-checking modules are explicitly out of scope for the current roadmap. This does not establish permission to reuse third-party imagery or certify news accuracy.

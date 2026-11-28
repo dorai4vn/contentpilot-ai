@@ -6,6 +6,7 @@ import { getPublisher } from "@/lib/publishing/registry";
 import { PublisherSecret } from "@/lib/publishing/types";
 import { readSportsPhoto } from "./photo-snapshot";
 import { publishedToday } from "./publication-day";
+import { assertAutomationNotOff, readAutomationMode } from "./automation-mode";
 import { permitsTemporaryAutoPublish } from "./temporary-auto-publish";
 
 type Client = SupabaseClient<Database>;
@@ -25,6 +26,7 @@ export async function sendTemporarySportsPost(client: Client, target: Destinatio
   id: string; title: string; body: string; publishedAt: number;
 }) {
   // Prepare bytes before reserving the send so a failed crop can still go through human review.
+  await assertAutomationNotOff(client, target.workspaceId, target.projectId);
   const image = await readSportsPhoto(client, post.id, 1);
   if (!image) return false;
   const { data, error } = await client.rpc("claim_sports_auto_publish", {
@@ -35,18 +37,21 @@ export async function sendTemporarySportsPost(client: Client, target: Destinatio
   if (!lease) return false;
 
   const now = Date.now();
-  const window = { ...target, startsAt: lease.starts_at, endsAt: lease.ends_at };
+  const window = { ...target, startsAt: lease.starts_at, endsAt: lease.ends_at, persistent: lease.persistent };
   const allowed = permitsTemporaryAutoPublish(window, {
     ...target, kind: "telegram", source: "rss", createdAt: Date.parse(lease.created_at),
     publishedAt: post.publishedAt, testMode: false,
-  }, now) && publishedToday(post.publishedAt, now) && now + 15_000 < Date.parse(lease.ends_at);
+  }, now) && publishedToday(post.publishedAt, now) && (lease.ends_at === null || now + 15_000 < Date.parse(lease.ends_at));
 
+  // Final checkpoint before the external call. The lease is already reserved, so an Off switch here is
+  // reported as an unsent, failed outcome (never a duplicate-able send).
+  const off = allowed && await readAutomationMode(client, target.workspaceId, target.projectId) === "off";
   const publisher = getPublisher("telegram");
-  const result = allowed ? await publisher.publish(publisher.render({
+  const result = allowed && !off ? await publisher.publish(publisher.render({
     postId: post.id, postVersion: 1, title: post.title, body: post.body, image,
   }), {
     targetRef: lease.target_ref, credentials: new PublisherSecret(token), idempotencyKey: `rss-auto:${lease.id}`,
-  }) : { ok: false as const, code: "window_expired" };
+  }) : { ok: false as const, code: off ? "automation_off" : "window_expired" };
 
   const finish = await client.rpc("finish_sports_auto_publish", {
     p_workspace_id: target.workspaceId, p_id: lease.id,

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   collect: vi.fn(),
   assess: vi.fn(),
   window: vi.fn(),
+  mode: { data: [{ mode: "semi", daily_quota: 40 }], error: null } as { data: unknown; error: unknown },
 }));
 const WS = "22222222-2222-4222-8222-222222222222";
 const TG = "88888888-8888-4888-8888-888888888888";
@@ -14,7 +15,7 @@ const TG = "88888888-8888-4888-8888-888888888888";
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     auth: { signInWithPassword: async () => ({ error: null }) },
-    rpc: mocks.rpc,
+    rpc: (name: string, args: unknown) => name === "get_sports_automation_mode" ? Promise.resolve(mocks.mode) : mocks.rpc(name, args),
     from: (table: string) => {
       const chain: Record<string, unknown> = {};
       for (const m of ["select", "eq", "is"]) chain[m] = () => chain;
@@ -64,6 +65,7 @@ const config = () => readSportsNewsConfig();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null };
   Object.assign(process.env, {
     SPORTS_NEWS_WORKSPACE_ID: WS,
     SPORTS_NEWS_PROJECT_ID: "33333333-3333-4333-8333-333333333333",
@@ -144,5 +146,14 @@ describe("runSportsDelivery (delivery-only)", () => {
     const report = await runSportsDelivery(config());
     expect(report).toMatchObject({ autoPublishActive: true, claimed: 0 });
     expect(mocks.rpc.mock.calls.map(([n]) => n)).not.toContain("claim_social_deliveries");
+  });
+
+  it("Off performs no claim, no provider call and no destination lookup", async () => {
+    queue(3);
+    mocks.mode = { data: [{ mode: "off", daily_quota: 40 }], error: null };
+    const report = await runSportsDelivery(config());
+    expect(report).toMatchObject({ mode: "off", skipped: "automation_off", claimed: 0, delivered: 0 });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.publish).not.toHaveBeenCalled();
   });
 });

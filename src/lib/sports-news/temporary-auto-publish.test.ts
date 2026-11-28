@@ -32,4 +32,13 @@ describe("temporary RSS auto publish policy", () => {
   ])("rejects out-of-scope candidate %o", (patch) => {
     expect(permitsTemporaryAutoPublish(window, {...candidate, ...patch}, start + 2000)).toBe(false);
   });
+  it("persistent Auto has no expiry but still needs the persistent flag", () => {
+    const persistent = { ...window, endsAt: null, persistent: true };
+    expect(permitsTemporaryAutoPublish(persistent, candidate, start + 30 * 60 * 60 * 1000)).toBe(true);
+    expect(permitsTemporaryAutoPublish({ ...persistent, persistent: false }, candidate, start + 2000)).toBe(false);
+    expect(permitsTemporaryAutoPublish({ ...persistent, endsAt: undefined, persistent: undefined }, candidate, start + 2000)).toBe(false);
+    expect(permitsTemporaryAutoPublish(persistent, { ...candidate, createdAt: start - 1 }, start + 2000)).toBe(false);
+    expect(permitsTemporaryAutoPublish(persistent, { ...candidate, projectId: "other" }, start + 2000)).toBe(false);
+    expect(permitsTemporaryAutoPublish(persistent, { ...candidate, testMode: true }, start + 2000)).toBe(false);
+  });
 });

@@ -2,7 +2,9 @@ import { z } from "zod";
 
 const windowSchema = z.object({
   startsAt: z.iso.datetime({ offset: true }),
-  endsAt: z.iso.datetime({ offset: true }),
+  endsAt: z.iso.datetime({ offset: true }).nullish(),
+  /** FN08 persistent Auto: no expiry; the database remains the authority on mode and quota. */
+  persistent: z.boolean().optional(),
   workspaceId: z.uuid(),
   projectId: z.uuid(),
   destinationId: z.uuid(),
@@ -22,8 +24,9 @@ export function permitsTemporaryAutoPublish(
   if (!result.success || !Number.isFinite(now)) return false;
   const w = result.data;
   const start = Date.parse(w.startsAt);
-  const end = Date.parse(w.endsAt);
-  return end > start && end - start <= AUTO_PUBLISH_MAX_WINDOW_MS &&
+  const end = w.endsAt ? Date.parse(w.endsAt) : Number.POSITIVE_INFINITY;
+  if (!w.endsAt && !w.persistent) return false;
+  return end > start && (w.persistent === true || end - start <= AUTO_PUBLISH_MAX_WINDOW_MS) &&
     now >= start && now < end &&
     candidate.workspaceId === w.workspaceId &&
     candidate.projectId === w.projectId &&

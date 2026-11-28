@@ -9,6 +9,7 @@ import { AGENT_ACTOR_HEADER } from "@/lib/supabase/server";
 import { getPublisher } from "@/lib/publishing/registry";
 import { PublisherSecret } from "@/lib/publishing/types";
 import type { Database, Json } from "@/types/database";
+import { AutomationOffError, assertAutomationNotOff, readAutomationMode } from "./automation-mode";
 import { getTemporaryAutoWindow, sendTemporarySportsPost } from "./auto-delivery";
 import { AUTO_PUBLISH_MAX_PER_RUN } from "./temporary-auto-publish";
 import { assessSportsNews, writeSportsDraft } from "./editor";
@@ -132,6 +133,10 @@ export async function runSportsDelivery(
 ) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
+  // FN08: Off stops delivery before any claim or external call.
+  if (await readAutomationMode(client, config.workspaceId, config.projectId) === "off") {
+    return { rounds: 0, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, truncated: false, autoPublishActive: false, mode: "off" as const, skipped: "automation_off" as const };
+  }
   const tokens = await resolveTokens(client, config, notices);
   const telegramId = config.telegramDestinationId;
   const autoTarget = telegramId && tokens[telegramId]
@@ -155,7 +160,7 @@ export async function runSportsDelivery(
     total.staleSkipped += round.staleSkipped;
     if (round.claimed < DELIVERY_CLAIM_BATCH) break;
   }
-  return { ...total, autoPublishActive: autoWindow !== null };
+  return { ...total, autoPublishActive: autoWindow !== null, mode: "on" as const, skipped: null };
 }
 
 async function connectWorker(config: Config) {
@@ -188,6 +193,10 @@ export async function checkSportsNewsSetup(config: Config, channelUsername?: str
 export async function runSportsNews(config: Config, testDate?: string) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
+  // FN08: Off stops RSS, AI, image processing, review notices and delivery before any external call.
+  if (await readAutomationMode(client, config.workspaceId, config.projectId) === "off") {
+    return { mode: "off" as const, skipped: "automation_off" as const, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, autoPublishActive: false, autoPublishUntil: null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: [] as string[], assessed: 0, drafted: 0, itemFailures: 0 };
+  }
   const scoringResult = await client.from("sports_news_scoring_configs")
     .select("version,threshold,reach_weight,importance_weight,freshness_weight,fallback_mode")
     .eq("workspace_id", config.workspaceId).eq("project_id", config.projectId).maybeSingle();
@@ -225,7 +234,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const articles = feed.articles.filter((item) => testDate
     ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
     : publishedToday(item.publishedAt, now));
-  const report = { ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
+  const report = { mode: "on" as "on" | "stopped", skipped: null as "automation_off" | null, ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, persistentAuto: autoWindow?.persistent ?? false, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
@@ -270,6 +279,11 @@ export async function runSportsNews(config: Config, testDate?: string) {
     if (candidates.length === (testDate ? 16 : 20)) break;
   }
 
+  // Safe checkpoint: nothing has been sent to the AI yet. A late Off switch ends the run without any AI call.
+  try { await assertAutomationNotOff(client, config.workspaceId, config.projectId); } catch (error) {
+    if (error instanceof AutomationOffError) return { ...report, mode: "stopped" as const, skipped: "automation_off" as const };
+    throw error;
+  }
   const assessments = await Promise.allSettled(candidates.map(async ({ item, key, priority, identity, verdict, reconsidered }) => {
     const assessment = await assessSportsNews(item);
     return { item, key, priority, identity, verdict, reconsidered, assessment, ...scoreSportsNews(assessment, item.publishedAt, now, weights) };
@@ -325,8 +339,10 @@ export async function runSportsNews(config: Config, testDate?: string) {
     const decision = materialize ? (fallback ? "highest_below_threshold" : "threshold_met") : "below_threshold";
     let draft = null;
     if (materialize) {
+      await assertAutomationNotOff(client, config.workspaceId, config.projectId);
       draftCalls += 1;
       draft = await writeSportsDraft(item);
+      await assertAutomationNotOff(client, config.workspaceId, config.projectId);
     }
     const photo = draft ? await findSourceSportsPhoto(item)
       ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
@@ -370,7 +386,8 @@ export async function runSportsNews(config: Config, testDate?: string) {
       if (index > 0 && draftCalls >= SPORTS_NEWS_MAX_PER_RUN) break;
       try {
         return { saved: await record(entry, true), failed: false, used: entry };
-      } catch {
+      } catch (error) {
+        if (error instanceof AutomationOffError) { report.mode = "stopped"; report.skipped = "automation_off"; break; }
         failed = true;
         report.itemFailures += 1;
       }
@@ -378,6 +395,8 @@ export async function runSportsNews(config: Config, testDate?: string) {
     return { saved: null, failed, used: null };
   };
   const settled = await Promise.all(selected.map(settle));
+  // Off arrived mid-run: stop at this checkpoint (no further AI, image, notice or delivery work).
+  if (report.mode === "stopped") return { ...report, drafted: settled.filter((entry) => entry.saved).length };
   const usedKeys = new Set(settled.flatMap((entry) => entry.used ? [entry.used.key] : []));
   const materializedLeads = new Set(selected.filter((_, index) => !settled[index].failed).map((entry) => entry.key));
 
@@ -409,7 +428,8 @@ export async function runSportsNews(config: Config, testDate?: string) {
   if (autoWindow && autoTarget) {
     // Only regular eligible drafts may be auto-published. Unresolved identities, follow-ups, uncertain facts and
     // reconsidered (previously archived/rejected) events are manual review only; the database enforces it too.
-    const eligible = drafts.filter((draft) => draft.manual === null);
+    // Persistent Auto (owner-approved FN08) also permits those; confirmed duplicates never become drafts.
+    const eligible = autoWindow.persistent ? drafts : drafts.filter((draft) => draft.manual === null);
     const sent = await Promise.allSettled(eligible.slice(0, AUTO_PUBLISH_MAX_PER_RUN).map((draft) =>
       sendTemporarySportsPost(client, autoTarget, tokens[autoTarget.destinationId], draft)));
     report.autoPublished = sent.filter((item) => item.status === "fulfilled" && item.value).length;
