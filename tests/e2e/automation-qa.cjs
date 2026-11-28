@@ -147,6 +147,13 @@ async function pickMode(page, value, quota, interval, posts) {
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "Emergency Stop hidden again after Off");
     const log = await page.locator(".football-mode-log li").allTextContents();
     check(log.length === 4 && /SEMI → OFF|AUTO → OFF/.test(log[0]) && /OFF → SEMI/.test(log[3]), `mode log lists 4 transitions newest first (${log.map((s) => s.replace(/^.*?\d{2}:\d{2}/, "").trim()).join(" | ")})`);
+    // FN10: only the newest 5 operation events are shown; older rows are hidden (hidden_at set), not deleted.
+    sql(`insert into contentpilot_private.sports_automation_events (workspace_id,project_id,from_mode,to_mode,daily_quota) select '${WS}','${PROJECT}','off','semi',${77} + n from generate_series(1,3) n`);
+    await page.goto(url);
+    const log5 = await page.locator(".football-mode-log li").allTextContents();
+    check(log5.length === 5 && /80\/ngày/.test(log5[0]) && /78\/ngày/.test(log5[2]), `history shows exactly the 5 newest events, newest first (${log5.length})`);
+    check(sql(`select count(*) filter (where hidden_at is not null) || '/' || count(*) from contentpilot_private.sports_automation_events where project_id='${PROJECT}'`) === "2/7", "older events are hidden (hidden_at persisted), not deleted");
+    await shot(page, "03b-history-latest-five");
     // Off must never schedule a delivery/window as a side effect of the transitions.
     check(sql(`select count(*) from public.publish_deliveries d join public.content_publish_requests r on r.id=d.request_id where r.workspace_id='${WS}'`) === "0", "mode transitions created zero deliveries");
 

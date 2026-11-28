@@ -71,3 +71,26 @@ it("fails safe to Off when the mode configuration is missing", async () => {
   expect(html).not.toContain("Emergency Stop");
   expect(html).toContain("30/25/25/20");
 });
+
+it("FN10: shows at most the 5 newest operation events, newest first, even for identical timestamps", async () => {
+  const base = rpcFor("semi");
+  const events = Array.from({ length: 8 }, (_, i) => ({ from_mode: "off", to_mode: "semi", daily_quota: 20 + i, created_at: i < 2 ? "2026-11-28T08:00:00Z" : `2026-11-2${8 - i}T08:00:00Z` }));
+  mocks.rpc.mockImplementation(async (name: string) => name === "list_sports_automation_events" ? { data: events, error: null } : base(name));
+  mocks.from.mockImplementation(() => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: "Tin bóng đá" }, error: null }) }) }) }) }));
+  mocks.loadWorkspace.mockResolvedValue({ workspace: { id: "workspace-1", name: "Sports", role: "owner" } });
+  const html = renderToStaticMarkup(await AutomationPage({ params: Promise.resolve({ workspaceId: "workspace-1" }), searchParams: Promise.resolve({}) } as never));
+  const log = html.match(/football-mode-log">([\s\S]*?)<\/ul>/)?.[1] ?? "";
+  expect(log.match(/<li/g)).toHaveLength(5);
+  expect(log).toContain("20/ngày");
+  expect(log).toContain("24/ngày");
+  expect(log).not.toContain("25/ngày");
+});
+
+it("FN10: empty history keeps the placeholder", async () => {
+  const base = rpcFor("semi");
+  mocks.rpc.mockImplementation(async (name: string) => name === "list_sports_automation_events" ? { data: [], error: null } : base(name));
+  mocks.from.mockImplementation(() => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: "Tin bóng đá" }, error: null }) }) }) }) }));
+  mocks.loadWorkspace.mockResolvedValue({ workspace: { id: "workspace-1", name: "Sports", role: "owner" } });
+  const html = renderToStaticMarkup(await AutomationPage({ params: Promise.resolve({ workspaceId: "workspace-1" }), searchParams: Promise.resolve({}) } as never));
+  expect(html).toContain("Chưa có thay đổi chế độ nào.");
+});

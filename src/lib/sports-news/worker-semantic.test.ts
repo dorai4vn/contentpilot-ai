@@ -306,7 +306,8 @@ describe("runSportsNews semantic deduplication", () => {
       expect(db.assess).not.toHaveBeenCalled();
       expect(db.draft).not.toHaveBeenCalled();
       expect(db.send).not.toHaveBeenCalled();
-      expect(db.rpc).not.toHaveBeenCalled();
+      // FN10: the only database call allowed while Off is the history-retention housekeeping.
+      expect(db.rpc.mock.calls.map(([n]) => n)).toEqual(["purge_sports_automation_history"]);
     });
 
     it("FN09: a scan that is not due does no RSS, AI or draft work and only runs delivery-only", async () => {
