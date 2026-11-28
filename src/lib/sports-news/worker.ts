@@ -22,7 +22,7 @@ import { findSportsPostPhoto } from "./licensed-photo";
 import { findSourceSportsPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
-import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_MAX_PER_RUN, SPORTS_SCORING_RUBRIC } from "./scoring";
+import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_DRAFT_CALL_BUDGET, SPORTS_SCORING_RUBRIC } from "./scoring";
 
 const configSchema = z.object({
   workspaceId: z.uuid(),
@@ -198,7 +198,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     return { mode: "off" as const, skipped: "automation_off" as const, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, autoPublishActive: false, autoPublishUntil: null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: [] as string[], assessed: 0, drafted: 0, itemFailures: 0 };
   }
   const scoringResult = await client.from("sports_news_scoring_configs")
-    .select("version,threshold,reach_weight,importance_weight,freshness_weight,fallback_mode")
+    .select("version,threshold,reach_weight,importance_weight,freshness_weight,engagement_weight,fallback_mode")
     .eq("workspace_id", config.workspaceId).eq("project_id", config.projectId).maybeSingle();
   if (scoringResult.error) throw new Error("sports_news_scoring_config_failed");
   const scoring = scoringResult.data;
@@ -207,6 +207,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     reach: scoring.reach_weight / 100,
     eventImportance: scoring.importance_weight / 100,
     freshness: scoring.freshness_weight / 100,
+    engagement: scoring.engagement_weight / 100,
   } : SPORTS_SCORING_RUBRIC.weights;
   const tokens = { ...config.tokens };
   if (config.telegramDestinationId && !tokens[config.telegramDestinationId]) {
@@ -331,7 +332,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
   report.itemFailures += report.eventEvidenceFailures;
 
   type Saved = { id: string; title: string; body: string; publishedAt: number; manual: ManualReviewReason | null };
-  // Existing AI budget: never more draft calls than one run could already make (SPORTS_NEWS_MAX_PER_RUN).
+  // Existing AI budget: never more draft calls than one run could already make (SPORTS_NEWS_DRAFT_CALL_BUDGET), separate from the 3-post output cap.
   let draftCalls = 0;
   const reportOf = (entry: Scored) => manualReviewReason(entry.identity, entry.verdict, entry.reconsidered);
   const record = async (entry: Scored, materialize: boolean): Promise<Saved | null> => {
@@ -364,6 +365,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
         threshold, scoringVersion: scoring?.version ?? 0, weights, components: {
           playerPopularity: assessment.playerPopularity, teamPopularity: assessment.teamPopularity,
           competitionPopularity: assessment.competitionPopularity, eventImportance: assessment.eventImportance,
+          engagement: assessment.engagement,
           reach, freshness,
         },
         title: item.title, photo: photo?.metadata ?? null, publishedAt: new Date(item.publishedAt).toISOString(),
@@ -383,7 +385,7 @@ export async function runSportsNews(config: Config, testDate?: string) {
     const queue = [lead, ...(alternates.get(lead.key) ?? []).filter((alt) => alt.score >= threshold || fallback)];
     let failed = false;
     for (const [index, entry] of queue.entries()) {
-      if (index > 0 && draftCalls >= SPORTS_NEWS_MAX_PER_RUN) break;
+      if (index > 0 && draftCalls >= SPORTS_NEWS_DRAFT_CALL_BUDGET) break;
       try {
         return { saved: await record(entry, true), failed: false, used: entry };
       } catch (error) {

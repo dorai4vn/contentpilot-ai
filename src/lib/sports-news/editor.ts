@@ -10,6 +10,7 @@ const assessmentSchema = z.strictObject({
   teamPopularity: rating,
   competitionPopularity: rating,
   eventImportance: rating,
+  engagement: rating,
   reason: z.string().trim().min(1).max(500),
 });
 /**
@@ -50,7 +51,7 @@ async function askEditor<T>(schema: z.ZodType<T>, instructions: string, item: Sp
 
 export function assessSportsNews(item: SportsNewsItem) {
   return askEditor(assessmentSchema,
-    "Trả JSON với playerPopularity, teamPopularity, competitionPopularity, eventImportance (số nguyên 0–10) và reason (tiếng Việt, tối đa 500 ký tự). Chấm độ nhận diện với độc giả Việt Nam của nhân vật, đội và giải thật sự là trọng tâm, dùng 0 khi không có. Chấm tầm quan trọng sự kiện dựa trên dữ kiện: 9–10 cho chung kết, chức vô địch hoặc kết quả lớn; 6–8 cho trận đấu, chấn thương hoặc chuyển nhượng đáng chú ý; 0–5 cho tin thường kỳ, ngoài trọng tâm hoặc đồn đoán. Độ nhận diện là ước lượng, không được bịa số liệu xu hướng, lượt xem hoặc lượt tìm kiếm.",
+    "Trả JSON với playerPopularity, teamPopularity, competitionPopularity, eventImportance, engagement (số nguyên 0–10) và reason (tiếng Việt, tối đa 500 ký tự). Chấm độ nhận diện với độc giả Việt Nam của nhân vật, đội và giải thật sự là trọng tâm, dùng 0 khi không có. Chấm tầm quan trọng sự kiện dựa trên dữ kiện: 9–10 cho chung kết, chức vô địch hoặc kết quả lớn; 6–8 cho trận đấu, chấn thương hoặc chuyển nhượng đáng chú ý; 0–5 cho tin thường kỳ, ngoài trọng tâm hoặc đồn đoán. Chấm engagement là tiềm năng thảo luận/chia sẻ vốn có của chính nội dung tin (0–3 tin thường kỳ, 4–6 có chủ đề bàn luận, 7–10 sự kiện khiến người hâm mộ muốn bàn và chia sẻ); không bịa gây tranh cãi, không thưởng cho giật tít. Độ nhận diện là ước lượng, không được bịa số liệu xu hướng, lượt xem hoặc lượt tìm kiếm.",
     item);
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # FN08 concurrency: parallel auto claims never exceed the daily quota, and a concurrent switch to Off
 # leaves nothing claimable afterwards. Runs against the disposable database of scripts/test-db.sh
-# (after tests/db/90_automation_modes.sql, which leaves the project in Semi).
+# (after tests/db/90_automation_modes.sql, which leaves the project Off).
 set -euo pipefail
 : "${TEST_DATABASE_URL:?}"
 WS=6c000000-0000-0000-0000-000000000001
@@ -33,6 +33,8 @@ SQL
 }
 
 N=8
+# Earlier fixtures used the current 2h slot (cap 3 per slot): move them out of it.
+q -c "update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000"
 BASE=$(today)
 setmode auto $((BASE + 3))
 for i in $(seq 1 $N); do draft $i; done

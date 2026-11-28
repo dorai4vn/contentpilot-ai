@@ -1,8 +1,8 @@
 # Tin thể thao từ RSS
 
-ContentPilot AI lấy RSS từ Bóng Đá 24h, BongDa.com.vn và các chuyên mục bóng đá của Thể Thao 247. Tuổi Trẻ và Thanh Niên là nguồn bổ sung. Mỗi lượt chỉ xét tin trong 48 giờ, bỏ qua URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án. Điểm từ 0 đến 10 kết hợp độ nhận diện cao nhất của cầu thủ, đội hoặc giải (45%), tầm quan trọng của sự kiện (40%) và độ mới (15%). Mô hình ước lượng độ nhận diện theo độc giả Việt Nam. Điểm tự giảm khi tin cũ đi.
+ContentPilot AI lấy RSS từ Bóng Đá 24h, BongDa.com.vn và các chuyên mục bóng đá của Thể Thao 247. Tuổi Trẻ và Thanh Niên là nguồn bổ sung. Mỗi lượt chỉ xét tin trong 48 giờ, bỏ qua URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án. Điểm từ 0 đến 10 kết hợp độ phổ biến cao nhất của cầu thủ, đội hoặc giải (30%), tầm quan trọng của sự kiện (25%), độ mới theo giờ đăng nguồn (25%) và tiềm năng thảo luận/chia sẻ vốn có của nội dung (engagement, 20%). Mỗi lượt quét chọn tối đa 3 tin. Mô hình ước lượng độ nhận diện theo độc giả Việt Nam. Điểm tự giảm khi tin cũ đi.
 
-Barem `sports-v1` được dùng lại giữa các lượt. Độ nhận diện lấy điểm cao nhất trong ba mục cầu thủ, đội và giải. Sự kiện từ 9–10 là chung kết, chức vô địch hoặc kết quả lớn; 6–8 là diễn biến đáng chú ý; 0–5 là tin thường kỳ hoặc đồn đoán. Độ mới bắt đầu ở 10 điểm, giảm 1 điểm mỗi 4,8 giờ.
+Barem `sports-v2` (cấu hình cũ giữ nguyên trọng số với engagement 0) được dùng lại giữa các lượt. Độ nhận diện lấy điểm cao nhất trong ba mục cầu thủ, đội và giải. Sự kiện từ 9–10 là chung kết, chức vô địch hoặc kết quả lớn; 6–8 là diễn biến đáng chú ý; 0–5 là tin thường kỳ hoặc đồn đoán. Độ mới bắt đầu ở 10 điểm, giảm 1 điểm mỗi 4,8 giờ.
 
 Tin được đưa vào chấm theo thứ tự Ngoại hạng Anh → Cúp C1 → các giải lớn như World Cup, EURO, Copa América và các giải VĐQG lớn châu Âu → bóng đá Việt Nam → bóng đá khác → môn khác. Khi chọn bài, xếp theo điểm tổng trước. Ưu tiên giải đấu và sau đó là độ mới để phân định khi bằng điểm. Nếu không có tin từ ngưỡng trở lên, hệ thống chọn đúng một tin có điểm cao nhất và ghi rõ lý do chọn trong yêu cầu duyệt.
 
@@ -110,4 +110,4 @@ Quyết định: `duplicate` (cùng sự kiện, không có gì mới → bỏ q
   Limitation: facts outside these patterns are not detected, so such a rewording is a duplicate.
 - **Same-run fallback**: weaker reports of one event are alternates; skip evidence is stored only after the event
   became a post. If the lead fails, alternates are tried in rank order while total draft calls stay
-  ≤ `SPORTS_NEWS_MAX_PER_RUN`.
+  ≤ `SPORTS_NEWS_DRAFT_CALL_BUDGET` (10; tách biệt với trần 3 bài đầu ra mỗi lượt `SPORTS_NEWS_OUTPUT_PER_SCAN`).

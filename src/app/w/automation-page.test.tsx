@@ -32,14 +32,16 @@ it("shows the real mode, quota and audit log and restricts controls to Owner/Adm
   expect(owner).toContain("Semi Publish");
   expect(owner).toContain("SEMI → AUTO");
   expect(owner).toContain("Emergency Stop");
+  expect(owner).toContain("Dừng khẩn cấp (Off)");
+  expect(owner).toContain("Tối đa 3 bài mỗi lượt quét");
 
   mocks.loadWorkspace.mockResolvedValue({ workspace: { id: "workspace-1", name: "Sports", role: "member" } });
   const member = renderToStaticMarkup(await AutomationPage(input as never));
-  expect(member).not.toContain("Dừng Auto Publish");
+  expect(member).not.toContain("Dừng khẩn cấp (Off)");
   expect(member).not.toContain("Lưu chế độ");
 });
 
-it("defaults to Semi (never Auto) and hides Emergency Stop when not in Auto", async () => {
+it("keeps an explicit Semi mode (never Auto) and hides Emergency Stop when not in Auto", async () => {
   mocks.rpc.mockImplementation(async (name: string) => name === "get_sports_automation_mode"
     ? { data: [{ mode: "semi", daily_quota: 40, version: 0, updated_at: null }], error: null } : { data: [], error: null });
   mocks.from.mockImplementation(() => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) }));
@@ -47,4 +49,14 @@ it("defaults to Semi (never Auto) and hides Emergency Stop when not in Auto", as
   const html = renderToStaticMarkup(await AutomationPage({ params: Promise.resolve({ workspaceId: "workspace-1" }), searchParams: Promise.resolve({}) } as never));
   expect(html).toContain("Chờ duyệt trước khi gửi");
   expect(html).not.toContain("Emergency Stop");
+});
+
+it("fails safe to Off when the mode configuration is missing", async () => {
+  mocks.rpc.mockImplementation(async () => ({ data: [], error: null }));
+  mocks.from.mockImplementation(() => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) }));
+  mocks.loadWorkspace.mockResolvedValue({ workspace: { id: "workspace-1", name: "Sports", role: "admin" } });
+  const html = renderToStaticMarkup(await AutomationPage({ params: Promise.resolve({ workspaceId: "workspace-1" }), searchParams: Promise.resolve({}) } as never));
+  expect(html).toContain("Đã tắt");
+  expect(html).not.toContain("Emergency Stop");
+  expect(html).toContain("30/25/25/20");
 });

@@ -3,18 +3,24 @@ export type NewsAssessment = {
   teamPopularity: number;
   competitionPopularity: number;
   eventImportance: number;
+  /** Inherent discussion/share potential (0-10). Absent on assessments stored before sports-v2. */
+  engagement?: number;
   reason: string;
 };
 
-export type ScoringWeights = { reach: number; eventImportance: number; freshness: number };
+/** reach = Popularity, freshness = Recency (source publication time). engagement defaults to 0 for legacy custom configs. */
+export type ScoringWeights = { reach: number; eventImportance: number; freshness: number; engagement?: number };
 
 export const SPORTS_SCORING_RUBRIC = {
-  version: "sports-v1",
-  weights: { reach: 0.45, eventImportance: 0.40, freshness: 0.15 },
+  version: "sports-v2",
+  weights: { reach: 0.30, eventImportance: 0.25, freshness: 0.25, engagement: 0.20 },
   hoursPerFreshnessPoint: 4.8,
 } as const;
 
-export const SPORTS_NEWS_MAX_PER_RUN = 10;
+/** Owner-approved FN08: at most 3 distinct eligible news posts per RSS scan / delivery slot. */
+export const SPORTS_NEWS_OUTPUT_PER_SCAN = 3;
+/** Separate AI budget (draft attempts incl. same-run fallbacks); it is NOT the output cap. */
+export const SPORTS_NEWS_DRAFT_CALL_BUDGET = 10;
 
 export function scoreSportsNews(assessment: NewsAssessment, publishedAt: number, now: number,
   weights: ScoringWeights = SPORTS_SCORING_RUBRIC.weights) {
@@ -22,7 +28,7 @@ export function scoreSportsNews(assessment: NewsAssessment, publishedAt: number,
   const freshness = Math.max(0, 10 - ageHours / SPORTS_SCORING_RUBRIC.hoursPerFreshnessPoint);
   const reach = Math.max(assessment.playerPopularity, assessment.teamPopularity, assessment.competitionPopularity);
   const score = Math.round((weights.reach * reach + weights.eventImportance * assessment.eventImportance
-    + weights.freshness * freshness) * 10) / 10;
+    + weights.freshness * freshness + (weights.engagement ?? 0) * (assessment.engagement ?? 0)) * 10) / 10;
   return { score, reach, freshness: Math.round(freshness * 100) / 100 };
 }
 
@@ -62,7 +68,7 @@ export function selectSportsNews<T extends { score: number; priority: number; it
     || a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const qualified = ranked.filter((entry) => entry.score >= threshold);
   return qualified.length
-    ? { selected: qualified.slice(0, SPORTS_NEWS_MAX_PER_RUN), fallback: false }
+    ? { selected: qualified.slice(0, SPORTS_NEWS_OUTPUT_PER_SCAN), fallback: false }
     : fallbackMode === "highest"
       ? { selected: ranked.slice(0, 1), fallback: ranked.length > 0 }
       : { selected: [], fallback: false };

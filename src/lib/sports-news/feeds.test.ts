@@ -30,11 +30,11 @@ describe("sports news RSS", () => {
 });
 
 describe("sports news scoring", () => {
-  const assessment = { playerPopularity: 2, teamPopularity: 8, competitionPopularity: 9, eventImportance: 9, reason: "Chung kết" };
+  const assessment = { playerPopularity: 2, teamPopularity: 8, competitionPopularity: 9, eventImportance: 9, engagement: 9, reason: "Chung kết" };
 
   it("ranks a major current event above the default threshold and reduces the rank with age", () => {
-    expect(calculateNewsScore(assessment, now, now)).toBe(9.2);
-    expect(calculateNewsScore(assessment, now - 48 * 60 * 60 * 1000, now)).toBe(7.7);
+    expect(calculateNewsScore(assessment, now, now)).toBe(9.3);
+    expect(calculateNewsScore(assessment, now - 48 * 60 * 60 * 1000, now)).toBe(6.7);
     expect(calculateNewsScore({ ...assessment, eventImportance: 3 }, now, now)).toBeLessThan(8);
   });
 });

@@ -58,7 +58,7 @@ beforeEach(() => {
   db.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null }; db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false;
   db.assess.mockImplementation(async (item: { title: string }) => {
     const n = level(item.title);
-    return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, reason: "r" };
+    return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, engagement: n, reason: "r" };
   });
   db.draft.mockImplementation(async (item: { title: string }) => ({ title: `Bài: ${clean(item.title)}`, body: "Nội dung", photoSubject: null, photoNeedsAction: false }));
   db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
@@ -256,17 +256,18 @@ describe("runSportsNews semantic deduplication", () => {
       seed("Arsenal thắng Chelsea 1-0 ở Ngoại hạng Anh", "Arsenal hạ Chelsea.", "https://a.vn/old", { archived: true });
       feed(
         article("[10] Chelsea chính thức ký Erling Haaland", "Chuyển nhượng hoàn tất, Erling Haaland gia nhập Chelsea.", "https://b.vn/followup"),
-        article("[9] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
-        article("[8] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
-        article("[8] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
+        article("[8] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
+        article("[9] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
+        article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
       );
       const report = await runSportsNews(readSportsNewsConfig());
-      expect(report.drafted).toBe(4); // all of them still reach manual review
+      expect(report.drafted).toBe(3); // 3-post output cap per scan; the weakest (unresolved) report is not drafted
       expect(sentIds()).toEqual(["post-https://b.vn/regular"]);
       const reasons = Object.fromEntries(recorded().map((r) => [r.p_source_url, (r.p_event as { manualReviewReason?: string }).manualReviewReason]));
       expect(reasons).toMatchObject({
-        "https://b.vn/followup": "follow_up", "https://b.vn/vague": "unresolved_identity", "https://b.vn/reconsidered": "reconsidered",
+        "https://b.vn/followup": "follow_up", "https://b.vn/reconsidered": "reconsidered",
       });
+      expect(reasons["https://b.vn/vague"]).toBeUndefined();
       expect(reasons["https://b.vn/regular"]).toBeUndefined();
     });
 
@@ -357,7 +358,7 @@ describe("runSportsNews semantic deduplication", () => {
       seed("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/dup");
       feed(
         article("[10] Chelsea chính thức ký Erling Haaland", "Chuyển nhượng hoàn tất, Erling Haaland gia nhập Chelsea.", "https://b.vn/followup"),
-        article("[9] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
+        article("[8] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
         article("[8] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/dup2"),
       );
       const report = await runSportsNews(readSportsNewsConfig());

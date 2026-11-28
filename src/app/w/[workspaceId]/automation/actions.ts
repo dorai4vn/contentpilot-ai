@@ -16,8 +16,9 @@ const scoringSchema = z.object({
   reach: z.coerce.number().int().min(0).max(100),
   importance: z.coerce.number().int().min(0).max(100),
   freshness: z.coerce.number().int().min(0).max(100),
+  engagement: z.coerce.number().int().min(0).max(100),
   fallback: z.enum(["highest", "strict"]),
-}).refine((value) => value.reach + value.importance + value.freshness === 100);
+}).refine((value) => value.reach + value.importance + value.freshness + value.engagement === 100);
 
 async function update(workspaceId: string, mode: string, dailyQuota: unknown) {
   const path = `/w/${workspaceId}/automation`;
@@ -47,10 +48,10 @@ export async function setAutomationMode(formData: FormData) {
   await update(workspaceId, String(formData.get("mode")), formData.get("dailyQuota"));
 }
 
-/** Emergency stop: leave Auto immediately; drafts wait for human approval again. */
+/** Emergency stop: switch to Off immediately (no RSS, AI, image work or delivery). */
 export async function emergencyStop(formData: FormData) {
   const workspaceId = z.uuid().parse(formData.get("workspaceId"));
-  await update(workspaceId, "semi", formData.get("dailyQuota"));
+  await update(workspaceId, "off", formData.get("dailyQuota"));
 }
 
 export async function saveScoring(formData: FormData) {
@@ -62,7 +63,7 @@ export async function saveScoring(formData: FormData) {
   if (!target) redirect(`${path}?error=unavailable`);
   const parsed = scoringSchema.safeParse({
     threshold: formData.get("threshold"), reach: formData.get("reach"),
-    importance: formData.get("importance"), freshness: formData.get("freshness"),
+    importance: formData.get("importance"), freshness: formData.get("freshness"), engagement: formData.get("engagement"),
     fallback: formData.get("fallback"),
   });
   if (!parsed.success) redirect(`${path}?error=scoring`);
@@ -73,6 +74,7 @@ export async function saveScoring(formData: FormData) {
     p_reach_weight: parsed.data.reach,
     p_importance_weight: parsed.data.importance,
     p_freshness_weight: parsed.data.freshness,
+    p_engagement_weight: parsed.data.engagement,
     p_fallback_mode: parsed.data.fallback,
   });
   if (error) redirect(`${path}?error=save`);
@@ -82,9 +84,10 @@ export async function saveScoring(formData: FormData) {
 
 export async function resetScoring(formData: FormData) {
   formData.set("threshold", "8");
-  formData.set("reach", "45");
-  formData.set("importance", "40");
-  formData.set("freshness", "15");
+  formData.set("reach", "30");
+  formData.set("importance", "25");
+  formData.set("freshness", "25");
+  formData.set("engagement", "20");
   formData.set("fallback", "highest");
   await saveScoring(formData);
 }

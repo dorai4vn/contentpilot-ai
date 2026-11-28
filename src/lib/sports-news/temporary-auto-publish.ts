@@ -12,7 +12,7 @@ const windowSchema = z.object({
 
 export const AUTO_PUBLISH_MAX_WINDOW_MS = 8 * 60 * 60 * 1000;
 export const AUTO_PUBLISH_MAX_POSTS = 40;
-export const AUTO_PUBLISH_MAX_PER_RUN = 10;
+export const AUTO_PUBLISH_MAX_PER_RUN = 3;
 
 /** Fail closed. This pure guard is not a substitute for database authorization. */
 export function permitsTemporaryAutoPublish(

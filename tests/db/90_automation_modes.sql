@@ -35,7 +35,9 @@ $$;
 grant execute on function pg_temp.draft(text, text) to public;
 
 reset role;
--- Existing deployments: no mode row means Semi (current behaviour), never Auto.
+-- Earlier fixtures (80/85) ran as an explicit Semi project; start from an unconfigured project.
+delete from contentpilot_private.sports_automation_modes;
+-- Existing deployments: no mode row fails safe to Off (never starts RSS/AI/delivery), never Auto.
 select pg_temp.check_mode((select count(*) = 0 from contentpilot_private.sports_automation_modes), 'migration creates no mode row (nothing is silently enabled)');
 select count(*) as baseline from contentpilot_private.sports_auto_publish_deliveries d
   join contentpilot_private.sports_auto_publish_windows w on w.id = d.window_id
@@ -43,7 +45,9 @@ select count(*) as baseline from contentpilot_private.sports_auto_publish_delive
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'worker', false);
-select pg_temp.check_mode((select mode = 'semi' and version = 0 from public.get_sports_automation_mode(:'ws', :'project')), 'absent row reads as Semi');
+select pg_temp.check_mode((select mode = 'off' and version = 0 from public.get_sports_automation_mode(:'ws', :'project')), 'absent row reads as Off (fail safe)');
+select pg_temp.denied(format('select pg_temp.draft(%L,%L)', 'https://tuoitre.vn/m-absent.htm', repeat('9', 64)), 'CP411', 'unconfigured project rejects new drafts');
+select pg_temp.check_mode((select count(*) = 0 from public.claim_social_deliveries(:'ws', array[:'channel'::uuid])), 'unconfigured project claims no deliveries');
 select pg_temp.denied(format('select public.set_sports_automation_mode(%L,%L,%L,''auto'',5)', :'ws', :'project', :'channel'), '42501', 'a Member cannot change the mode');
 select set_config('request.jwt.claim.sub', :'outsider', false);
 select pg_temp.denied(format('select public.get_sports_automation_mode(%L,%L)', :'ws', :'project'), '42501', 'a non-member cannot read the mode');
@@ -55,10 +59,13 @@ select pg_temp.denied(format('select public.set_sports_automation_mode(%L,%L,%L,
 select pg_temp.denied(format('select public.set_sports_automation_mode(%L,%L,%L,''auto'',0)', :'ws', :'project', :'channel'), '22023', 'daily quota below 1 is rejected');
 select pg_temp.denied(format('select public.set_sports_automation_mode(%L,%L,%L,''auto'',121)', :'ws', :'project', :'channel'), '22023', 'daily quota above 120 is rejected');
 reset role;
+-- Earlier fixtures may have used the current 2h slot: move them out of the current slot (the per-slot cap is 3).
+update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000;
 select (:baseline + 2) as quota \gset
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'owner', false);
 select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota) = 1, 'Owner enables persistent Auto (version 1)');
+select pg_temp.check_mode((select max_per_slot = 3 and persistent from public.read_sports_auto_publish_control(:'ws', :'project', :'channel')), 'Auto outputs at most 3 posts per 2h slot');
 select pg_temp.check_mode((select persistent and ends_at is null and max_per_day = :quota from public.read_sports_auto_publish_control(:'ws', :'project', :'channel')), 'Auto has no expiry and exposes the daily quota');
 
 select set_config('request.jwt.claim.sub', :'worker', false);
@@ -82,6 +89,7 @@ select set_config('request.jwt.claim.sub', :'owner', false);
 
 -- Auto again: no backlog replay; unresolved/follow-up/reconsidered/uncertain posts are allowed.
 reset role;
+update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000;
 select (count(*) + 2) as quota2 from contentpilot_private.sports_auto_publish_deliveries d
   where (d.started_at at time zone 'Asia/Dubai')::date = (clock_timestamp() at time zone 'Asia/Dubai')::date \gset
 set role authenticated;
@@ -123,3 +131,26 @@ reset role;
 select pg_temp.check_mode((select count(*) = 1 from contentpilot_private.sports_auto_publish_windows where persistent and ends_at = 'infinity') = false, 'no open persistent window remains after Semi');
 select pg_temp.check_mode(not has_table_privilege('authenticated', 'contentpilot_private.sports_automation_modes', 'select'), 'mode table is not directly readable');
 select pg_temp.check_mode(not has_function_privilege('anon', 'public.set_sports_automation_mode(uuid,uuid,uuid,text,integer)', 'EXECUTE'), 'anon cannot set modes');
+
+-- Slot cap (3 per 2h slot) and Emergency Stop => Off, with quota not silently altered.
+update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000;
+select (count(*) + 50) as quota3 from contentpilot_private.sports_auto_publish_deliveries d
+  where (d.started_at at time zone 'Asia/Dubai')::date = (clock_timestamp() at time zone 'Asia/Dubai')::date \gset
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota3) = 6, 'Owner enables Auto for the slot cap test');
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.draft('https://tuoitre.vn/s-1.htm', repeat('a', 64)) as s_1 \gset
+select pg_temp.draft('https://tuoitre.vn/s-2.htm', repeat('b', 64)) as s_2 \gset
+select pg_temp.draft('https://tuoitre.vn/s-3.htm', repeat('c', 64)) as s_3 \gset
+select pg_temp.draft('https://tuoitre.vn/s-4.htm', repeat('d', 64)) as s_4 \gset
+select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_1')), 'slot post 1 is claimed');
+select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_2')), 'slot post 2 is claimed');
+select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_3')), 'slot post 3 is claimed');
+select pg_temp.check_mode((select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_4')), 'the 4th post of one slot is blocked (max 3 per slot)');
+select set_config('request.jwt.claim.sub', :'owner', false);
+select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'off', :quota3) = 7, 'Emergency Stop switches to Off');
+select pg_temp.check_mode((select mode = 'off' and daily_quota = :quota3 from public.get_sports_automation_mode(:'ws', :'project')), 'Emergency Stop keeps the daily quota unchanged');
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_4')), 'after Emergency Stop nothing is claimed');
+reset role;
