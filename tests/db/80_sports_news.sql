@@ -20,6 +20,9 @@ insert into contentpilot_private.sports_news_workers values (:'ws', :'worker');
 insert into public.publishing_destinations (id, workspace_id, kind, name, target_ref)
 values (:'channel', :'ws', 'telegram', 'Kênh bóng đá', '-100123456789'),
        (:'second', :'ws', 'discord', 'Kênh Discord', '123456789');
+-- FN08: missing mode configuration fails safe to Off, so these legacy flows run as an explicit Semi project.
+insert into contentpilot_private.sports_automation_modes (workspace_id, project_id, destination_id, mode)
+values (:'ws', :'project', :'channel', 'semi');
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'worker', false);
@@ -220,18 +223,22 @@ reset role;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'owner', false);
-select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.1,50,35,15,'strict')=1,
+select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.1,40,30,20,10,'strict')=1,
   'Owner creates the project scoring configuration');
-select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.2,45,40,15,'highest')=2,
+select pg_temp.check_news(public.set_sports_news_scoring_config(:'ws',:'project',8.2,30,25,25,20,'highest')=2,
   'each scoring change increments its version');
 select pg_temp.check_news(
   (select threshold=8.2 and version=2 and fallback_mode='highest' from public.sports_news_scoring_configs where project_id=:'project'),
   'workspace members can read the effective scoring values');
+select pg_temp.check_news(
+  (select engagement_weight=20 and reach_weight+importance_weight+freshness_weight+engagement_weight=100
+     from public.sports_news_scoring_configs where project_id=:'project'),
+  'scoring V2 stores four weights that sum to 100');
 do $$
 begin
   perform public.set_sports_news_scoring_config(
     '6c000000-0000-0000-0000-000000000001'::uuid,
-    '6c100000-0000-0000-0000-000000000001'::uuid,8.5,50,50,1,'strict');
+    '6c100000-0000-0000-0000-000000000001'::uuid,8.5,50,50,1,1,'strict');
   raise exception 'Invalid weights were accepted';
 exception when invalid_parameter_value then null;
 end $$;
@@ -240,7 +247,7 @@ do $$
 begin
   perform public.set_sports_news_scoring_config(
     '6c000000-0000-0000-0000-000000000001'::uuid,
-    '6c100000-0000-0000-0000-000000000001'::uuid,8,45,40,15,'strict');
+    '6c100000-0000-0000-0000-000000000001'::uuid,8,30,25,25,20,'strict');
   raise exception 'Member changed scoring';
 exception when insufficient_privilege then null;
 end $$;

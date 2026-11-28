@@ -1,18 +1,22 @@
 # Tin thể thao từ RSS
 
-ContentPilot AI lấy RSS từ Bóng Đá 24h, BongDa.com.vn và các chuyên mục bóng đá của Thể Thao 247. Tuổi Trẻ và Thanh Niên là nguồn bổ sung. Mỗi lượt chỉ xét tin trong 48 giờ, bỏ qua URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án. Điểm từ 0 đến 10 kết hợp độ nhận diện cao nhất của cầu thủ, đội hoặc giải (45%), tầm quan trọng của sự kiện (40%) và độ mới (15%). Mô hình ước lượng độ nhận diện theo độc giả Việt Nam. Điểm tự giảm khi tin cũ đi.
+ContentPilot AI lấy RSS từ Bóng Đá 24h, BongDa.com.vn và các chuyên mục bóng đá của Thể Thao 247. Tuổi Trẻ và Thanh Niên là nguồn bổ sung. Mỗi lượt chỉ xét bài có thời điểm xuất bản trong **cùng ngày theo múi giờ Asia/Dubai** với thời điểm chạy (`publishedToday` trong `src/lib/sports-news/publication-day.ts`); bài có timestamp ở tương lai bị loại. Mốc 48 giờ **không** phải cửa sổ xét tin: đó chỉ là lịch sử dùng để chống trùng (xem bên dưới) — URL hoặc tiêu đề chuẩn hóa đã xử lý trong cùng dự án trong 48 giờ gần nhất (tối đa 800 bản ghi) bị bỏ qua. Điểm từ 0 đến 10 kết hợp độ phổ biến cao nhất của cầu thủ, đội hoặc giải (30%), tầm quan trọng của sự kiện (25%), độ mới theo giờ đăng nguồn (25%) và tiềm năng thảo luận/chia sẻ vốn có của nội dung (engagement, 20%; không bịa tranh cãi hay câu kéo) — barem `sports-v2`, cùng một lần gọi AI đánh giá. Mỗi lượt quét chọn tối đa 3 tin phân biệt (xem phần Chọn bài). Điểm tự giảm khi tin cũ đi.
 
-Barem `sports-v1` được dùng lại giữa các lượt. Độ nhận diện lấy điểm cao nhất trong ba mục cầu thủ, đội và giải. Sự kiện từ 9–10 là chung kết, chức vô địch hoặc kết quả lớn; 6–8 là diễn biến đáng chú ý; 0–5 là tin thường kỳ hoặc đồn đoán. Độ mới bắt đầu ở 10 điểm, giảm 1 điểm mỗi 4,8 giờ.
+Barem `sports-v2` (cấu hình cũ giữ nguyên trọng số với engagement 0) được dùng lại giữa các lượt. Độ nhận diện lấy điểm cao nhất trong ba mục cầu thủ, đội và giải. Sự kiện từ 9–10 là chung kết, chức vô địch hoặc kết quả lớn; 6–8 là diễn biến đáng chú ý; 0–5 là tin thường kỳ hoặc đồn đoán. Độ mới bắt đầu ở 10 điểm, giảm 1 điểm mỗi 4,8 giờ.
 
-Tin được đưa vào chấm theo thứ tự Ngoại hạng Anh → Cúp C1 → các giải lớn như World Cup, EURO, Copa América và các giải VĐQG lớn châu Âu → bóng đá Việt Nam → bóng đá khác → môn khác. Khi chọn bài, xếp theo điểm tổng trước. Ưu tiên giải đấu và sau đó là độ mới để phân định khi bằng điểm. Nếu không có tin từ ngưỡng trở lên, hệ thống chọn đúng một tin có điểm cao nhất và ghi rõ lý do chọn trong yêu cầu duyệt.
+### Cấu hình chấm điểm theo dự án
 
-Với tin được chọn, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có tiêu đề ngắn, bắt mắt và emoji mở đầu mỗi đoạn, với giọng văn gần gũi trên mạng xã hội. Link bài báo hiển thị trong màn hình duyệt. Hệ thống tìm ảnh JPEG tư liệu phù hợp trên Wikimedia Commons, ưu tiên ảnh đúng hai đội và ngày. Nếu thiếu, thử ảnh hai đội từng gặp hoặc ảnh thi đấu của một đội, lưu trạng thái ảnh tư liệu trong dữ liệu nội bộ. Bỏ qua ảnh sân vận động chung và chỉ dùng giấy phép CC0 hoặc Public Domain đã xác minh. Nguồn ảnh và giấy phép được lưu nội bộ, caption công khai chỉ chứa nội dung bài. Khi không có ảnh phù hợp, bài chỉ có caption. Mỗi lượt xét tối đa tám tin và tạo tối đa hai bài. Mỗi tin đã có quyết định lưu phiên bản barem, điểm thành phần, lý do AI, ngưỡng và kết quả chọn. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng. Tin đạt ngưỡng nhưng vượt giới hạn hai bài được xét lại ở lượt sau.
+Mặc định (barem `sports-v2`): trọng số reach/importance/freshness/engagement = 30/25/25/20 (cấu hình tùy chỉnh và điểm lịch sử được giữ nguyên), ngưỡng **8** (biến `SPORTS_NEWS_MIN_SCORE=8` khi dự án chưa có cấu hình riêng), chế độ dự phòng `highest`. Owner/Admin có thể đặt cấu hình riêng cho từng cặp workspace/dự án (bảng `sports_news_scoring_configs`, RPC `set_sports_news_scoring_config`; tổng trọng số phải bằng 100, ngưỡng 0–10, `fallback_mode` là `highest` hoặc `strict`; mỗi lần đổi tăng `version`). Worker đọc cấu hình ở đầu mỗi lượt. Cấu hình mới chỉ áp dụng cho tin được chấm từ lượt đó trở đi: quyết định đã ghi (kèm phiên bản barem, điểm thành phần, ngưỡng, trọng số) **không** bị chấm lại hay đổi kết quả một cách âm thầm.
 
-Ảnh được crop tự động thành JPEG vuông 1080 × 1080 cho màn hình duyệt và khi gửi. Telegram và Discord in đậm dòng tiêu đề. Facebook Page dùng tiêu đề dạng văn bản thường. Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của đúng phiên bản xin duyệt. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa gửi ảnh nếu có ảnh gắn riêng với phiên bản đó.
+Tin được đưa vào chấm theo thứ tự Ngoại hạng Anh → Cúp C1 → các giải lớn như World Cup, EURO, Copa América và các giải VĐQG lớn châu Âu → bóng đá Việt Nam → bóng đá khác → môn khác. Khi chọn bài, xếp theo điểm tổng trước, sau đó theo ưu tiên giải đấu và cuối cùng là độ mới. Nếu không có tin đạt ngưỡng, chế độ `highest` chọn đúng một tin có điểm cao nhất và ghi rõ lý do trong yêu cầu duyệt; chế độ `strict` không chọn tin nào.
 
-Owner/Admin phải duyệt từng yêu cầu. Worker gửi phiên bản đã duyệt đến từng đích vào lượt tiếp theo. Sau lỗi HTTP 429, worker thử lại tối đa ba lần với khoảng chờ tăng dần. Nếu kết quả gửi không rõ, màn hình duyệt báo cần kiểm tra trực tiếp trên kênh. Worker giữ nguyên bài đã duyệt và ghi mã bài do nền tảng trả về khi gửi thành công.
+Với tin được chọn, AI viết caption tiếng Việt từ tiêu đề và tóm tắt RSS. Caption có tiêu đề ngắn, bắt mắt và emoji tùy ngữ cảnh ở đầu đoạn (hoặc cuối đoạn), không bao giờ giữa đoạn (emoji lọt vào giữa đoạn được dời về cuối đoạn), với giọng văn gần gũi trên mạng xã hội. Link bài báo hiển thị trong màn hình duyệt. Hệ thống tìm ảnh JPEG tư liệu phù hợp trên Wikimedia Commons, ưu tiên ảnh đúng hai đội và ngày. Nếu thiếu, thử ảnh hai đội từng gặp hoặc ảnh thi đấu của một đội, lưu trạng thái ảnh tư liệu trong dữ liệu nội bộ. Bỏ qua ảnh sân vận động chung và chỉ dùng ảnh có giấy phép CC0 hoặc Public Domain theo metadata của nguồn. Nguồn ảnh và giấy phép được lưu nội bộ, caption công khai chỉ chứa nội dung bài. Khi không có ảnh phù hợp, bài chỉ có caption. Hạn mức mỗi lượt (chế độ thường): worker đưa tối đa **20** tin mới (chưa trùng URL/tiêu đề/sự kiện) vào bước AI chấm điểm, rồi chọn tối đa `SPORTS_NEWS_MAX_PER_RUN = 10` tin đạt ngưỡng; do đó tối đa **10 lần AI viết bản nháp** (draft) mỗi lượt, kể cả các lần thử tin thay thế khi tin dẫn đầu của một sự kiện bị lỗi (xem phần FN05). Đây là hạn mức *nháp/yêu cầu duyệt*, không phải hạn mức gửi. Mỗi tin đã có quyết định lưu phiên bản barem, điểm thành phần, lý do AI, ngưỡng và kết quả chọn. Tin dưới ngưỡng đã ghi nhận giữ quyết định cũ khi thay đổi ngưỡng. Tin đạt ngưỡng nhưng vượt giới hạn 10 bài của lượt không được ghi nhận, nên có thể được xét lại ở lượt sau nếu vẫn thuộc cùng ngày Asia/Dubai.
 
-Production dùng Supabase Cron để gọi pipeline mỗi 2 giờ. GitHub Actions là một cách đặt lịch cho môi trường thử nghiệm. Worker chỉ xét và gửi tin được xuất bản cùng ngày theo múi giờ Asia/Dubai. Tin đã duyệt nhưng qua ngày trước khi gửi sẽ được bỏ qua. Khi bản tin có yêu cầu mới chờ duyệt, bot gửi một tin nhắn Telegram riêng gồm tiêu đề, độ hot và link mở từng yêu cầu. Nếu gửi lỗi, worker thử lại ở lượt kế tiếp khi yêu cầu vẫn còn hiệu lực.
+Ảnh được crop tự động thành JPEG vuông 1080 × 1080 cho màn hình duyệt và khi gửi. Telegram và Discord in đậm dòng tiêu đề. Facebook Page dùng tiêu đề dạng văn bản thường. Bài xuất hiện trong dự án dưới dạng bản nháp. Mỗi đích được cấu hình có một yêu cầu duyệt riêng; theo mặc định yêu cầu này chờ Human Approval, trừ ngoại lệ Temporary Auto Publish nêu ở phần riêng bên dưới. Màn hình duyệt hiển thị nội dung, đích, nguồn, điểm và ảnh của đúng phiên bản xin duyệt. Nếu người dùng sửa bài, yêu cầu cũ bị hủy. Người dùng có thể gửi lại yêu cầu từ trang bài viết. Phiên bản sửa gửi ảnh nếu có ảnh gắn riêng với phiên bản đó.
+
+Việc gửi phụ thuộc chế độ tự động hóa của dự án (Off / Semi / Auto, xem phần Chế độ tự động hóa). Ở Semi, Owner/Admin phải duyệt từng yêu cầu (đúng phiên bản); ở Auto, bản nháp đủ điều kiện được gửi liên tục không cần duyệt thủ công, trừ tin phải duyệt thủ công; ở Off, không có RSS, AI, xử lý ảnh hay gửi nào. Worker gửi phiên bản đã duyệt đến từng đích vào lượt tiếp theo. Sau lỗi HTTP 429, worker thử lại tối đa ba lần với khoảng chờ tăng dần. Nếu kết quả gửi không rõ, màn hình duyệt báo cần kiểm tra trực tiếp trên kênh. Worker giữ nguyên bài đã duyệt và ghi mã bài do nền tảng trả về khi gửi thành công.
+
+Production dùng Supabase Cron để gọi pipeline mỗi 2 giờ. GitHub Actions là một cách đặt lịch cho môi trường thử nghiệm. Worker chỉ xét và gửi tin được xuất bản cùng ngày theo múi giờ Asia/Dubai (`publishedToday`; bài có timestamp tương lai bị loại). Tin đã duyệt nhưng qua ngày trước khi gửi sẽ được bỏ qua. Khi bản tin có yêu cầu mới chờ duyệt, bot gửi một tin nhắn Telegram riêng gồm tiêu đề, độ hot và link mở từng yêu cầu. Nếu gửi lỗi, worker thử lại ở lượt kế tiếp khi yêu cầu vẫn còn hiệu lực.
 
 ## Khôi phục lịch production
 
@@ -37,7 +41,7 @@ select cron.schedule('contentpilot-sports-news', '0 */2 * * *', $job$
 $job$);
 ```
 
-Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch cho cùng môi trường. Để thử một tin từ ngày trước, worker có chế độ POST có xác thực với `mode=test&date=YYYY-MM-DD`. Chế độ này chọn tối đa một tin đạt ngưỡng cho đích Telegram đã cấu hình và cho phép đăng trong 24 giờ sau khi duyệt.
+Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch cho cùng môi trường. Để thử một tin từ ngày trước, worker có chế độ POST có xác thực với `mode=test&date=YYYY-MM-DD`. Chế độ test dùng giới hạn riêng: chỉ xét bài của đúng ngày `date` (Asia/Dubai), đưa tối đa **16** tin vào chấm điểm, chọn tối đa **một** tin đạt ngưỡng (không dùng dự phòng "cao nhất dưới ngưỡng"), chỉ cho đích Telegram đã cấu hình, và bài test cho phép gửi trong 24 giờ sau khi duyệt (`testPublishUntil`). Chế độ test chỉ cần duyệt thủ công ở Semi (ở Auto, bốn lý do bên dưới không chặn gửi theo chính sách FN08): worker không mở cửa sổ tự động trong lượt test và cơ sở dữ liệu từ chối bài có `testPublishUntil`. Lượt test vẫn cần Owner/Admin duyệt như thường.
 
 ## Cấu hình trên môi trường thử nghiệm
 
@@ -69,45 +73,64 @@ Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch c
 6. Trong GitHub Actions, đặt biến `SPORTS_NEWS_CRON_URL` thành URL HTTPS của trang thử nghiệm cộng với `/api/cron/sports-news`. Đặt secret `SPORTS_NEWS_CRON_SECRET` có cùng giá trị với `CRON_SECRET` ở ứng dụng.
 7. Chạy workflow **Sports news automation** thủ công hoặc gọi endpoint bằng POST với bearer token. Mở **Yêu cầu xuất bản**, duyệt bản tin và chạy một lượt nữa. Xác nhận bài có ảnh trên đúng kênh và trạng thái giao nội dung là **Đã xuất bản**. Lịch GitHub Actions chạy mỗi 2 giờ trên nhánh mặc định khi được cấu hình, có thể trễ tùy hàng đợi GitHub.
 
-## Temporary Auto Publish
+## Chế độ tự động hóa (FN08)
 
-Một cửa sổ do quản trị production bật có thời hạn tối đa tám giờ, gắn với một workspace, một dự án và một đích Telegram. Worker vẫn là Member. Trong cửa sổ, tối đa hai tin trong mỗi khoảng hai giờ và tám tin toàn kỳ được phép gửi tự động, kể cả khi chạy lại. Chỉ bản nháp RSS mới tạo trong cửa sổ đủ điều kiện. Barem, bộ lọc tin cùng ngày, chống trùng và ảnh vuông được dùng như luồng thường.
+Mỗi cặp workspace/dự án có một trong ba chế độ do Owner/Admin đặt (RPC kiểm tra quyền trong DB, có nhật ký audit; worker cũng kiểm tra lại ở server):
 
-Kết quả gửi tự động được ghi riêng trong `contentpilot_private.sports_auto_publish_deliveries`. Nếu Telegram xác nhận đã gửi hoặc kết quả chưa xác định, hệ thống chặn gửi lại cùng bài đến cùng kênh. Lỗi xác định chưa gửi giữ yêu cầu duyệt để xử lý thủ công. Khi quá hạn, worker tự trở về Human Approval.
+- **Off**: dừng RSS tự động, AI, xử lý ảnh và gửi **trước mọi lời gọi ngoài**; việc đang chạy dừng tại checkpoint an toàn (`assertAutomationNotOff`). Dừng khẩn cấp chuyển về Off. Thiếu cấu hình hoặc không đọc được chế độ → **fail-safe Off**; migration không tự bật RSS/AI.
+- **Semi**: RSS, chấm điểm, chống trùng, caption và ảnh chạy tự động; **cần Human Approval đúng phiên bản trước khi gửi**. Hàng đợi đã duyệt vẫn tiếp tục được gửi ở Semi.
+- **Auto**: tự động liên tục cho đến khi đổi chế độ. Các lý do `unresolved_identity`, `uncertain_facts`, `follow_up`, `reconsidered` **không** cần duyệt thủ công ở Auto; bản trùng đã xác nhận vẫn bị chặn. Không kiểm chứng sự thật độc lập; caption bám nguồn.
+
+Giữ nguyên: lịch 2 giờ, tối đa **3 bài phân biệt mỗi lượt quét/slot** (chọn tất cả bài ≥ ngưỡng, mặc định 8, xếp giảm dần tối đa 3; nếu không bài nào đạt thì chọn bài đủ điều kiện cao nhất — dự phòng `highest`; bằng 0 khi không có tin mới, chưa trùng, hợp lệ hoặc khi hết hạn mức/lỗi gửi), ngân sách ứng viên đánh giá tách riêng, hạn mức ngày cấu hình được (mặc định 40, tối đa 120, không bị đổi âm thầm), chống trùng và idempotency khi gửi. Đổi chế độ không phát lại backlog. Chế độ test cách ly và không bao giờ vào Auto. Ghi chú: giới hạn cũ của "Temporary Auto Publish" (cửa sổ ≤ 8 giờ, 10 lần/lượt) đã được thay bằng mô hình ba chế độ; xem `automation-mode.ts` và migration `20261128090000`/`20261128120000` để biết chi tiết thực thi.
+
+Kết quả gửi tự động được ghi riêng trong `contentpilot_private.sports_auto_publish_deliveries`. Nếu Telegram xác nhận đã gửi hoặc kết quả chưa xác định, hệ thống chặn gửi lại cùng bài đến cùng kênh. Lỗi xác định chưa gửi giữ yêu cầu duyệt để xử lý thủ công.
+
+### Chỉ duyệt thủ công (manual review only)
+
+Các trường hợp sau luôn cần con người duyệt và chỉ cần duyệt thủ công ở Semi (ở Auto, bốn lý do bên dưới không chặn gửi theo chính sách FN08). Cột `sports_news_items.manual_review_reason` ghi lý do (worker đặt, DB dẫn xuất lại từ payload nên payload cũ hoặc giả mạo không mở được đường tự động):
+
+- `unresolved_identity`: không xác định được danh tính sự kiện (thiếu đội/tên, tiêu đề trộn nhiều loại tin...).
+- `follow_up`: tin tiếp nối hoặc có sự kiện/dữ kiện vật chất mới (nhận định → kết quả, tin đồn → chính thức, đổi tỷ số...).
+- `uncertain_facts`: giải đấu hoặc dữ kiện không chắc chắn (ví dụ cùng cặp đội nhưng giải chỉ biết ở một phía, hoặc dữ kiện đổi giá trị).
+- `reconsidered`: sự kiện từng có bài đã lưu trữ hoặc bị từ chối hoàn toàn mà chưa được gửi, nay được đề xuất lại.
+
+Lớp bảo vệ: worker chỉ đưa bản nháp có `manual === null` vào cửa sổ, và `claim_sports_auto_publish` từ chối mọi mục có `manual_review_reason` khác null (migration `20261127120000_sports_news_semantic_dedup.sql`).
 
 ## Khử trùng sự kiện theo ngữ nghĩa (FN05)
 
-Ngoài khử trùng theo URL và tiêu đề chuẩn hoá (vẫn được xử lý trước, giữ nguyên), worker tính **danh tính sự kiện** (`event-v2`) bằng bộ trích xuất tất định (`src/lib/sports-news/event-identity.ts`, không gọi LLM/API trả phí). Danh tính chỉ "cụ thể" (`specific`) khi nêu được MỘT sự kiện:
+Trạng thái release: FN05 đã được squash merge vào `main` (PR #34, `44ebaf37`); Owner xác nhận migration và triển khai Production đã được xác minh. **Chưa có bằng chứng kiểm chứng ngữ nghĩa trên bài báo thật**, và tại thời điểm kiểm tra release Temporary Auto Publish đang tắt (Human Approval là mặc định). Tài liệu này mô tả code hiện tại; không khẳng định gửi ngoài thật thành công.
 
-- **Trận đấu**: đúng 2 đội trong từ điển (không phân biệt thứ tự), ngày, loại (nhận định/kết quả), tỷ số (không phân biệt hướng).
-- **Cá nhân** (chuyển nhượng, chấn thương, HLV, kỷ luật): 1–2 tên người cụ thể + loại tin + ngày; chuyển nhượng/HLV còn cần cùng tập CLB. Cầu thủ khác nhau của cùng CLB, cùng ngày, cùng loại **không bao giờ** gộp. Họ đơn lẻ ("Rashford") chỉ khớp tên đầy đủ khi cùng CLB và họ đó là duy nhất trong lịch sử gần đây.
-- **Không cụ thể** (thiếu đội/tên, tiêu đề trộn nhiều loại tin, tổng hợp nhiều trận, loại "other"): `identity_not_specific` → **fail open**: chấm điểm và duyệt thủ công như bình thường, không bỏ qua, không chặn, không lưu `event_key/cluster_key`.
+**Thứ tự ưu tiên**: (1) URL và tiêu đề chuẩn hoá đã xử lý trong 48 giờ (lịch sử chống trùng, tối đa 800 bản ghi) vẫn được xét trước và giữ nguyên; (2) sau đó mới tới danh tính sự kiện. Danh tính sự kiện (`EVENT_IDENTITY_VERSION = "event-v4"`) do bộ trích xuất tất định tính (`src/lib/sports-news/event-identity.ts`, không gọi LLM hay API trả phí). Danh tính chỉ "cụ thể" (`specific`) khi nêu được MỘT sự kiện:
 
-Quyết định: `duplicate` (cùng sự kiện, không có gì mới → bỏ qua, ghi bằng chứng + lý do có cấu trúc vào `sports_news_event_matches`, hiển thị ở trang Luồng tin → "Nhật ký trùng sự kiện"); `follow_up` (nhận định → kết quả, tin đồn → chính thức, đổi tỷ số → vẫn qua chấm điểm/duyệt, liên kết sự kiện gốc); `new`.
+- **Trận đấu**: đúng 2 đội trong từ điển (không phân biệt thứ tự), giải đấu, ngày, loại (nhận định/kết quả) và tỷ số. Cùng cặp đội ở hai giải khác nhau là hai trận khác nhau.
+- **Cá nhân** (chuyển nhượng, chấn thương, HLV, kỷ luật): 1–2 tên người cụ thể + loại tin + ngày; chuyển nhượng/HLV còn cần cùng tập CLB. Cầu thủ khác nhau của cùng CLB, cùng ngày, cùng loại **không bao giờ** gộp. Họ đơn lẻ chỉ khớp tên đầy đủ khi cùng CLB và họ đó là duy nhất trong lịch sử gần đây.
+- **Không cụ thể** (thiếu đội/tên, tiêu đề trộn nhiều loại tin, tổng hợp nhiều trận, loại "other"): `identity_not_specific` → **fail open có kiểm soát**: không bỏ qua và không chặn, tin được chấm điểm bình thường nhưng chỉ duyệt thủ công (`unresolved_identity`), không lưu `event_key/cluster_key`.
 
-**Chỉ bài đã thành post mới chặn được.** Chỉ mục có `post_id`, post chưa lưu trữ và chưa bị từ chối toàn bộ yêu cầu duyệt mới chặn báo cáo sau (TS: `blocksLaterReports`; DB: `contentpilot_private.sports_item_blocks_event`, cùng quy tắc). Bài điểm thấp, không được chọn, lỗi hoặc chỉ mới phát hiện không bao giờ chặn bài mạnh hơn (cùng lượt quét, lượt sau, hay lúc DB kiểm tra lại). Cùng lượt quét: sau khi chấm điểm, chỉ giữ bản điểm cao nhất của mỗi sự kiện; bản yếu hơn không chiếm chỗ nhưng cũng không chặn bản mạnh. Post đã lưu trữ hoặc bị từ chối hoàn toàn không còn chặn (có thể được đề xuất lại qua duyệt thủ công); post đang chờ/đã duyệt/đã hủy do hết hạn vẫn chặn để tránh gửi trùng.
+Hai báo cáo cùng chủ thể khi cùng loại sự kiện và ngày lệch tối đa 1 ngày. Quyết định, kèm bằng chứng và lý do có cấu trúc lưu ở `sports_news_event_matches` (hiển thị ở trang Luồng tin → "Nhật ký trùng sự kiện"):
 
-**Chạy đồng thời**: `record_sports_news_event_assessment` lấy advisory lock theo dự án rồi kiểm tra lại `event_key`/`cluster_key` — chỉ khi lệnh này sắp tạo post (`p_title` khác null) và danh tính cụ thể. Phê duyệt thủ công, quota, Auto Publish có thời hạn, dừng khẩn cấp không đổi. TS và DB cùng quy tắc, DB là chốt cuối.
+- `duplicate`: cùng sự kiện, không có thông tin vật chất mới → bỏ qua.
+- `follow_up`: có thông tin vật chất mới (nhận định → kết quả, tin đồn → chính thức, đổi tỷ số, dữ kiện mới) → vẫn qua chấm điểm và duyệt, liên kết sự kiện gốc, chỉ duyệt thủ công.
+- `new`: không liên quan, hoặc danh tính chưa đủ cụ thể để kết luận.
 
-**Dữ liệu lịch sử**: không backfill, không ghi dữ liệu cũ. Với mục gần đây (cửa sổ 2 ngày, tối đa 150 post) chưa có `event_identity`, worker dựng danh tính bảo thủ tại bộ nhớ từ tiêu đề đã ghi (`assessment.title`) và nội dung post; kết quả không cụ thể thì bị bỏ qua. Bằng chứng ghi `matchedOrigin: "derived"`. Danh tính dẫn xuất không có khóa DB nên không được DB kiểm tra lại (chỉ lớp TS).
+**Chỉ bài đã thành post mới chặn được** (TS: `blocksLaterReports`; DB: `contentpilot_private.sports_item_blocks_event`, cùng quy tắc):
 
-**Cách ly/ACL**: bảng bằng chứng bật RLS (thành viên chỉ đọc); hai RPC `SECURITY DEFINER` chỉ cấp cho `authenticated`, kiểm tra worker đã đăng ký; hàm chặn nằm ở schema private, không client nào gọi được. Lỗi ghi bằng chứng được đếm vào `eventEvidenceFailures`/`itemFailures`.
+- Bài đã xuất bản (`published`), hoặc có giao nội dung `queued`/`sending`/`succeeded`, hoặc có giao tự động `sending`/`succeeded`/`uncertain` **vẫn chặn kể cả khi đã lưu trữ**. Sổ cái tự động là private nên lớp TS không thấy được; DB kiểm tra lại là chốt cuối và ghi bằng chứng `database_recheck`.
+- Bài khác chỉ chặn khi chưa lưu trữ và chưa bị từ chối toàn bộ yêu cầu duyệt. Bài đã lưu trữ/bị từ chối mà chưa từng gửi có thể được đề xuất lại — luôn chỉ duyệt thủ công (`reconsidered`).
+- Bài điểm thấp, không được chọn, lỗi hoặc chỉ mới phát hiện (không có post) **không bao giờ chặn** bài mạnh hơn, dù cùng lượt quét, lượt sau hay lúc DB kiểm tra lại.
 
-**Giới hạn đã biết**: từ điển đội/giải nhỏ (đội ngoài từ điển → không cụ thể → không gộp); tên người dựa vào chữ hoa trong tiêu đề; tỷ số không phân biệt chủ/khách; khóa cụm theo ngày Dubai chính xác (±1 ngày chỉ ở lớp TS); hai trận giống hệt cặp đội trong cùng ngày bị coi là một; tiêu đề trộn nhiều loại tin không bị gộp (an toàn nhưng có thể bỏ sót trùng). Áp dụng migration trước khi triển khai worker mới.
+**Cùng lượt quét**: sau khi chấm điểm, bản điểm cao nhất của mỗi sự kiện là bản dẫn đầu; bản yếu hơn là *bản thay thế* và không chiếm chỗ. Bằng chứng bỏ qua của bản thay thế chỉ được lưu sau khi sự kiện đã thật sự thành post. Nếu bản dẫn đầu lỗi trước khi có post, các bản thay thế được thử lần lượt theo thứ hạng (chỉ bản đạt ngưỡng, hoặc khi đang ở chế độ dự phòng), với tổng số lần AI viết nháp không vượt `SPORTS_NEWS_DRAFT_CALL_BUDGET` (10; tách biệt với trần 3 bài đầu ra mỗi lượt `SPORTS_NEWS_OUTPUT_PER_SCAN`). Nếu kết quả là bản trùng bị DB từ chối thì không kích hoạt dự phòng.
 
-## FN05 acceptance remediation (blocking, manual-only, facts, fallback)
+**Chạy đồng thời**: `record_sports_news_event_assessment` lấy advisory lock theo dự án rồi kiểm tra lại `event_key` và `cluster_key` (gồm cửa sổ ngày −1/0/+1 và giải đấu) — chỉ khi lệnh sắp tạo post (`p_title` khác null) và danh tính cụ thể. Phê duyệt thủ công, hạn mức, Auto Publish có thời hạn và dừng khẩn cấp không đổi.
 
-- **Blocking**: a post blocks later reports if it is published, has a queued/sending/succeeded delivery, or has a
-  sending/succeeded/uncertain temporary auto-publish delivery, **even when archived**. Otherwise it blocks only while
-  not archived and not fully rejected. An archived/rejected, never-sent post may be reconsidered. The auto-publish
-  ledger is private, so the TS pre-filter cannot see it: the database recheck (`sports_item_blocks_event`) is
-  authoritative and rejects the duplicate with `database_recheck` evidence.
-- **Manual review only**: `sports_news_items.manual_review_reason` (`unresolved_identity`, `follow_up`,
-  `reconsidered`, `uncertain_facts`) is set by the worker and re-derived by the database.
-  `claim_sports_auto_publish` refuses such items, and the worker only sends regular eligible drafts to the window.
-- **Material facts** (`facts`, part of `eventKey`): injury duration/diagnosis, transfer fee, contract, standings
-  implication, from fixed patterns only (no AI). New fact → follow-up; changed value → `fact_changed`.
-  Limitation: facts outside these patterns are not detected, so such a rewording is a duplicate.
-- **Same-run fallback**: weaker reports of one event are alternates; skip evidence is stored only after the event
-  became a post. If the lead fails, alternates are tried in rank order while total draft calls stay
-  ≤ `SPORTS_NEWS_MAX_PER_RUN`.
+**Dữ liệu lịch sử**: không backfill, không ghi dữ liệu cũ. Với mục gần đây (cửa sổ 2 ngày, tối đa 150 post) chưa có `event_identity`, worker dựng danh tính bảo thủ tại bộ nhớ từ tiêu đề đã ghi và nội dung post; kết quả không cụ thể thì bị bỏ qua. Bằng chứng ghi `matchedOrigin: "derived"`. Danh tính dẫn xuất không có khóa DB nên chỉ được lớp TS kiểm tra.
+
+**Dữ kiện vật chất** (một phần của `eventKey`): thời gian/chẩn đoán chấn thương, phí chuyển nhượng, hợp đồng, hệ quả bảng xếp hạng — chỉ theo mẫu cố định, không dùng AI. Dữ kiện mới → `follow_up`; giá trị thay đổi → `fact_changed` (chỉ duyệt thủ công). Dữ kiện ngoài các mẫu này không được phát hiện, nên bài diễn đạt lại sẽ bị coi là trùng.
+
+**Cách ly và ACL**: mọi truy vấn lọc theo workspace/dự án; bảng bằng chứng bật RLS (thành viên chỉ đọc); hai RPC `SECURITY DEFINER` chỉ cấp cho `authenticated` và kiểm tra worker đã đăng ký; hàm chặn nằm ở schema private. Lỗi ghi bằng chứng được đếm vào `eventEvidenceFailures`/`itemFailures`.
+
+**Giới hạn đã biết**: từ điển đội/giải nhỏ (đội ngoài từ điển → không cụ thể → không gộp); tên người dựa vào chữ hoa trong tiêu đề; tỷ số không phân biệt chủ/khách; hai trận cùng cặp đội và giải trong cửa sổ ±1 ngày bị coi là một; tiêu đề trộn nhiều loại tin không bị gộp (an toàn nhưng có thể bỏ sót trùng). Áp dụng migration trước khi triển khai worker mới.
+
+## Phạm vi và những điều chưa được xác nhận
+
+- Tài liệu này mô tả hành vi theo code; không khẳng định đã gửi thành công ra kênh ngoài thật hay kết quả vận hành Production.
+- Ảnh tư liệu chỉ được lọc theo metadata giấy phép do nguồn khai báo; chưa có kiểm chứng độc lập về quyền sử dụng ảnh. Module xác minh giấy phép ảnh và kiểm chứng sự thật của tin nằm ngoài phạm vi hiện tại.

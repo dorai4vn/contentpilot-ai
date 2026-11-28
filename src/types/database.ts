@@ -192,7 +192,7 @@ export type Database = {
       sports_news_scoring_configs: {
         Row: {
           workspace_id: string; project_id: string; version: number; threshold: number;
-          reach_weight: number; importance_weight: number; freshness_weight: number;
+          reach_weight: number; importance_weight: number; freshness_weight: number; engagement_weight: number;
           fallback_mode: "highest" | "strict"; updated_by: string | null; updated_at: string;
         };
         Insert: never;
@@ -421,12 +421,12 @@ export type Database = {
     Views: { [_ in never]: never };
     Functions: {
       set_sports_news_scoring_config: {
-        Args: { p_workspace_id: string; p_project_id: string; p_threshold: number; p_reach_weight: number; p_importance_weight: number; p_freshness_weight: number; p_fallback_mode: "highest" | "strict" };
+        Args: { p_workspace_id: string; p_project_id: string; p_threshold: number; p_reach_weight: number; p_importance_weight: number; p_freshness_weight: number; p_engagement_weight: number; p_fallback_mode: "highest" | "strict" };
         Returns: number;
       };
       read_sports_auto_publish_control: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
-        Returns: { id: string; starts_at: string; ends_at: string; max_per_slot: number; max_per_window: number }[];
+        Returns: { id: string; starts_at: string; ends_at: string | null; max_per_slot: number; max_per_window: number; persistent: boolean; max_per_day: number }[];
       };
       set_sports_auto_publish_control: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_enabled: boolean; p_hours: number; p_slot_limit: number; p_window_limit: number };
@@ -434,11 +434,23 @@ export type Database = {
       };
       get_sports_auto_publish_window: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string };
-        Returns: { id: string; starts_at: string; ends_at: string }[];
+        Returns: { id: string; starts_at: string; ends_at: string | null; persistent: boolean }[];
+      };
+      get_sports_automation_mode: {
+        Args: { p_workspace_id: string; p_project_id: string };
+        Returns: { mode: string; daily_quota: number; version: number; updated_at: string | null }[];
+      };
+      list_sports_automation_events: {
+        Args: { p_workspace_id: string; p_project_id: string };
+        Returns: { from_mode: string; to_mode: string; daily_quota: number; created_at: string }[];
+      };
+      set_sports_automation_mode: {
+        Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_mode: string; p_daily_quota: number };
+        Returns: number;
       };
       claim_sports_auto_publish: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_post_id: string };
-        Returns: { id: string; starts_at: string; ends_at: string; target_ref: string; created_at: string }[];
+        Returns: { id: string; starts_at: string; ends_at: string | null; target_ref: string; created_at: string; persistent: boolean }[];
       };
       finish_sports_auto_publish: {
         Args: { p_workspace_id: string; p_id: string; p_external_id: string | null; p_error_code: string | null };

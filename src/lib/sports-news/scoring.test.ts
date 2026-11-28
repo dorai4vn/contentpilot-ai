@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { footballPriority, scoreSportsNews, selectSportsNews } from "./scoring";
+import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_SCORING_RUBRIC } from "./scoring";
 
 it("prioritizes the Premier League, C1, major football and Vietnamese football in order", () => {
   expect([
@@ -23,10 +23,38 @@ it("chooses only the highest-scoring fallback, using competition priority to bre
   expect(selectSportsNews([], 8)).toEqual({ selected: [], fallback: false });
 });
 
-it("selects at most ten qualified stories per scan", () => {
+it("selects at most three qualified stories per scan, ranked descending", () => {
   const item = { publishedAt: Date.now() };
   const stories = Array.from({ length: 12 }, (_, index) => ({ score: 10 - index / 10, priority: 1, item }));
-  expect(selectSportsNews(stories, 8).selected).toHaveLength(10);
+  const selected = selectSportsNews(stories, 8).selected;
+  expect(selected.map((entry) => entry.score)).toEqual([10, 9.9, 9.8]);
+});
+
+it("falls back to the single highest story when none reaches the default 8 threshold", () => {
+  const item = { publishedAt: 1 };
+  const stories = [7.5, 6, 7.9].map((score) => ({ score, priority: 1, item }));
+  const result = selectSportsNews(stories, 8);
+  expect(result.selected.map((entry) => entry.score)).toEqual([7.9]);
+  expect(result.fallback).toBe(true);
+});
+
+it("uses the sports-v2 default weights: popularity 30, importance 25, recency 25, engagement 20", () => {
+  const now = Date.parse("2026-11-27T10:00:00Z");
+  expect(SPORTS_SCORING_RUBRIC.version).toBe("sports-v2");
+  expect(SPORTS_SCORING_RUBRIC.weights).toEqual({ reach: 0.30, eventImportance: 0.25, freshness: 0.25, engagement: 0.20 });
+  const assessment = { playerPopularity: 8, teamPopularity: 6, competitionPopularity: 4, eventImportance: 6, engagement: 10, reason: "t" };
+  // 0.30*8 + 0.25*6 + 0.25*10 (just published) + 0.20*10 = 8.4
+  expect(scoreSportsNews(assessment, now, now).score).toBe(8.4);
+  // Recency follows the source publication time: 24h old -> freshness 5
+  expect(scoreSportsNews(assessment, now - 24 * 3_600_000, now).freshness).toBe(5);
+});
+
+it("keeps legacy three-weight custom configurations working with engagement weight 0", () => {
+  const now = Date.parse("2026-11-27T10:00:00Z");
+  const base = { playerPopularity: 8, teamPopularity: 6, competitionPopularity: 4, eventImportance: 6, reason: "t" };
+  const legacy = { reach: 0.45, eventImportance: 0.40, freshness: 0.15 };
+  expect(scoreSportsNews({ ...base, engagement: 10 }, now, now, legacy).score)
+    .toBe(scoreSportsNews(base, now, now, legacy).score);
 });
 
 it("uses configured weights and strict threshold without rescoring earlier entries", () => {

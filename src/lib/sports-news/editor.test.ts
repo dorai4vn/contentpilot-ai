@@ -179,3 +179,50 @@ it("a normalized full caption is accepted by Telegram photo delivery with correc
   expect(String(form.get("caption")).length).toBeLessThanOrEqual(1024);
   fetchMock.mockRestore();
 });
+
+it("prompt guides contextual emoji (not blanket omission) and forbids mid-paragraph placement", async () => {
+  reply({ ...base, title: "Son chấn thương", body: "Son rời sân ở phút 30." });
+  await writeSportsDraft(item("Son chấn thương", "Son rời sân ở phút 30."));
+  const system: string = complete.mock.calls[0][0].messages[0].content;
+  expect(system).toContain("đúng chủ đề");
+  expect(system).toContain("KHÔNG đặt emoji giữa đoạn");
+  expect(system).not.toContain("có thể không dùng, nếu dùng thì ít");
+});
+
+it("moves mid-paragraph emoji to paragraph end without adding, changing or dropping text", async () => {
+  const cases = [
+    { title: "Lille hạ Bayern", body: "Bàn thắng ⚽ đến ở phút 90+2. Lille thắng 1–0.", out: "Bàn thắng đến ở phút 90+2. Lille thắng 1–0. ⚽" },
+    { title: "Chấn thương của Son 🩹", body: "🩹 Son rời sân.\n\nChưa rõ thời gian vắng mặt 📉 theo nguồn tin.", out: "🩹 Son rời sân.\n\nChưa rõ thời gian vắng mặt theo nguồn tin. 📉" },
+    { title: "Man City vô địch 🏆", body: "Man City lên ngôi sau trận hòa 1-1.", out: "Man City lên ngôi sau trận hòa 1-1." },
+  ];
+  for (const c of cases) {
+    reply({ ...base, title: c.title, body: c.body });
+    const r = await writeSportsDraft(item(c.title, c.body));
+    expect(r.body).toBe(c.out);
+  }
+});
+
+it("offline batch: emoji vary by topic and position; some posts have none; none mid-paragraph", async () => {
+  const batch = [
+    { title: "⚽ Việt Nam thắng Lào 3–0", body: "Ba bàn thắng đến trong hiệp hai." },
+    { title: "Chấn thương của Son", body: "Son rời sân ở phút 30. 🩹" },
+    { title: "Mbappé gia hạn với Real", body: "💼 Hợp đồng mới kéo dài đến 2029.\n\nTheo CLB, hai bên đã ký xong." },
+    { title: "Haaland cán mốc 100 bàn 📊", body: "Tiền đạo người Na Uy lập kỷ lục sau 105 trận." },
+    { title: "Lille hạ Bayern 1–0", body: "Bàn duy nhất ở phút 90+2." },
+    { title: "Lịch thi đấu vòng 10", body: "Vòng 10 khởi tranh tối thứ Sáu. 🗓️" },
+  ];
+  const out: string[] = [];
+  for (const c of batch) {
+    reply({ ...base, ...c });
+    const r = await writeSportsDraft(item(c.title, c.body));
+    out.push(`${r.title}\n${r.body}`);
+    for (const para of r.body.split("\n\n")) {
+      const mid = para.replace(/^\p{Extended_Pictographic}️?\s*/u, "").replace(/\s*\p{Extended_Pictographic}️?$/u, "");
+      expect(mid).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
+  }
+  const all = out.join("\n");
+  const kinds = new Set(all.match(/\p{Extended_Pictographic}/gu));
+  expect(kinds.size).toBeGreaterThanOrEqual(5);
+  expect(out.filter((o) => !/\p{Extended_Pictographic}/u.test(o)).length).toBeGreaterThan(0);
+});

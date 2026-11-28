@@ -7,7 +7,7 @@ const PROJECT = "33333333-3333-4333-8333-333333333333";
 type Row = Record<string, unknown>;
 const db = vi.hoisted(() => ({
   items: [] as Row[], posts: [] as Row[], requests: [] as Row[],
-  rpc: vi.fn(), send: vi.fn(), autoWindow: null as unknown, deliveries: [] as Row[], collect: vi.fn(), assess: vi.fn(), draft: vi.fn(), historyFails: false, evidenceFails: false,
+  rpc: vi.fn(), mode: { data: [{ mode: "semi", daily_quota: 40 }], error: null } as { data: unknown; error: unknown }, send: vi.fn(), autoWindow: null as unknown, deliveries: [] as Row[], collect: vi.fn(), assess: vi.fn(), draft: vi.fn(), historyFails: false, evidenceFails: false,
 }));
 
 function thenable(rows: () => Row[], fails = false) {
@@ -20,7 +20,7 @@ function thenable(rows: () => Row[], fails = false) {
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     auth: { signInWithPassword: async () => ({ error: null }) },
-    rpc: db.rpc,
+    rpc: (name: string, args: unknown) => name === "get_sports_automation_mode" ? Promise.resolve(db.mode) : db.rpc(name, args),
     from: (table: string) => table === "sports_news_items" ? thenable(() => db.items, db.historyFails)
       : table === "content_posts" ? thenable(() => db.posts)
       : table === "content_publish_requests" ? thenable(() => db.requests)
@@ -55,10 +55,10 @@ beforeEach(() => {
     SPORTS_NEWS_WORKSPACE_ID: WS, SPORTS_NEWS_PROJECT_ID: PROJECT, SPORTS_NEWS_WORKER_EMAIL: "w@example.com",
     SPORTS_NEWS_WORKER_PASSWORD: "pw", SPORTS_NEWS_MIN_SCORE: "8",
   });
-  db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false;
+  db.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null }; db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false;
   db.assess.mockImplementation(async (item: { title: string }) => {
     const n = level(item.title);
-    return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, reason: "r" };
+    return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, engagement: n, reason: "r" };
   });
   db.draft.mockImplementation(async (item: { title: string }) => ({ title: `Bài: ${clean(item.title)}`, body: "Nội dung", photoSubject: null, photoNeedsAction: false }));
   db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
@@ -256,17 +256,18 @@ describe("runSportsNews semantic deduplication", () => {
       seed("Arsenal thắng Chelsea 1-0 ở Ngoại hạng Anh", "Arsenal hạ Chelsea.", "https://a.vn/old", { archived: true });
       feed(
         article("[10] Chelsea chính thức ký Erling Haaland", "Chuyển nhượng hoàn tất, Erling Haaland gia nhập Chelsea.", "https://b.vn/followup"),
-        article("[9] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
-        article("[8] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
-        article("[8] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
+        article("[8] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
+        article("[9] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
+        article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
       );
       const report = await runSportsNews(readSportsNewsConfig());
-      expect(report.drafted).toBe(4); // all of them still reach manual review
+      expect(report.drafted).toBe(3); // 3-post output cap per scan; the weakest (unresolved) report is not drafted
       expect(sentIds()).toEqual(["post-https://b.vn/regular"]);
       const reasons = Object.fromEntries(recorded().map((r) => [r.p_source_url, (r.p_event as { manualReviewReason?: string }).manualReviewReason]));
       expect(reasons).toMatchObject({
-        "https://b.vn/followup": "follow_up", "https://b.vn/vague": "unresolved_identity", "https://b.vn/reconsidered": "reconsidered",
+        "https://b.vn/followup": "follow_up", "https://b.vn/reconsidered": "reconsidered",
       });
+      expect(reasons["https://b.vn/vague"]).toBeUndefined();
       expect(reasons["https://b.vn/regular"]).toBeUndefined();
     });
 
@@ -284,6 +285,86 @@ describe("runSportsNews semantic deduplication", () => {
       feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/1"));
       expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ drafted: 0, semanticDuplicates: 1, autoPublished: 0 });
       expect(db.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("FN08 automation modes", () => {
+    const TELEGRAM = "44444444-4444-4444-8444-444444444444";
+    const setMode = (mode: string) => { db.mode = { data: [{ mode, daily_quota: 40 }], error: null }; };
+    const rpcNames = () => db.rpc.mock.calls.map(([n]) => n);
+
+    it("Off makes zero RSS, AI, draft, record, delivery or notice calls", async () => {
+      setMode("off");
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/off"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ mode: "off", skipped: "automation_off", drafted: 0, assessed: 0, autoPublished: 0 });
+      expect(db.collect).not.toHaveBeenCalled();
+      expect(db.assess).not.toHaveBeenCalled();
+      expect(db.draft).not.toHaveBeenCalled();
+      expect(db.send).not.toHaveBeenCalled();
+      expect(db.rpc).not.toHaveBeenCalled();
+    });
+
+    it("an unreadable mode fails closed to Off", async () => {
+      db.mode = { data: null, error: { message: "db" } };
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/err"));
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ skipped: "automation_off" });
+      expect(db.assess).not.toHaveBeenCalled();
+    });
+
+    it("Off arriving after the RSS read stops before the first AI call (safe checkpoint)", async () => {
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/mid"));
+      let reads = 0;
+      Object.defineProperty(db, "mode", { configurable: true, get: () => ({ data: [{ mode: ++reads > 1 ? "off" : "semi", daily_quota: 40 }], error: null }), set: () => undefined });
+      try {
+        const report = await runSportsNews(readSportsNewsConfig());
+        expect(report).toMatchObject({ mode: "stopped", skipped: "automation_off", drafted: 0 });
+        expect(db.assess).not.toHaveBeenCalled();
+        expect(db.draft).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(db, "mode", { configurable: true, writable: true, value: { data: [{ mode: "semi", daily_quota: 40 }], error: null } });
+      }
+    });
+
+    it("Off arriving after assessment stops before any draft call and records nothing", async () => {
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/late"));
+      let reads = 0;
+      Object.defineProperty(db, "mode", { configurable: true, get: () => ({ data: [{ mode: ++reads > 2 ? "off" : "semi", daily_quota: 40 }], error: null }), set: () => undefined });
+      try {
+        const report = await runSportsNews(readSportsNewsConfig());
+        expect(report).toMatchObject({ mode: "stopped", drafted: 0, itemFailures: 0 });
+        expect(db.draft).not.toHaveBeenCalled();
+        expect(rpcNames()).not.toContain("record_sports_news_event_assessment");
+      } finally {
+        Object.defineProperty(db, "mode", { configurable: true, writable: true, value: { data: [{ mode: "semi", daily_quota: 40 }], error: null } });
+      }
+    });
+
+    it("Semi never auto-publishes: no window is consulted for sending", async () => {
+      process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID = TELEGRAM;
+      process.env.SPORTS_NEWS_SOCIAL_TOKENS = JSON.stringify({ [TELEGRAM]: "token" });
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/semi"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ mode: "on", drafted: 1, autoPublished: 0 });
+      expect(db.send).not.toHaveBeenCalled();
+    });
+
+    it("persistent Auto also sends unresolved, follow-up and reconsidered drafts (confirmed duplicates stay blocked)", async () => {
+      process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID = TELEGRAM;
+      process.env.SPORTS_NEWS_SOCIAL_TOKENS = JSON.stringify({ [TELEGRAM]: "token" });
+      setMode("auto");
+      db.autoWindow = { id: "w", starts_at: new Date(0).toISOString(), ends_at: null, persistent: true };
+      seed("Chelsea quan tâm Erling Haaland", "Tin đồn chuyển nhượng Erling Haaland.", "https://a.vn/rumor");
+      seed("Lille hạ Bayern 1-0 ở Champions League", "Lille thắng Bayern Munich.", "https://a.vn/dup");
+      feed(
+        article("[10] Chelsea chính thức ký Erling Haaland", "Chuyển nhượng hoàn tất, Erling Haaland gia nhập Chelsea.", "https://b.vn/followup"),
+        article("[8] Tin nóng bóng đá hôm nay", "Nhiều diễn biến.", "https://b.vn/vague"),
+        article("[8] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/dup2"),
+      );
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ drafted: 2, semanticDuplicates: 1, autoPublished: 2, persistentAuto: true });
+      expect(db.send.mock.calls.map(([, , , draft]) => (draft as { id: string }).id).sort())
+        .toEqual(["post-https://b.vn/followup", "post-https://b.vn/vague"]);
     });
   });
 

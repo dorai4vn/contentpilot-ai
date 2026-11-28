@@ -28,6 +28,11 @@ insert into public.content_projects (id, workspace_id, name) values (:'project2'
 insert into public.workspace_members (workspace_id, user_id, role) values (:'ws2', :'worker2', 'member');
 reset role;
 insert into contentpilot_private.sports_news_workers values (:'ws2', :'worker2');
+-- FN08: an unconfigured project is Off, so the second workspace is an explicit Semi project (first one: see 80).
+insert into public.publishing_destinations (id, workspace_id, kind, name, target_ref)
+values ('60000000-0000-4000-8000-000000000085', :'ws2', 'telegram', 'Kênh 2', '-100987654321');
+insert into contentpilot_private.sports_automation_modes (workspace_id, project_id, destination_id, mode)
+values (:'ws2', :'project2', '60000000-0000-4000-8000-000000000085', 'semi');
 
 \set event_a '{"decision":"new","specific":true,"eventKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1","type":"match_result"},"reasons":[{"code":"no_matching_event"}]}'
 \set event_dup_cluster '{"decision":"new","specific":true,"eventKey":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","clusterKey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","identity":{"version":"event-v1"},"reasons":[]}'
