@@ -340,7 +340,7 @@ describe("runSportsNews semantic deduplication", () => {
       }
     });
 
-    it("Semi (and absent configuration) never auto-publishes: no window is consulted for sending", async () => {
+    it("Semi never auto-publishes: no window is consulted for sending", async () => {
       process.env.SPORTS_NEWS_TELEGRAM_DESTINATION_ID = TELEGRAM;
       process.env.SPORTS_NEWS_SOCIAL_TOKENS = JSON.stringify({ [TELEGRAM]: "token" });
       feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/semi"));

@@ -23,7 +23,7 @@ type ModeClient = {
     PromiseLike<{ data: ModeRow[] | null; error: unknown }>;
 };
 
-/** Fail closed: an unreadable or unexpected mode is treated as Off. Absent configuration is Semi (database default). */
+/** Fail closed: an unreadable or unexpected mode is treated as Off. Absent configuration is Off (migration 20261128120000; Emergency Stop also sets Off). */
 export async function readAutomationMode(client: ModeClient, workspaceId: string, projectId: string): Promise<AutomationMode> {
   const { data, error } = await client.rpc("get_sports_automation_mode", { p_workspace_id: workspaceId, p_project_id: projectId });
   if (error || !data?.[0]) return "off";
