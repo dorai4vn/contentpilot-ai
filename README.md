@@ -58,7 +58,7 @@ Quy trình:
 
 **5. Log và history để kiểm tra.**
 
-Giới hạn quan trọng: AI Agent được phép đề xuất hoặc tạo yêu cầu xuất bản, nhưng không được tự phê duyệt. Bản hiện tại chỉ hỗ trợ xuất bản nội bộ; chưa tự đăng lên Telegram, Discord hoặc Facebook.
+Giới hạn quan trọng: AI Agent được phép đề xuất hoặc tạo yêu cầu xuất bản, nhưng không được tự phê duyệt. Phạm vi M1–M4 đã xác minh chỉ hỗ trợ xuất bản nội bộ; chưa tự đăng lên Telegram, Discord hoặc Facebook. Việc gửi Telegram của Football News Control Center là hướng phát triển riêng (xem mục 10), mặc định vẫn qua Human Approval.
 
 **4. Kết quả kiểm thử Production**
 
@@ -147,9 +147,9 @@ Tính năng thử nghiệm RSS thể thao và xuất bản sau khi duyệt đư�
 
 - Mỗi lượt chỉ xét bài xuất bản cùng ngày Asia/Dubai (bài có timestamp tương lai bị loại); mốc 48 giờ chỉ dùng làm lịch sử chống trùng.
 - Điểm 0–10 theo barem mặc định 45/40/15 (độ nhận diện / tầm quan trọng / độ mới), ngưỡng mặc định 8, cấu hình riêng theo workspace/dự án; quyết định cũ không bị chấm lại âm thầm khi đổi cấu hình.
-- Hạn mức mỗi lượt: tối đa 10 lần AI viết bản nháp (`SPORTS_NEWS_MAX_PER_RUN = 10`). Mọi bản nháp vẫn cần Owner/Admin duyệt đúng phiên bản.
+- Hạn mức mỗi lượt: tối đa 10 lần AI viết bản nháp (`SPORTS_NEWS_MAX_PER_RUN = 10`). Theo mặc định mọi bản nháp cần Owner/Admin duyệt đúng phiên bản; ngoại lệ duy nhất là bản đủ điều kiện trong cửa sổ Temporary Auto Publish đang hiệu lực (bullet kế tiếp).
 - Temporary Auto Publish **không bật mặc định**: chỉ là cửa sổ có thời hạn do Owner/Admin chủ động bật, tối đa 8 giờ, tối đa 10 lần thử gửi mỗi lượt, 10 bài mỗi khoảng hai giờ và 40 bài mỗi cửa sổ; có thể tắt ngay. Tin chưa rõ danh tính, tin tiếp nối, tin không chắc chắn và tin được xét lại luôn chỉ duyệt thủ công, và cơ sở dữ liệu chặn chúng khỏi Auto Publish.
 - Chế độ test có giới hạn riêng và không bao giờ vào Auto Publish.
 - Chưa có xác nhận độc lập về việc gửi thật ra kênh ngoài hay kiểm chứng giấy phép ảnh; module kiểm chứng giấy phép ảnh và kiểm chứng sự thật của tin nằm ngoài phạm vi.
 
-M5 — Telegram/Discord/Facebook/Instagram Publisher: thêm điểm xuất bản bên ngoài, lưu thông tin kết nối an toàn, worker xử lý hàng đợi, retry có kiểm soát, chống gửi trùng ở mức khả thi và nhật ký lỗi. Mọi hoạt động gửi ra nền tảng ngoài vẫn phải đi qua Human Approval M4. Do bận đi kiếm tiền nên M5 tạm thời chưa thể triển khai trong phiên bản nộp bài này. Có thời gian em sẽ phát triển tiếp.
+M5 — Telegram/Discord/Facebook/Instagram Publisher: thêm điểm xuất bản bên ngoài, lưu thông tin kết nối an toàn, worker xử lý hàng đợi, retry có kiểm soát, chống gửi trùng ở mức khả thi và nhật ký lỗi. Mặc định mọi hoạt động gửi ra nền tảng ngoài đi qua Human Approval M4; ngoại lệ hiện có duy nhất là cửa sổ Temporary Auto Publish có thời hạn của Football News (mục trên), M5 không mở rộng ngoại lệ này. Do bận đi kiếm tiền nên M5 tạm thời chưa thể triển khai trong phiên bản nộp bài này. Có thời gian em sẽ phát triển tiếp.
