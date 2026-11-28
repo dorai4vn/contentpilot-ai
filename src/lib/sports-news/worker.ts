@@ -129,11 +129,25 @@ async function resolveTokens(client: Client, config: Config, notices: ReturnType
  * auto-publish window owns the Telegram destination that destination is left to
  * it, exactly as in the full run. Bounded by DELIVERY_MAX_ROUNDS and a time budget.
  */
+/**
+ * FN10: best-effort retention of the Auto Post operation history (hidden rows older than 30 days). Runs on every
+ * scheduler tick BEFORE the Off check, so cleanup is independent of the Auto Post mode. Scoped to the worker's
+ * workspace/project by the database; touches no publishing/delivery data; no external or AI calls. Never fails a run.
+ */
+async function purgeAutomationHistory(client: Awaited<ReturnType<typeof connectWorker>>, config: Config) {
+  try {
+    await client.rpc("purge_sports_automation_history", { p_workspace_id: config.workspaceId, p_project_id: config.projectId });
+  } catch {
+    // retention is housekeeping only
+  }
+}
+
 export async function runSportsDelivery(
   config: Config, now: () => number = Date.now, timeBudgetMs: number = DELIVERY_TIME_BUDGET_MS,
 ) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
+  await purgeAutomationHistory(client, config);
   // FN08: Off stops delivery before any claim or external call.
   if (await readAutomationMode(client, config.workspaceId, config.projectId) === "off") {
     return { rounds: 0, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, truncated: false, autoPublishActive: false, mode: "off" as const, skipped: "automation_off" as const };
@@ -194,6 +208,7 @@ export async function checkSportsNewsSetup(config: Config, channelUsername?: str
 export async function runSportsNews(config: Config, testDate?: string) {
   const notices = readReviewNoticeConfig();
   const client = await connectWorker(config);
+  await purgeAutomationHistory(client, config);
   // FN08: Off stops RSS, AI, image processing, review notices and delivery before any external call.
   if (await readAutomationMode(client, config.workspaceId, config.projectId) === "off") {
     return { mode: "off" as const, skipped: "automation_off" as const, claimed: 0, delivered: 0, deliveryFailures: 0, staleSkipped: 0, autoPublishActive: false, autoPublishUntil: null, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: [] as string[], assessed: 0, drafted: 0, itemFailures: 0 };

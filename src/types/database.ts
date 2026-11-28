@@ -444,6 +444,10 @@ export type Database = {
         Args: { p_workspace_id: string; p_project_id: string };
         Returns: { from_mode: string; to_mode: string; daily_quota: number; created_at: string; scan_interval_hours: number | null; posts_per_scan: number | null }[];
       };
+      purge_sports_automation_history: {
+        Args: { p_workspace_id: string; p_project_id: string };
+        Returns: number;
+      };
       set_sports_automation_mode: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_mode: string; p_daily_quota: number; p_scan_interval_hours?: number | null; p_posts_per_scan?: number | null };
         Returns: number;

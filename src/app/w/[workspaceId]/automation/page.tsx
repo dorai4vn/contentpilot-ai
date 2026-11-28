@@ -32,7 +32,8 @@ export default async function AutomationPage({ params, searchParams }: PageProps
   const active = windowResult.data?.[0] ?? null;
   const current = modeResult.data?.[0] ?? { mode: "off", daily_quota: 20, version: 0, updated_at: null, scan_interval_hours: 2, posts_per_scan: 2, last_scan_at: null };
   const mode = current.mode === "semi" || current.mode === "auto" ? current.mode : "off";
-  const events = eventsResult.data ?? [];
+  // FN10: the database already returns only the newest 5 visible events; the cap is a defensive UI guard.
+  const events = (eventsResult.data ?? []).slice(0, 5);
   const when = (value: string) => new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
   const scoring = scoringResult.data;
   const canManage = workspace.role === "owner" || workspace.role === "admin";
@@ -72,7 +73,7 @@ export default async function AutomationPage({ params, searchParams }: PageProps
       {canManage && mode === "auto" ? <section className="football-panel p-6" aria-label="Dừng khẩn cấp"><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle size={18} aria-hidden="true" /> Emergency Stop</h2><p className="mt-2 text-sm text-slate-600">Dừng tự đăng ngay và chuyển về Off: không quét RSS, không gọi AI, không gửi bài.</p><form action={emergencyStop} className="mt-4"><input type="hidden" name="workspaceId" value={workspace.id} /><input type="hidden" name="dailyQuota" value={current.daily_quota} /><input type="hidden" name="scanIntervalHours" value={current.scan_interval_hours} /><input type="hidden" name="postsPerScan" value={current.posts_per_scan} /><button type="submit" className="football-stop">Dừng khẩn cấp (Off)</button></form></section> : null}
       <section className="football-panel p-6" aria-label="Nhật ký chế độ">
         <h2 className="text-lg font-bold">Lịch sử thao tác</h2>
-        {events.length ? <ul className="football-mode-log">{events.map((event) => <li key={event.created_at}><time dateTime={event.created_at}>{when(event.created_at)}</time><span>{event.from_mode.toUpperCase()} → {event.to_mode.toUpperCase()} · {event.daily_quota}/ngày{event.scan_interval_hours ? ` · ${event.scan_interval_hours}h · ${event.posts_per_scan} bài/lượt` : ""}</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">Chưa có thay đổi chế độ nào.</p>}
+        {events.length ? <ul className="football-mode-log">{events.map((event, index) => <li key={`${event.created_at}-${index}`}><time dateTime={event.created_at}>{when(event.created_at)}</time><span>{event.from_mode.toUpperCase()} → {event.to_mode.toUpperCase()} · {event.daily_quota}/ngày{event.scan_interval_hours ? ` · ${event.scan_interval_hours}h · ${event.posts_per_scan} bài/lượt` : ""}</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">Chưa có thay đổi chế độ nào.</p>}
       </section>
       <section className="football-panel p-6" aria-label="Cấu hình chấm điểm">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Tiêu chuẩn xuất bản</h2><p className="mt-1 text-sm text-slate-600">Áp dụng từ lượt quét tiếp theo. Bài cũ giữ điểm và cấu hình lúc được chấm.</p></div><span className="text-xs text-slate-500">Phiên bản {scoring?.version ?? 0}</span></div>

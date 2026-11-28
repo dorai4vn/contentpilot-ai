@@ -51,6 +51,7 @@ function queue(count: number) {
   const pending = Array.from({ length: count }, (_, i) => delivery(i + 1));
   const finished: Array<{ id: string; ext: string | null; err: string | null }> = [];
   mocks.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+    if (name === "purge_sports_automation_history") return { data: 0, error: null };
     if (name === "claim_social_deliveries") return { data: pending.splice(0, 6), error: null };
     if (name === "finish_social_delivery") {
       finished.push({ id: String(args.p_id), ext: args.p_external_id as string | null, err: args.p_error_code as string | null });
@@ -153,7 +154,20 @@ describe("runSportsDelivery (delivery-only)", () => {
     mocks.mode = { data: [{ mode: "off", daily_quota: 40 }], error: null };
     const report = await runSportsDelivery(config());
     expect(report).toMatchObject({ mode: "off", skipped: "automation_off", claimed: 0, delivered: 0 });
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    // FN10: the only database call allowed while Off is the history-retention housekeeping.
+    expect(mocks.rpc.mock.calls.map(([n]) => n)).toEqual(["purge_sports_automation_history"]);
     expect(mocks.publish).not.toHaveBeenCalled();
+  });
+});
+
+describe("FN10 history retention in the scheduler tick", () => {
+  it("purges on delivery runs even when automation is Off, and a purge failure never fails the run", async () => {
+    const calls: string[] = [];
+    mocks.mode = { data: [{ mode: "off", daily_quota: 20 }], error: null };
+    mocks.rpc.mockImplementation(async (name: string) => { calls.push(name); throw new Error("db down"); });
+    const result = await runSportsDelivery(readSportsNewsConfig());
+    expect(calls).toEqual(["purge_sports_automation_history"]);
+    expect(result.skipped).toBe("automation_off");
+    mocks.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null };
   });
 });
