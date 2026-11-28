@@ -1,0 +1,570 @@
+
+> contentpilot-ai@0.1.0 test:db
+> bash scripts/test-db.sh
+
+==> Resetting test database
+NOTICE:  schema "auth" does not exist, skipping
+==> Installing Supabase compatibility shim
+==> Applying migration 20261120000100_workspaces.sql
+==> Applying migration 20261120000200_health_check.sql
+==> Applying migration 20261120120000_content_management.sql
+==> Applying migration 20261120180000_agent_actions.sql
+==> Applying migration 20261120200000_publish_approval.sql
+==> Applying migration 20261121090000_user_profiles.sql
+psql:/tmp/fn08/supabase/migrations/20261121090000_user_profiles.sql:114: NOTICE:  identifier "Users read their own profile and those of fellow workspace members" will be truncated to "Users read their own profile and those of fellow workspace memb"
+==> Seeding pre-migration data: before_20261121120000_publishing_destinations.sql
+==> Applying migration 20261121120000_publishing_destinations.sql
+==> Applying migration 20261121150000_agent_publish_requests.sql
+==> Applying migration 20261126133056_sports_news_automation.sql
+==> Applying migration 20261126140731_sports_news_review_notices.sql
+==> Applying migration 20261126190356_sports_news_scoring_rubric.sql
+==> Applying migration 20261126192222_sports_news_optional_photos.sql
+==> Applying migration 20261126205310_temporary_sports_auto_publish.sql
+==> Applying migration 20261126210830_sports_news_ten_per_run.sql
+==> Applying migration 20261127070529_football_automation_controls.sql
+==> Applying migration 20261127071341_football_scoring_config.sql
+==> Applying migration 20261127120000_sports_news_semantic_dedup.sql
+==> Applying migration 20261128090000_sports_automation_modes.sql
+==> Running 10_rls_workspaces.sql
+  ok - creator automatically becomes owner
+  ok - created_by defaults to auth.uid()
+  ok - cannot create a workspace on behalf of another user (rejected: new row violates row-level security policy for table "workspaces")
+  ok - blank workspace name is rejected (rejected: new row for relation "workspaces" violates check constraint "workspaces_name_check")
+  ok - non-member sees no workspaces
+  ok - non-member sees no memberships
+  ok - non-member cannot rename a workspace
+  ok - non-member cannot delete a workspace
+  ok - non-member cannot add themselves to a workspace (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - anon cannot read workspaces (rejected: permission denied for table workspaces)
+  ok - anon cannot read memberships (rejected: permission denied for table workspace_members)
+  ok - anon cannot create workspaces (rejected: permission denied for table workspaces)
+  ok - anon can call health_check()
+  ok - member sees their workspace
+  ok - member sees fellow members
+  ok - plain member cannot rename workspace
+  ok - member cannot promote themselves
+  ok - plain member cannot invite others (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin can rename workspace
+  ok - admin cannot delete workspace
+  ok - admin cannot grant owner role (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin cannot promote themselves to owner (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin cannot demote the owner
+  ok - admin cannot remove the owner
+  ok - admin can add a member
+  ok - created_by is immutable (rejected: workspaces.created_by cannot be changed)
+  ok - membership identity is immutable (rejected: Only the role of a membership can be changed)
+  ok - member can leave a workspace
+  ok - after leaving, workspace is no longer visible
+  ok - last owner cannot leave (rejected: A workspace must keep at least one owner)
+  ok - last owner cannot demote themselves (rejected: A workspace must keep at least one owner)
+  ok - an owner can step down once another owner exists
+  ok - owner can delete workspace
+  ok - memberships are removed with the workspace
+  ok - RLS is enabled on all workspace tables
+All RLS tests passed.
+==> Running 20_content_management.sql
+  ok - owner creates a project (INSERT ... RETURNING); created_by = auth.uid()
+  ok - cannot set created_by on a project (rejected 42501: permission denied for table content_projects)
+  ok - cannot set archived_at when creating a project (rejected 42501: permission denied for table content_projects)
+  ok - blank project name is rejected (rejected 23514: new row for relation "content_projects" violates check constraint "content_projects_name_check")
+  ok - admin creates a project
+  ok - admin renames a project
+  ok - project cannot be moved to another workspace (rejected 42501: permission denied for table content_projects)
+  ok - member sees the projects of their workspace
+  ok - member cannot create a project (rejected 42501: new row violates row-level security policy for table "content_projects")
+  ok - member cannot rename a project
+  ok - member cannot archive a project
+  ok - outsider sees no projects
+  ok - outsider cannot create a project in a foreign workspace (rejected 42501: new row violates row-level security policy for table "content_projects")
+  ok - owner of W2 sees only W2 projects
+  ok - owner of another workspace cannot rename a W1 project
+  ok - member creates a post (INSERT ... RETURNING): version 1, draft, created_by/updated_by = auth.uid()
+  ok - creating a post records version 1 in the history (same transaction)
+  ok - member creates a post directly in ready status
+  ok - creating a post as published is rejected (M4: publish guard trigger) (rejected 42501: Publishing requires an approved publish request)
+  ok - cannot choose the version of a new post (rejected 42501: permission denied for table content_posts)
+  ok - cannot forge created_by of a new post (rejected 42501: permission denied for table content_posts)
+  ok - cannot set published_at (rejected 42501: permission denied for table content_posts)
+  ok - cannot set archived_at when creating a post (rejected 42501: permission denied for table content_posts)
+  ok - over-long title is rejected (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_title_check")
+  ok - cannot attach a post to a project of another workspace (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - cannot create a post in a foreign workspace (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - owner of W2 sees no W1 posts
+  ok - owner of W2 sees no W1 history
+  ok - outsider sees no posts
+  ok - direct UPDATE of a post is denied, even for the owner (rejected 42501: permission denied for table content_posts)
+  ok - update with the current expected_version succeeds and bumps the version
+  ok - successful update adds exactly one history row
+  ok - update with a stale expected_version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - stale update changed nothing
+  ok - rejected update adds no history row
+  ok - expected_version is mandatory (rejected 22023: post id and expected version are required)
+  ok - first of two concurrent editors saves (version 3)
+  ok - second editor with the same base version is rejected (no lost update) (rejected CP409: Content post was changed by someone else)
+  ok - history records who changed the post and the change source
+  ok - saving unchanged content does not create a new version
+  ok - owner cannot publish via RPC (rejected 42501: Publishing is not available)
+  ok - RPC rejects a blank title (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_title_check")
+  ok - RPC rejects a null status (rejected 22023: status and change source are required)
+  ok - rejected updates did not change the version
+  ok - unknown post id is reported as not found (rejected CP404: Content post not found)
+  ok - owner of another workspace cannot update a W1 post (not found) (rejected CP404: Content post not found)
+  ok - owner of another workspace cannot archive a W1 post (rejected CP404: Content post not found)
+  ok - outsider cannot update a post (rejected CP404: Content post not found)
+  ok - RPC rejects a caller without auth.uid() (rejected 42501: Not authenticated)
+  ok - archive with a stale expected_version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - member archives a post (version 4)
+  ok - archiving is recorded in the history
+  ok - archived post cannot be edited (rejected CP423: Content post is archived)
+  ok - member restores an archived post (version 5)
+  ok - admin archives a project
+  ok - project archived_at is a server timestamp, not client-chosen
+  ok - cannot create a post in an archived project (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - cannot edit a post of an archived project (rejected CP423: Content post is archived)
+  ok - a post of an archived project can still be archived
+  ok - restore with a stale version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - version counters are per post
+  ok - cannot restore a post while its project is archived (rejected CP423: Project is archived)
+  ok - owner restores the project
+  ok - superuser cannot set a post to published without an approved request (publish guard) (rejected 42501: Publishing requires an approved publish request)
+  ok - superuser cannot set published_at (published_at consistency CHECK) (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_published_at_consistency")
+  ok - no post of this test is published
+  ok - owner cannot delete posts (rejected 42501: permission denied for table content_posts)
+  ok - owner cannot delete projects (rejected 42501: permission denied for table content_projects)
+  ok - owner cannot delete history (rejected 42501: permission denied for table content_post_versions)
+  ok - owner cannot delete a workspace that still has content (ON DELETE RESTRICT) (rejected 23503: update or delete on table "workspaces" violates foreign key constraint "content_projects_workspace_id_fkey" on table "content_projects")
+  ok - workspace and its content survive the delete attempt
+  ok - users cannot insert history rows (rejected 42501: permission denied for table content_post_versions)
+  ok - users cannot rewrite history (rejected 42501: permission denied for table content_post_versions)
+  ok - even the table owner cannot rewrite history (trigger) (rejected 42501: Version history is append-only)
+  ok - even the table owner cannot delete history (trigger) (rejected 42501: Version history is append-only)
+  ok - exactly one history row per version
+  ok - deleting an account clears created_by of their project instead of deleting it
+  ok - clearing user references does not create versions
+  ok - history rows of a deleted account are kept with changed_by = null
+  ok - anon cannot read projects (rejected 42501: permission denied for table content_projects)
+  ok - anon cannot read posts (rejected 42501: permission denied for table content_posts)
+  ok - anon cannot read history (rejected 42501: permission denied for table content_post_versions)
+  ok - anon cannot call update_content_post (rejected 42501: permission denied for function update_content_post)
+  ok - anon cannot call archive_content_post (rejected 42501: permission denied for function archive_content_post)
+  ok - lock_content_post_for_write is not callable by users (rejected 42501: permission denied for function lock_content_post_for_write)
+  ok - record_content_post_version is not callable by users (rejected 42501: permission denied for function record_content_post_version)
+  ok - RLS is enabled on all content tables
+  ok - no DELETE policy exists on content tables
+  ok - no UPDATE policy exists on posts or history
+  ok - authenticated has no DELETE, no post/history UPDATE, and no version/identity column writes
+  ok - anon has no privilege on content tables
+  ok - every SECURITY DEFINER function in public pins search_path to empty
+  ok - anon cannot execute any SECURITY DEFINER function
+  ok - authenticated can execute exactly the intended SECURITY DEFINER functions
+  ok - published_at consistency (M4) and same-workspace constraints exist
+  ok - all content foreign keys use ON DELETE RESTRICT
+  ok - scheduled_for survives a JSON round trip with microsecond precision
+  ok - status-only change (draft -> ready) leaves title, body and schedule byte-identical
+  ok - history of the status change records the unchanged title, body and schedule
+  ok - switching back ready -> draft also keeps the title
+  ok - a status change based on a stale version is rejected (rejected CP409: Content post was changed by someone else)
+All content management tests passed.
+==> Running 30_agent_actions.sql
+  ok - member logs a real agent create; user_id and created_at are set by the server
+  ok - member logs a real agent update (v1 -> v2, fields = body)
+  ok - member logs a read
+  ok - member logs a failed update (version_conflict)
+  ok - member logs an unknown-tool attempt without target
+  ok - cannot log a successful write for a version that does not exist (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - cannot log a user-written version as an agent write (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - the same write cannot be logged as a success twice (rejected 23505: duplicate key value violates unique constraint "agent_actions_one_success_per_write")
+  ok - a successful write without post and version is rejected (RLS) (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - CHECK: a successful write must name the post and version, even without RLS (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_write_success_has_target")
+  ok - another member cannot claim a write made by someone else (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - cannot set user_id (column not granted) (rejected 42501: permission denied for table agent_actions)
+  ok - cannot set created_at (column not granted) (rejected 42501: permission denied for table agent_actions)
+  ok - cannot log into a workspace the user is not a member of (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - cannot reference a post of another workspace (rejected 23503: insert or update on table "agent_actions" violates foreign key constraint "agent_actions_post_fkey")
+  ok - cannot reference a project of another workspace (rejected 23503: insert or update on table "agent_actions" violates foreign key constraint "agent_actions_project_fkey")
+  ok - tool must be a short identifier (no free text) (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_tool_check")
+  ok - error_code must be a short identifier (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_error_code_check")
+  ok - status is limited to success / error / skipped (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_status_check")
+  ok - a success has no error code (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_status_code")
+  ok - fields are limited to title / body / scheduled_for (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_fields_check")
+  ok - version_after must be greater than version_before (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_versions_order")
+  ok - owner sees the 5 log rows of the workspace
+  ok - member sees the workspace log
+  ok - outsider sees no log rows
+  ok - anon cannot read the log (rejected 42501: permission denied for table agent_actions)
+  ok - anon cannot write the log (rejected 42501: permission denied for table agent_actions)
+  ok - no log without auth.uid() (rejected 42501: Not authenticated)
+  ok - owner cannot update log rows (rejected 42501: permission denied for table agent_actions)
+  ok - owner cannot delete log rows (rejected 42501: permission denied for table agent_actions)
+  ok - even the table owner cannot rewrite the log (trigger) (rejected 42501: Agent action log is append-only)
+  ok - even the table owner cannot delete the log (trigger) (rejected 42501: Agent action log is append-only)
+  ok - log foreign keys to workspaces / projects / posts use ON DELETE RESTRICT (no cascade deletion of the log)
+  ok - deleting an account keeps its log rows with user_id = null
+  ok - RLS is enabled on agent_actions
+  ok - no UPDATE / DELETE policy on agent_actions
+  ok - authenticated cannot update/delete or set user_id/created_at; anon has no access
+  ok - agent_actions has no column for content, prompts, arguments or secrets
+  ok - agent_actions adds no SECURITY DEFINER function
+All agent_actions tests passed.
+==> Running 40_publish_approval.sql
+  ok - RLS is enabled on both approval tables
+  ok - authenticated may only SELECT requests and events
+  ok - anon has no privilege on approval tables
+  ok - internal and trigger functions cannot be called by API roles
+  ok - only signed-in users can call the approval RPCs
+  ok - the M2 publishing-disabled CHECKs were replaced
+  ok - owner cannot INSERT a post as published (CHECK is gone, guard trigger blocks it) (rejected 42501: Publishing requires an approved publish request)
+  ok - owner cannot INSERT a published post with published_at (column not granted) (rejected 42501: permission denied for table content_posts)
+  ok - owner cannot UPDATE a post to published directly (no UPDATE privilege) (rejected 42501: permission denied for table content_posts)
+  ok - owner cannot publish through update_content_post (rejected 42501: Publishing is not available)
+  ok - owner cannot INSERT a publish request directly (rejected 42501: permission denied for table content_publish_requests)
+  ok - owner cannot INSERT an audit event directly (rejected 42501: permission denied for table content_publish_request_events)
+  ok - anon cannot request publishing (rejected 42501: permission denied for function request_post_publish)
+  ok - anon cannot read publish requests (rejected 42501: permission denied for table content_publish_requests)
+  ok - member requests publishing of post 1 v1: pending, requester and 7-day expiry set by the database
+  ok - reason is trimmed
+  ok - a second pending request for the same post is rejected (rejected CP412: A publish request is already pending for this post and destination)
+  ok - request with a stale expected version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - agent request without a turn id is rejected (rejected 22023: agent requests need a turn id, user requests none)
+  ok - user request with a turn id is rejected (rejected 22023: agent requests need a turn id, user requests none)
+  ok - reason longer than 500 characters is rejected (rejected 22023: reason is too long)
+  ok - member cannot request publishing of a post in another workspace (rejected CP404: Content post not found)
+  ok - agent cannot disguise its request as a user request (rejected 42501: Agent requests must be marked as agent requests)
+  ok - agent creates a pending, agent-marked request for post 2
+  ok - a member cannot approve (even their own request) (rejected 42501: Only owners and admins can approve publish requests)
+  ok - a member cannot reject (rejected 42501: Only owners and admins can reject publish requests)
+  ok - an owner of another workspace cannot approve (request is invisible) (rejected CP404: Publish request not found)
+  ok - an outsider sees no requests or audit events of the workspace
+  ok - owner of WC cannot approve a request of WD (rejected CP404: Publish request not found)
+  ok - the AI agent cannot approve, even in an owner session (rejected 42501: The AI agent cannot approve publish requests)
+  ok - the AI agent cannot reject, even in an owner session (rejected 42501: The AI agent cannot reject publish requests)
+  ok - approval with a different post version than requested is rejected (rejected CP409: Publish request does not match what was reviewed)
+  ok - owner approves the member request: post 1 is published (v2, same content)
+  ok - request is approved; approver and time set by the database
+  ok - audit trail: requested -> approved -> published
+  ok - the published version is recorded in the post history
+  ok - approving the same request again is rejected (rejected CP410: Publish request is no longer pending)
+  ok - rejecting an approved request is rejected (rejected CP410: Publish request is no longer pending)
+  ok - cancelling an approved request is rejected (rejected CP410: Publish request is no longer pending)
+  ok - update_content_post still refuses status published (rejected 42501: Publishing is not available)
+  ok - a published post cannot be edited or unpublished (rejected CP422: Published posts cannot be changed)
+  ok - a published post cannot be archived (rejected CP422: Published posts cannot be changed)
+  ok - a published post cannot be requested again (rejected CP422: Content post is already published)
+  ok - owner approves the agent request for post 2
+  ok - audit trail records the agent as requester and the owner as approver
+  ok - admin approves their own request in a separate call
+  ok - self-approval is recorded with requester = approver
+  ok - request and approval in the same transaction are rejected (no implicit approval) (rejected 42501: Approval must be a separate action)
+  ok - nothing remains of the rolled-back attempt
+  ok - editing the post cancels its pending request (post_changed)
+  ok - the cancellation is in the audit trail
+  ok - the changed version cannot be approved with the old request (rejected CP410: Publish request is no longer pending)
+  ok - nor with the new version number (rejected CP410: Publish request is no longer pending)
+  ok - post 4 stays an unpublished draft
+  ok - archiving the post cancels its pending request
+  ok - an archived post cannot be requested (rejected CP423: Content post is archived)
+  ok - an expired request cannot be approved (rejected CP410: Publish request is no longer pending)
+  ok - an expired request cannot be rejected (rejected CP410: Publish request is no longer pending)
+  ok - post 6 stays a draft
+  ok - a new request replaces the expired one
+  ok - the expired request is closed as expired
+  ok - a rejection note longer than 500 characters is rejected (rejected 22023: note is too long)
+  ok - admin rejects with a note
+  ok - a rejected request cannot be approved afterwards (rejected CP410: Publish request is no longer pending)
+  ok - rejection does not change the post
+  ok - another member cannot cancel someone else's request (rejected 42501: Only the requester or an owner/admin can cancel this request)
+  ok - the requester withdraws their request
+  ok - cancelling twice is rejected (rejected CP410: Publish request is no longer pending)
+  ok - an approval from an earlier transaction does not unlock publishing (decided_at must be now()) (rejected 42501: Publishing requires an approved publish request)
+  ok - publishing cannot change the content at the same time (rejected 42501: Publishing requires an approved publish request)
+  ok - a decision cannot be reverted, even by the superuser (rejected CP410: Publish request was already decided)
+  ok - the approver cannot be forged, even by the superuser (rejected CP410: Publish request decision cannot be changed)
+  ok - the requested version cannot be changed (rejected 42501: Publish request identity cannot be changed)
+  ok - publish requests cannot be deleted, even by the superuser (rejected 42501: Publish requests cannot be deleted)
+  ok - audit events cannot be changed (rejected 42501: Publish request audit trail is append-only)
+  ok - audit events cannot be deleted (rejected 42501: Publish request audit trail is append-only)
+  ok - superuser cannot publish without an approved request (rejected 42501: Publishing requires an approved publish request)
+  ok - published_at without status published is rejected (consistency CHECK) (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_published_at_consistency")
+  ok - a malformed request header makes approval RPCs fail closed (rejected 22P02: invalid input syntax for type json)
+  ok - exactly the three explicitly approved posts are published
+  ok - every published post has a published audit event
+  ok - every request is in the workspace of its post
+  ok - requests survive account deletion with user ids cleared and decisions unchanged
+  ok - audit events survive account deletion with actor_id cleared
+  ok - the published post keeps its state (only bookkeeping cleared, no new version)
+==> Running 50_user_profiles.sql
+  ok - RLS is enabled on user_profiles
+  ok - user_profiles has no email column
+  ok - authenticated: SELECT, INSERT/UPDATE of display_name only, no DELETE
+  ok - anon has no access to profiles
+  ok - no client role can read auth.users
+  ok - the trigger function cannot be called by clients
+  ok - a user creates their own profile; user_id comes from auth.uid()
+  ok - a user renames themselves
+  ok - only one profile per user (rejected 23505: duplicate key value violates unique constraint "user_profiles_pkey")
+  ok - cannot create a profile for another user (user_id not insertable) (rejected 42501: permission denied for table user_profiles)
+  ok - cannot move a profile to another user id (rejected 42501: permission denied for table user_profiles)
+  ok - cannot change created_at (rejected 42501: permission denied for table user_profiles)
+  ok - cannot rename a fellow member (0 rows)
+  ok - cannot rename an outsider (0 rows)
+  ok - cannot delete another profile (rejected 42501: permission denied for table user_profiles)
+  ok - cannot delete even their own profile (no DELETE privilege) (rejected 42501: permission denied for table user_profiles)
+  ok - even a privileged writer cannot choose user_id: the trigger uses auth.uid()
+  ok - no profile without a signed-in user (rejected 42501: Not authenticated)
+  ok - outsider profile unchanged
+  ok - empty name rejected (rejected 23514: new row for relation "user_profiles" violates check constraint "user_profiles_display_name_check")
+  ok - untrimmed name rejected (rejected 23514: new row for relation "user_profiles" violates check constraint "user_profiles_display_name_check")
+  ok - name over 60 characters rejected (rejected 23514: new row for relation "user_profiles" violates check constraint "user_profiles_display_name_check")
+  ok - control characters rejected (rejected 23514: new row for relation "user_profiles" violates check constraint "user_profiles_display_name_check")
+  ok - C1 control characters rejected (rejected 23514: new row for relation "user_profiles" violates check constraint "user_profiles_display_name_check")
+  ok - Vietnamese letters with diacritics accepted
+  ok - 60 Vietnamese characters accepted
+  ok - a member reads own and fellow members (WU) profiles, not the outsider
+  ok - the outsider reads only own and WV members (Xia), never Uma or Vic
+  ok - shares_workspace_with reflects real memberships
+  ok - a member of both workspaces reads everyone they share a workspace with
+  ok - anon cannot read profiles (rejected 42501: permission denied for table user_profiles)
+  ok - after leaving the workspace, former colleagues are no longer readable
+  ok - deleting the account deletes its profile
+==> Running 60_publishing_destinations.sql
+  ok - backfill: every pre-existing workspace (with or without content) has exactly one internal destination
+  ok - every workspace in the database has an internal destination
+  ok - backfill: every pre-existing request now targets its workspace's internal destination
+  ok - the legacy published post is unchanged
+  ok - backfill added no audit events and kept the old ones
+  ok - no delivery is invented for approvals made before the migration
+  ok - a legacy pending request is approved with the old 2-argument call
+  ok - approving internally records a succeeded delivery for the internal destination
+  ok - RLS is enabled on destinations and deliveries
+  ok - no credential-like column in destinations or deliveries
+  ok - authenticated: manage destinations by column, read-only deliveries
+  ok - anon has no access
+  ok - trigger functions are not callable by clients
+  ok - the old RPC signatures were replaced (no ambiguous overloads)
+  ok - a new workspace gets its internal destination automatically
+  ok - an outsider sees only the destinations of their own workspace
+  ok - an outsider sees no deliveries of other workspaces
+  ok - a member reads the destinations of their workspace
+  ok - a member cannot add destinations (rejected 42501: new row violates row-level security policy for table "publishing_destinations")
+  ok - a member cannot rename destinations (0 rows)
+  ok - a second internal destination is impossible (rejected 23505: duplicate key value violates unique constraint "publishing_destinations_one_internal")
+  ok - Telegram targets must be stable numeric channel IDs (rejected 23514: new row for relation "publishing_destinations" violates check constraint "publishing_destinations_external_target")
+  ok - an admin cannot add destinations to another workspace (rejected 42501: new row violates row-level security policy for table "publishing_destinations")
+  ok - an admin renames the internal destination
+  ok - the internal destination cannot be disabled (rejected 42501: The internal destination cannot be disabled or retargeted)
+  ok - the internal destination cannot get a target (rejected 42501: permission denied for table publishing_destinations)
+  ok - destinations cannot be deleted (rejected 42501: permission denied for table publishing_destinations)
+  ok - a destination cannot move to another workspace (even for the superuser) (rejected 42501: Destination identity cannot be changed)
+  ok - destination identity is immutable (rejected 42501: Destination identity cannot be changed)
+  ok - legacy call without a destination targets the internal destination
+  ok - explicit internal destination accepted
+  ok - a destination of another workspace is rejected (rejected CP404: Publishing destination not found)
+  ok - an unknown destination is rejected (rejected CP404: Publishing destination not found)
+  ok - agent-source requests must name a destination (rejected 22023: agent requests must name a destination)
+  ok - the agent cannot use the legacy (user, implicit destination) call (rejected 42501: Agent requests must be marked as agent requests)
+  ok - the agent files a request for an explicit destination
+  ok - approval with another destination than requested is rejected (rejected CP409: Publish request does not match what was reviewed)
+  ok - approval with an unknown destination is rejected (rejected CP409: Publish request does not match what was reviewed)
+  ok - approval with another version than requested is rejected (rejected CP409: Publish request does not match what was reviewed)
+  ok - approval with the reviewed destination and version publishes (internal)
+  ok - exactly one succeeded delivery
+  ok - the agent still cannot approve (owner session, agent header) (rejected 42501: The AI agent cannot approve publish requests)
+  ok - a member still cannot approve (rejected 42501: Only owners and admins can approve publish requests)
+  ok - an owner cannot insert a delivery (rejected 42501: permission denied for table publish_deliveries)
+  ok - an owner cannot change a delivery (rejected 42501: permission denied for table publish_deliveries)
+  ok - an owner cannot delete a delivery (rejected 42501: permission denied for table publish_deliveries)
+  ok - no delivery for a request that is not approved (rejected 42501: A delivery needs an approved request for the same destination, post and version)
+  ok - no delivery for another version than the approved one (rejected 42501: A delivery needs an approved request for the same destination, post and version)
+  ok - a second delivery for the same approval is impossible (idempotency) (rejected 23505: duplicate key value violates unique constraint "publish_deliveries_one_per_request")
+  ok - a succeeded delivery is final (rejected 42501: A finished delivery cannot be changed)
+  ok - delivery identity is immutable (rejected 42501: Delivery identity cannot be changed)
+  ok - deliveries cannot be deleted, even by the superuser (rejected 42501: Publish deliveries cannot be deleted)
+  ok - the destination of a request is immutable (rejected 42501: Publish request identity cannot be changed)
+  ok - members read the deliveries of their workspace
+  ok - clients cannot choose a destination id (rejected 42501: permission denied for table publishing_destinations)
+  ok - clients cannot forge created_by (rejected 42501: permission denied for table publishing_destinations)
+  ok - several destinations in one workspace (internal + two channels)
+  ok - two pending requests for one post on two different destinations
+  ok - a second pending request for the same post and destination is rejected (rejected CP412: A publish request is already pending for this post and destination)
+  ok - approving an external destination does not change the post status
+  ok - the external approval created one queued delivery (no API call)
+  ok - no "published" audit event for a queued external delivery
+  ok - the internal request of the same post is still pending: approval scope does not spread
+  ok - an approval for an external destination cannot publish the post internally (rejected 42501: Publishing requires an approved publish request)
+  ok - nothing changed after the rejected attempt
+  ok - a disabled destination accepts no new request (rejected CP426: Publishing destination is disabled)
+  ok - a request for a destination disabled meanwhile cannot be approved (rejected CP426: Publishing destination is disabled)
+  ok - no delivery for the disabled destination
+  ok - the internal request of the same post is approved separately
+  ok - one delivery per approved destination: queued (external) and succeeded (internal)
+  ok - an outsider sees none of the destinations or deliveries
+  ok - an owner can still delete an empty workspace (its internal destination goes with it)
+  ok - the destination of the deleted workspace is gone
+==> Running 70_agent_publish_requests.sql
+  ok - request_id insertable; still no UPDATE/DELETE and no user_id from clients
+  ok - the agent request is pending and the post is not published
+  ok - the success row is recorded for the acting user (user_id from auth.uid())
+  ok - only one success row per publish request (rejected 23505: duplicate key value violates unique constraint "agent_actions_one_success_per_publish_request")
+  ok - cannot log a request the agent did not make (user request) (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - another user (even the owner) cannot claim the member's agent request (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - a different turn id cannot claim the request (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - a different post cannot claim the request (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - a different version cannot claim the request (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - a request of another workspace cannot be referenced (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - a success row without its request is refused (RLS) (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - CHECK: a success publish_request row must name its request (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_publish_success_has_target")
+  ok - only publish_request rows may reference a request (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_request_only_for_publish")
+  ok - no other kind (e.g. approve) exists (rejected 23514: new row for relation "agent_actions" violates check constraint "agent_actions_kind_check")
+  ok - a failed publish attempt is logged (error code, no request)
+  ok - request_id cannot be changed, even by the superuser (rejected 42501: Agent action log is append-only)
+  ok - publish request audit rows cannot be deleted (rejected 42501: Agent action log is append-only)
+  ok - M3: a fake successful update is still refused (rejected 42501: new row violates row-level security policy for table "agent_actions")
+  ok - M3: a real agent create is still logged
+  ok - the agent cannot approve its own proposal, even in the owner's session (rejected 42501: The AI agent cannot approve publish requests)
+  ok - the agent cannot reject either (rejected 42501: The AI agent cannot reject publish requests)
+  ok - the owner approves the agent proposal as a separate human action
+==> Running 80_sports_news.sql
+  ok - RSS generates one pending approval per destination
+  ok - the same normalized headline does not create a second draft
+  ok - worker cannot send before approval
+  ok - external approval leaves the internal post unchanged
+  ok - worker cannot claim an in-flight delivery or a different unapproved destination
+  ok - worker records platform success on the approved destination
+  ok - delivery retains the provider ID and the attempt count
+  ok - sports media obeys workspace RLS
+  ok - Owner enables a bounded auto-publish window
+  ok - configured quotas are visible to workspace users
+  ok - Owner emergency stop succeeds
+  ok - emergency stop immediately closes the active window
+  ok - a claimed notice is not sent by a concurrent worker
+  ok - a failed notice can be retried
+  ok - a stale worker cannot complete a new claim
+  ok - a successful notice records its send time
+  ok - a successful notice is sent only once across scans
+  ok - unselected sports news retains its rubric version and assessment
+  ok - a sports draft can be recorded with no licensed photo
+  ok - the registered Member sees the active temporary Telegram window
+  ok - the temporary window cannot apply to Discord
+  ok - ten reservations fit this two-hour slot
+  ok - ten reservations exhaust this two-hour slot even across worker retries
+  ok - automatic success records the Telegram message ID
+  ok - definite automatic failure leaves the draft available for human approval
+  ok - a delivered automatic post is removed from the pending queue without a fake approval
+  ok - a definite failure leaves the human approval pending
+  ok - the temporary window closes at its database deadline
+  ok - no automatic send is reserved after expiry
+  ok - human approval still creates a normal publication after expiry
+  ok - Owner creates the project scoring configuration
+  ok - each scoring change increments its version
+  ok - workspace members can read the effective scoring values
+  ok - scoring configuration remains workspace isolated
+==> Running 85_sports_semantic_dedup.sql
+  ok - a new event is recorded with its identity
+  ok - the same event key from another source is rejected
+  ok - a differently-keyed report in the same event cluster is rejected by the database recheck
+  ok - rejected duplicates create no item and no post
+  ok - structured reasons are retained for each rejected duplicate
+  ok - a meaningful follow-up is accepted and its evidence retained
+  ok - a follow-up claiming a nonexistent parent is treated as a duplicate
+  ok - URL deduplication still wins and never restamps an existing item
+  ok - headline deduplication still wins
+  ok - a pre-filtered duplicate is recorded with its evidence
+  ok - recording the same skipped duplicate twice is idempotent
+  ok - a malformed event payload is rejected
+  ok - a worker cannot record events in another workspace
+  ok - identical events in another workspace are not deduplicated against this one
+  ok - event evidence is invisible to another workspace
+  ok - event identities are invisible to another workspace
+  ok - workspace members can read retained event evidence
+  ok - event evidence cannot be written directly by clients
+  ok - FN05 RPC ACLs: authenticated only, security definer, pinned search_path
+  ok - anon cannot execute the FN05 RPCs
+  ok - refused callers leave no event evidence behind
+  ok - a worker cannot target another workspace's project through its own workspace id
+  ok - a low-score report is recorded as an item without a post
+  ok - a stronger report with a different key in the same cluster is accepted after a low-score one
+  ok - once the post exists, another materializing report of the cluster is rejected
+  ok - a low-score report never creates a post and is never rejected semantically
+  ok - a non-specific identity is never blocked by a cluster and stores no event keys
+  ok - a second non-specific report with identical placeholder keys is also not blocked
+  ok - a payload without the specific flag defaults to fail-open
+  ok - a follow-up of a non-materialized parent is accepted and its evidence says the parent was not verified
+  ok - a meaningful follow-up of an accepted post is accepted with a verified parent
+  ok - an archived post does not block
+  ok - a restored post blocks again (its request was cancelled by archiving, not rejected)
+  ok - while the first post is pending approval a same-cluster report is rejected
+  ok - after every approval request of a post was rejected, a later report of the event is accepted
+  ok - a post whose approval requests were all rejected does not block
+  ok - no post means no block
+  ok - a post of another workspace is never considered blocking
+  ok - the blocking helper is private: no client can execute it
+  ok - fixtures for blocking states are created
+  ok - a PUBLISHED post still blocks after it is archived
+  ok - a post with an approved queued/sending/succeeded delivery still blocks after it is archived
+  ok - an archived post that was never sent does not block (manual reconsideration)
+  ok - a failed automatic delivery of an archived post does not block
+  ok - an uncertain automatic delivery blocks even after the post is archived (no duplicate delivery)
+  ok - a succeeded automatic delivery blocks an archived post
+  ok - the database rejects a duplicate of a published event even though the post is archived
+  ok - the database rejects a duplicate of a delivered event even though the post is archived
+  ok - sanity: a succeeded automatic delivery also rejects the later report
+  ok - a reconsidered archived/never-sent event is accepted and stamped manual-review-only (reconsidered)
+  ok - manual_review_reason is derived/stored for unresolved, follow-up and uncertain facts and null for a regular item
+  ok - an unknown manualReviewReason is rejected
+  ok - unresolved, follow-up, uncertain-facts and reconsidered items can never be claimed for automatic publishing
+  ok - a regular eligible item can still be claimed for automatic publishing
+  ok - claim_sports_auto_publish keeps its original least-privilege grants
+  ok - same teams and date in two different competitions both materialize
+  ok - a same-competition report one day apart is rejected through the window key with a structured reason
+  ok - a report two days apart materializes (boundary of the date window)
+  ok - without clusterWindow the exact clusterKey is still enforced
+  ok - malformed clusterWindow payloads are rejected
+  ok - the same cluster in another workspace is not blocked (workspace isolation)
+==> Running 90_automation_modes.sql
+  ok - migration creates no mode row (nothing is silently enabled)
+  ok - absent row reads as Semi
+  ok - a Member cannot change the mode
+  ok - a non-member cannot read the mode
+  ok - a non-member cannot read the audit log
+  ok - a non-member cannot change the mode
+  ok - invalid mode is rejected
+  ok - daily quota below 1 is rejected
+  ok - daily quota above 120 is rejected
+  ok - Owner enables persistent Auto (version 1)
+  ok - Auto has no expiry and exposes the daily quota
+  ok - worker sees the persistent window
+  ok - Auto claims the first post
+  ok - Auto claims the second post
+  ok - a claimed post is never claimed twice (idempotency)
+  ok - the daily quota blocks the next post
+  ok - Owner switches to Semi
+  ok - Semi closes the persistent window
+  ok - Semi never auto-claims
+  ok - the Semi draft stays pending human approval
+  ok - Owner re-enables Auto with a new quota
+  ok - no automatic backlog replay: a pre-switch draft is not delivered
+  ok - Auto permits unresolved_identity without manual approval
+  ok - Auto permits follow_up without manual approval
+  ok - the daily quota still applies across windows
+  ok - Owner switches Off
+  ok - worker reads Off
+  ok - Off exposes no window
+  ok - Off blocks auto delivery claims
+  ok - Off rejects new drafts in the database
+  ok - legacy temporary window cannot be started while Off
+  ok - Off -> Semi resumes scanning
+  ok - Semi stores drafts again
+  ok - every transition is audited
+  ok - no open persistent window remains after Semi
+  ok - mode table is not directly readable
+  ok - anon cannot set modes
+==> Running concurrency test automation_modes.sh
+  ok - 8 concurrent auto claims never exceed the daily quota (3)
+  ok - concurrent switch to Off leaves no open window, no claim and no duplicate delivery
+==> Running concurrency test semantic_dedup.sh
+  ok - 8 concurrent reports of one event create exactly one item and one post
+  ok - concurrent low-score and high-score reports: low ones never block, exactly one post is created
+  ok - 8 concurrent distinct events all materialize (no false merge under concurrency)
+  ok - concurrent same-teams reports in two competitions: exactly one post per competition
+==> Database tests passed
+exit 0

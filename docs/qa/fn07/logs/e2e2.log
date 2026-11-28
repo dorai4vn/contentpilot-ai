@@ -1,0 +1,196 @@
+==> Starting the app on http://127.0.0.1:3100
+curl: (7) Failed to connect to 127.0.0.1 port 3100 after 0 ms: Could not connect to server
+==> E2E content
+Content E2E against http://127.0.0.1:3100
+  ok - four users signed up
+  ok - dashboard links each workspace to /w/[workspaceId]
+  ok - workspace page shows its name
+  ok - empty state before the first project
+  ok - project created with a success message
+  ok - local 09:00 (UTC+7) is submitted as 2026-12-01T02:00:00.000Z
+  ok - post stored as draft, version 1
+  ok - schedule stored in UTC
+  ok - editor shows the schedule back in local time
+  ok - save shows a success message
+  ok - edit stored as version 2
+  ok - saving the body kept the schedule
+  ok - body persisted after refresh
+  ok - history lists 2 versions after refresh
+  ok - draft -> ready stored as version 3
+  ok - draft -> ready kept title, body and scheduled_for identical
+  ok - status badge shows Sẵn sàng
+  ok - history shows the status change
+  ok - the post page offers 'Gửi yêu cầu xuất bản' (request only)
+  ok - no direct publish or approve button on the post page
+  ok - no delete button
+  ok - page language is Vietnamese (lang=vi)
+  ok - status round trip kept spaced title, body and microsecond schedule (2026-12-05T03:04:05.123456+00:00)
+  ok - Ready filter shows only ready posts
+  ok - Draft filter shows only drafts
+  ok - list shows the planned date in Vietnamese local format (Dự kiến đăng 01/12/2026 09:00)
+  ok - second editor sees the version-conflict banner
+  ok - conflicting save did not overwrite the first save
+  ok - banner keeps the unsaved text
+  ok - load latest shows the newest content
+  ok - before hydration the editor reports data-ready=false
+  ok - before hydration the body is read-only
+  ok - before hydration the title is read-only
+  ok - before hydration Save cannot be pressed
+  ok - typing before hydration changes nothing
+  ok - after hydration the body is editable
+  ok - select all + type replaces the text after hydration
+  ok - after hydration the edit is saved (database)
+  ok - archived post is read-only
+  ok - post archived in the database
+  ok - restored post is editable again
+  ok - post restored in the database
+  ok - member sees the read-only notice
+  ok - member has no create-project form
+  ok - member has no project edit/archive buttons
+  ok - member can create a post
+  ok - admin can create projects
+  ok - admin archived the project (database)
+  ok - archived project listed under Archived
+  ok - archived project is read-only for members
+  ok - no new posts in an archived project
+  ok - project restored
+  ok - outsider gets 404 for the workspace (status 404)
+  ok - 404 page is in Vietnamese
+  ok - outsider gets 404 for the post
+  ok - no browser errors or hydration warnings
+All content E2E checks passed.
+==> E2E agent-ui
+Agent UI E2E against http://127.0.0.1:3100
+  ok - workspace page links to Trợ lý AI
+  ok - chat is shown (agent configured)
+  ok - notice says content is processed by OpenAI
+  ok - project preselected from the link
+  ok - recent AI activity lists the 4 logged actions from the database
+  ok - activity shows versions and failures
+  ok - 4 quick suggestions shown
+  ok - send is disabled while the input is empty
+  ok - a suggestion fills the input (without sending)
+  ok - nothing sent before pressing Gửi
+  ok - request has only the schema fields (workspaceId, projectId, messages, timeZone)
+  ok - request carries the workspace and selected project
+  ok - request carries the browser time zone (Asia/Saigon)
+  ok - no user id, role or key sent
+  ok - first request contains only the user's question
+  ok - the question is shown in the chat
+  ok - reply has 'Thao tác đã thực hiện'
+  ok - reply lists the 2 actions reported by the server
+  ok - actions use Vietnamese tool names
+  ok - update shows version before → after
+  ok - action links to the post
+  ok - partial-result warning when the agent stopped after a write
+  ok - partial reply shows one success and one failure
+  ok - follow-up sends the session history (user, assistant, user)
+  ok - 502 shows the 'service unavailable' message
+  ok - 504 shows the timeout message
+  ok - error messages are not sent back to the API as chat history
+  ok - rate limit shows a countdown
+  ok - send stays disabled during the countdown
+  ok - Enter does not send during the countdown
+  ok - desktop: no horizontal overflow with replies
+  ok - after refresh: both replies are still shown
+  ok - after refresh: the error notices are still shown
+  ok - after refresh: recent activity still read from the database
+  ok - the mocked chat added no rows to agent_actions
+  ok - no database table stores chat messages
+  ok - 'Cuộc trò chuyện mới' clears the chat
+  ok - mobile: no horizontal overflow (empty chat)
+  ok - mobile: reply shows its 3 actions
+  ok - mobile: post link visible
+  ok - mobile: a logging failure is flagged on the action
+  ok - mobile: no horizontal overflow with a reply and its actions
+  ok - mobile: the reply fits inside the screen width
+  ok - mobile: the send button is reachable
+  ok - no unexpected browser errors
+All agent UI E2E checks passed.
+==> E2E approval-ui
+Approval UI E2E against http://127.0.0.1:3100
+  ok - three users signed up
+  ok - draft post offers 'Gửi yêu cầu xuất bản'
+  ok - request form names its destination: Nội bộ
+  ok - request stored as pending for version 1 (database)
+  ok - sending a request does not publish (database)
+  ok - post page warns that saving cancels the pending request
+  ok - member sees 'no permission to approve'
+  ok - member sees no Phê duyệt / Từ chối buttons
+  ok - member (requester) may cancel their own request
+  ok - workspace nav shows 1 pending approval
+  ok - approvals page lists the request
+  ok - status shown as 'Chờ duyệt'
+  ok - review shows the title
+  ok - review shows the body
+  ok - review shows the requested version
+  ok - review shows the destination
+  ok - review shows who requested (role only, no id)
+  ok - review shows when it was requested
+  ok - review shows the deadline
+  ok - review shows the audit trail
+  ok - opening the review page approves nothing (database)
+  ok - no confirmation step until the owner asks for it
+  ok - 'Phê duyệt…' opens an explicit confirmation
+  ok - confirmation names the version to publish
+  ok - confirmation names the destination
+  ok - 'Quay lại' closes it without approving
+  ok - request approved by the owner (database)
+  ok - post published at version 2 (database)
+  ok - audit trail: requested, approved, published
+  ok - execution state shown: Đã xuất bản
+  ok - one succeeded delivery on the internal destination (database)
+  ok - published post shows the 'đã xuất bản' notice
+  ok - status badge 'Đã xuất bản'
+  ok - editor is read-only
+  ok - published post stays read-only after hydration
+  ok - no 'save-post' on a published post
+  ok - no 'status-switch' on a published post
+  ok - no 'archive-post' on a published post
+  ok - no 'request-publish-form' on a published post
+  ok - admin rejected with a note (database)
+  ok - rejected post stays a draft
+  ok - post page shows the rejection reason
+  ok - a new request can be sent after a rejection
+  ok - requester cancelled the request (database)
+  ok - saving the post cancelled the request (post_changed)
+  ok - review page says the old request is no longer valid
+  ok - no approve button for the stale request
+  ok - the new version was not published
+  ok - second approver gets a Vietnamese message with 'Tải lại dữ liệu'
+  ok - reloading shows the request as approved
+  ok - published exactly once (database)
+  ok - expired request shown as 'Hết hạn'
+  ok - no approve button for an expired request
+  ok - expired tab lists it
+  ok - no horizontal scroll on mobile (overflow 0px)
+  ok - mobile: confirmation shown, still pending
+  ok - no browser errors or hydration warnings
+All approval UI E2E checks passed.
+==> E2E profiles
+Profiles E2E against http://127.0.0.1:3100
+  ok - sign-up with a name creates the profile (trimmed)
+  ok - second user's name saved
+  ok - sign-up without a name works and creates no profile
+  ok - profiles store no email
+  ok - login still works for a user with a profile
+  ok - account page says no name is set yet
+  ok - saving shows 'Đã lưu tên hiển thị'
+  ok - account page saved the name (database)
+  ok - name shown after reload
+  ok - no 'missing name' notice any more
+  ok - requester shown by name and role (Bình Trần (Thành viên))
+  ok - audit trail names requester and approver
+  ok - approval notice names the approver
+  ok - no user id visible on the review page
+  ok - no email visible on the review page
+  ok - approved request listed
+  ok - approval list shows the requester's name
+  ok - own name marked '(bạn)'
+  ok - renamed member shown with the new name
+  ok - deleted approver shown as 'Người dùng đã xóa'
+  ok - approval and publication are unchanged
+  ok - no browser errors or hydration warnings
+All profiles E2E checks passed.
+==> All E2E suites passed: content agent-ui approval-ui profiles
+exit 0

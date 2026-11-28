@@ -1,0 +1,79 @@
+
+> contentpilot-ai@0.1.0 check
+> npm run lint && npm run typecheck && npm test && npm run build
+
+
+> contentpilot-ai@0.1.0 lint
+> eslint .
+
+
+> contentpilot-ai@0.1.0 typecheck
+> next typegen && tsc --noEmit
+
+Generating route types...
+✓ Types generated successfully
+
+> contentpilot-ai@0.1.0 test
+> vitest run
+
+
+ RUN  v5.1.1 /tmp/fn08
+
+
+ Test Files  61 passed (61)
+      Tests  1150 passed (1150)
+   Start at  10:34:59
+   Duration  8.56s (import 58%, tests 22%, transform 18%, worker 2%)
+
+    Isolate  61 workers spawned · ~145ms startup each (spawn + environment, per file)
+             at least ~2.81s faster with isolate: false — reuses workers across files instead of one per file
+
+
+> contentpilot-ai@0.1.0 build
+> next build
+
+▲ Next.js 16.4.6 (Turbopack)
+✓ Running next.config.ts took 37ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 8.9s
+  Running TypeScript ...
+  Finished TypeScript in 9.4s ...
+  Collecting page data using 3 workers ...
+  Generating static pages using 3 workers (0/10) ...
+  Generating static pages using 3 workers (2/10) 
+  Generating static pages using 3 workers (4/10) 
+  Generating static pages using 3 workers (7/10) 
+✓ Generating static pages using 3 workers (10/10) in 370ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ○ /_not-found
+├ ƒ /account
+├ ƒ /api/agent
+├ ƒ /api/cron/sports-news
+├ ƒ /api/health
+├ ƒ /api/sports-news/image/[postId]
+├ ƒ /auth/confirm
+├ ƒ /dashboard
+├ ƒ /login
+├ ○ /signup
+├ ƒ /w/[workspaceId]
+├ ƒ /w/[workspaceId]/agent
+├ ƒ /w/[workspaceId]/approvals
+├ ƒ /w/[workspaceId]/approvals/[requestId]
+├ ƒ /w/[workspaceId]/automation
+├ ƒ /w/[workspaceId]/news
+├ ƒ /w/[workspaceId]/p/[projectId]
+├ ƒ /w/[workspaceId]/posts/[postId]
+├ ƒ /w/[workspaceId]/settings
+└ ƒ /w/[workspaceId]/studio
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+exit 0

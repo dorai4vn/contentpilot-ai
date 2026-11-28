@@ -1,0 +1,107 @@
+==> Building the app against the local Supabase stack
+==> Starting the app on http://127.0.0.1:3100
+curl: (7) Failed to connect to 127.0.0.1 port 3100 after 0 ms: Could not connect to server
+==> E2E smoke
+Smoke testing http://127.0.0.1:3100
+  ok - GET /api/health -> 200, connected=true
+  ok - anonymous /dashboard redirects to login (http://127.0.0.1:3100/login?next=%2Fdashboard)
+  ok - invalid credentials show an error
+  ok - invalid credentials stay on /login
+  ok - dashboard shows the signed-in email
+  ok - new workspace is listed with the owner role (Chủ sở hữu)
+  ok - session persists across reload
+  ok - sign out returns to /login
+  ok - dashboard is protected again after sign-out
+  ok - workspace persisted after re-login
+  ok - a second user does not see the first user's workspace
+Smoke test passed.
+==> E2E content
+Content E2E against http://127.0.0.1:3100
+  ok - four users signed up
+  ok - dashboard links each workspace to /w/[workspaceId]
+  FAIL - unexpected error: locator.textContent: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('[data-testid="workspace-title"]').first()
+
+1 content E2E check(s) failed.
+==> E2E agent-ui
+Agent UI E2E against http://127.0.0.1:3100
+  FAIL - unexpected error: locator.getAttribute: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('[data-testid="open-agent"]')
+
+1 agent UI E2E check(s) failed.
+==> E2E approval-ui
+Approval UI E2E against http://127.0.0.1:3100
+  ok - three users signed up
+  FAIL - unexpected error: page.fill: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('#new-project-name')
+
+1 approval UI E2E check(s) failed.
+==> E2E bulk-approval
+Bulk approval E2E against http://127.0.0.1:3100
+  ok - empty queue shows the empty state
+  ok - empty queue: no bulk toolbar
+  ok - member sees the queue
+  ok - member: no checkboxes / bulk button
+  ok - non-member (cross-workspace): no bulk controls
+  ok - 5 pending rows, 5 accessible checkboxes
+  ok - checkbox has an accessible name with title and version
+  ok - nothing selected: count 0/5, approve disabled
+  ok - keyboard Space selects one row (1/5)
+  ok - approve enabled with one selected
+  ok - clear selection resets to 0
+  ok - select-all via keyboard selects 5/5
+  ok - unchecking one clears select-all (4/5)
+  ok - confirmation names count (4) and destination (Nội bộ)
+  ok - focus moves to the confirmation dialog on open
+  ok - Escape cancels the confirmation, nothing approved
+  ok - focus returns to the approve button after Escape
+  ok - 'Quay lại' cancels, nothing approved
+  ok - changing the selection invalidates an open confirmation
+  ok - switching filter closes the confirmation
+  ok - returning to the pending filter starts with an empty selection
+  ok - setup: B withdrawn by the member (database)
+  ok - result report: 3 succeeded, 1 failed
+  ok - A, C, D approved (database)
+  ok - B stays cancelled and unselected E stays pending (database)
+  ok - one internal delivery per approved request
+  ok - report lists every item with its title
+  ok - failed row shows title and error
+  ok - failure no longer eligible is reported explicitly and not retained
+  ok - after refresh only E remains, nothing selected
+  ok - dark: toolbar uses --surface (rgb(27, 38, 50))
+  ok - dark: confirmation uses --accent with light text (rgb(25, 61, 52) / rgb(241, 245, 249))
+  ok - double submit approved once, one delivery (database)
+  ok - report shows 1/1 after double click
+  ok - all-success: empty queue AND the result report both stay visible
+  ok - empty queue hides the toolbar
+  ok - report is session-local: a manual reload clears it
+  ok - light theme restored
+  ok - single-item approval regression: still approves
+  ok - System theme + OS dark scheme resolves to dark on mobile
+  ok - mobile: no horizontal scroll (0px)
+  ok - mobile: confirm button inside the viewport
+  ok - mobile: both approved (database)
+  ok - no browser errors
+All bulk approval E2E checks passed.
+==> E2E profiles
+Profiles E2E against http://127.0.0.1:3100
+  ok - sign-up with a name creates the profile (trimmed)
+  ok - second user's name saved
+  ok - sign-up without a name works and creates no profile
+  ok - profiles store no email
+  ok - login still works for a user with a profile
+  ok - account page says no name is set yet
+  ok - saving shows 'Đã lưu tên hiển thị'
+  ok - account page saved the name (database)
+  ok - name shown after reload
+  ok - no 'missing name' notice any more
+  FAIL - unexpected error: page.fill: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('#new-project-name')
+
+1 profiles E2E check(s) failed.
+==> Failed suites: content agent-ui approval-ui profiles
+exit 1

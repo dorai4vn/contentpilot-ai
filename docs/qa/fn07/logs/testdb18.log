@@ -1,0 +1,137 @@
+
+> contentpilot-ai@0.1.0 test:db
+> bash scripts/test-db.sh
+
+==> Resetting test database
+NOTICE:  schema "auth" does not exist, skipping
+==> Installing Supabase compatibility shim
+==> Applying migration 20261120000100_workspaces.sql
+==> Applying migration 20261120000200_health_check.sql
+==> Applying migration 20261120120000_content_management.sql
+==> Applying migration 20261120180000_agent_actions.sql
+==> Applying migration 20261120200000_publish_approval.sql
+==> Applying migration 20261121090000_user_profiles.sql
+psql:/tmp/fn08/supabase/migrations/20261121090000_user_profiles.sql:114: NOTICE:  identifier "Users read their own profile and those of fellow workspace members" will be truncated to "Users read their own profile and those of fellow workspace memb"
+==> Seeding pre-migration data: before_20261121120000_publishing_destinations.sql
+==> Applying migration 20261121120000_publishing_destinations.sql
+==> Applying migration 20261121150000_agent_publish_requests.sql
+==> Applying migration 20261126133056_sports_news_automation.sql
+==> Applying migration 20261126140731_sports_news_review_notices.sql
+==> Applying migration 20261126190356_sports_news_scoring_rubric.sql
+==> Applying migration 20261126192222_sports_news_optional_photos.sql
+==> Applying migration 20261126205310_temporary_sports_auto_publish.sql
+==> Applying migration 20261126210830_sports_news_ten_per_run.sql
+==> Applying migration 20261127070529_football_automation_controls.sql
+==> Applying migration 20261127071341_football_scoring_config.sql
+==> Applying migration 20261127120000_sports_news_semantic_dedup.sql
+==> Applying migration 20261128090000_sports_automation_modes.sql
+==> Running 10_rls_workspaces.sql
+  ok - creator automatically becomes owner
+  ok - created_by defaults to auth.uid()
+  ok - cannot create a workspace on behalf of another user (rejected: new row violates row-level security policy for table "workspaces")
+  ok - blank workspace name is rejected (rejected: new row for relation "workspaces" violates check constraint "workspaces_name_check")
+  ok - non-member sees no workspaces
+  ok - non-member sees no memberships
+  ok - non-member cannot rename a workspace
+  ok - non-member cannot delete a workspace
+  ok - non-member cannot add themselves to a workspace (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - anon cannot read workspaces (rejected: permission denied for table workspaces)
+  ok - anon cannot read memberships (rejected: permission denied for table workspace_members)
+  ok - anon cannot create workspaces (rejected: permission denied for table workspaces)
+  ok - anon can call health_check()
+  ok - member sees their workspace
+  ok - member sees fellow members
+  ok - plain member cannot rename workspace
+  ok - member cannot promote themselves
+  ok - plain member cannot invite others (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin can rename workspace
+  ok - admin cannot delete workspace
+  ok - admin cannot grant owner role (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin cannot promote themselves to owner (rejected: new row violates row-level security policy for table "workspace_members")
+  ok - admin cannot demote the owner
+  ok - admin cannot remove the owner
+  ok - admin can add a member
+  ok - created_by is immutable (rejected: workspaces.created_by cannot be changed)
+  ok - membership identity is immutable (rejected: Only the role of a membership can be changed)
+  ok - member can leave a workspace
+  ok - after leaving, workspace is no longer visible
+  ok - last owner cannot leave (rejected: A workspace must keep at least one owner)
+  ok - last owner cannot demote themselves (rejected: A workspace must keep at least one owner)
+  ok - an owner can step down once another owner exists
+  ok - owner can delete workspace
+  ok - memberships are removed with the workspace
+  ok - RLS is enabled on all workspace tables
+All RLS tests passed.
+==> Running 20_content_management.sql
+  ok - owner creates a project (INSERT ... RETURNING); created_by = auth.uid()
+  ok - cannot set created_by on a project (rejected 42501: permission denied for table content_projects)
+  ok - cannot set archived_at when creating a project (rejected 42501: permission denied for table content_projects)
+  ok - blank project name is rejected (rejected 23514: new row for relation "content_projects" violates check constraint "content_projects_name_check")
+  ok - admin creates a project
+  ok - admin renames a project
+  ok - project cannot be moved to another workspace (rejected 42501: permission denied for table content_projects)
+  ok - member sees the projects of their workspace
+  ok - member cannot create a project (rejected 42501: new row violates row-level security policy for table "content_projects")
+  ok - member cannot rename a project
+  ok - member cannot archive a project
+  ok - outsider sees no projects
+  ok - outsider cannot create a project in a foreign workspace (rejected 42501: new row violates row-level security policy for table "content_projects")
+  ok - owner of W2 sees only W2 projects
+  ok - owner of another workspace cannot rename a W1 project
+  ok - member creates a post (INSERT ... RETURNING): version 1, draft, created_by/updated_by = auth.uid()
+  ok - creating a post records version 1 in the history (same transaction)
+  ok - member creates a post directly in ready status
+  ok - creating a post as published is rejected (M4: publish guard trigger) (rejected 42501: Publishing requires an approved publish request)
+  ok - cannot choose the version of a new post (rejected 42501: permission denied for table content_posts)
+  ok - cannot forge created_by of a new post (rejected 42501: permission denied for table content_posts)
+  ok - cannot set published_at (rejected 42501: permission denied for table content_posts)
+  ok - cannot set archived_at when creating a post (rejected 42501: permission denied for table content_posts)
+  ok - over-long title is rejected (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_title_check")
+  ok - cannot attach a post to a project of another workspace (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - cannot create a post in a foreign workspace (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - owner of W2 sees no W1 posts
+  ok - owner of W2 sees no W1 history
+  ok - outsider sees no posts
+  ok - direct UPDATE of a post is denied, even for the owner (rejected 42501: permission denied for table content_posts)
+  ok - update with the current expected_version succeeds and bumps the version
+  ok - successful update adds exactly one history row
+  ok - update with a stale expected_version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - stale update changed nothing
+  ok - rejected update adds no history row
+  ok - expected_version is mandatory (rejected 22023: post id and expected version are required)
+  ok - first of two concurrent editors saves (version 3)
+  ok - second editor with the same base version is rejected (no lost update) (rejected CP409: Content post was changed by someone else)
+  ok - history records who changed the post and the change source
+  ok - saving unchanged content does not create a new version
+  ok - owner cannot publish via RPC (rejected 42501: Publishing is not available)
+  ok - RPC rejects a blank title (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_title_check")
+  ok - RPC rejects a null status (rejected 22023: status and change source are required)
+  ok - rejected updates did not change the version
+  ok - unknown post id is reported as not found (rejected CP404: Content post not found)
+  ok - owner of another workspace cannot update a W1 post (not found) (rejected CP404: Content post not found)
+  ok - owner of another workspace cannot archive a W1 post (rejected CP404: Content post not found)
+  ok - outsider cannot update a post (rejected CP404: Content post not found)
+  ok - RPC rejects a caller without auth.uid() (rejected 42501: Not authenticated)
+  ok - archive with a stale expected_version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - member archives a post (version 4)
+  ok - archiving is recorded in the history
+  ok - archived post cannot be edited (rejected CP423: Content post is archived)
+  ok - member restores an archived post (version 5)
+  ok - admin archives a project
+  ok - project archived_at is a server timestamp, not client-chosen
+  ok - cannot create a post in an archived project (rejected 42501: new row violates row-level security policy for table "content_posts")
+  ok - cannot edit a post of an archived project (rejected CP423: Content post is archived)
+  ok - a post of an archived project can still be archived
+  ok - restore with a stale version is rejected (rejected CP409: Content post was changed by someone else)
+  ok - version counters are per post
+  ok - cannot restore a post while its project is archived (rejected CP423: Project is archived)
+  ok - owner restores the project
+  ok - superuser cannot set a post to published without an approved request (publish guard) (rejected 42501: Publishing requires an approved publish request)
+  ok - superuser cannot set published_at (published_at consistency CHECK) (rejected 23514: new row for relation "content_posts" violates check constraint "content_posts_published_at_consistency")
+  ok - no post of this test is published
+  ok - owner cannot delete posts (rejected 42501: permission denied for table content_posts)
+  ok - owner cannot delete projects (rejected 42501: permission denied for table content_projects)
+  ok - owner cannot delete history (rejected 42501: permission denied for table content_post_versions)
+psql:/tmp/fn08/tests/db/20_content_management.sql:395: ERROR:  ASSERTION FAILED: owner cannot delete a workspace that still has content (ON DELETE RESTRICT) (expected SQLSTATE 23503, got 23001: update or delete on table "workspaces" violates RESTRICT setting of foreign key constraint "content_projects_workspace_id_fkey" on table "content_projects")
+CONTEXT:  PL/pgSQL function pg_temp_22.assert_error(text,text,text) line 7 at RAISE
+exit 3

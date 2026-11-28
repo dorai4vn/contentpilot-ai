@@ -114,6 +114,7 @@ function postRow(id) {
     // 1. Owner: create a project ------------------------------------------------
     await wsLink.click();
     await owner.page.waitForURL(new RegExp(`/w/${workspaceId}$`));
+    await owner.page.goto(`${BASE_URL}/w/${workspaceId}/studio`); // legacy Content Studio moved under /studio
     check((await text(owner.page, '[data-testid="workspace-title"]')) === wsName, "workspace page shows its name");
     check(await shown(owner.page.locator('[data-testid="empty-state"]')), "empty state before the first project");
     const projectName = `Blog ${stamp}`;
@@ -318,7 +319,7 @@ function postRow(id) {
     check(JSON.parse(postRow(postId)).archived === false, "post restored in the database");
 
     // 9. Member permissions -----------------------------------------------------------------
-    await member.page.goto(`${BASE_URL}/w/${workspaceId}`);
+    await member.page.goto(`${BASE_URL}/w/${workspaceId}/studio`);
     check(await shown(member.page.locator('[data-testid="member-notice"]')), "member sees the read-only notice");
     check((await member.page.locator('[data-testid="create-project-form"]').count()) === 0, "member has no create-project form");
     check((await member.page.locator('[data-testid="archive-project"], [data-testid="edit-project"]').count()) === 0, "member has no project edit/archive buttons");
@@ -331,7 +332,7 @@ function postRow(id) {
     check(true, "member can create a post");
 
     // 10. Admin archives and restores the project ---------------------------------------------
-    await admin.page.goto(`${BASE_URL}/w/${workspaceId}`);
+    await admin.page.goto(`${BASE_URL}/w/${workspaceId}/studio`);
     check(await shown(admin.page.locator('[data-testid="create-project-form"]')), "admin can create projects");
     await admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}") [data-testid="archive-project"]`).click();
     await admin.page
@@ -341,7 +342,7 @@ function postRow(id) {
       sql(`select archived_at is not null from public.content_projects where id = ${q(projectId)}`) === "t",
       "admin archived the project (database)",
     );
-    await admin.page.goto(`${BASE_URL}/w/${workspaceId}?view=archived`);
+    await admin.page.goto(`${BASE_URL}/w/${workspaceId}/studio?view=archived`);
     check(await shown(admin.page.locator(`[data-testid="project-item"]:has-text("${projectName}")`)), "archived project listed under Archived");
     await member.page.goto(projectUrl);
     check(await shown(member.page.locator('[data-testid="project-archived-notice"]')), "archived project is read-only for members");

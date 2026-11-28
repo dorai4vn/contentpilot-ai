@@ -1,0 +1,120 @@
+==> Starting the app on http://127.0.0.1:3100
+curl: (7) Failed to connect to 127.0.0.1 port 3100 after 0 ms: Could not connect to server
+==> E2E fn07-qa
+FN07 QA — app http://127.0.0.1:3100, automation app http://127.0.0.1:3102
+1. Auth isolation
+  ok - unauthenticated visitor is redirected to login (/login)
+  ok - outsider: 404 for /w/<A>/automation (status 404)
+  ok - outsider: 404 for /w/<A> (status 404)
+  ok - outsider: 404 for /w/<A>/news (status 404)
+  ok - outsider: 404 for /w/<A>/approvals (status 404)
+  ok - outsider: 404 for /w/<A>/studio (status 404)
+  ok - other workspace owner: 404 for /w/<A>/automation (status 404)
+  ok - other workspace owner: 404 for /w/<A> (status 404)
+  ok - other workspace owner: 404 for /w/<A>/news (status 404)
+  ok - other workspace owner: 404 for /w/<A>/approvals (status 404)
+  ok - other workspace owner: 404 for /w/<A>/studio (status 404)
+  ok - workspace B owner: automation shows 'RSS not configured' (control target is bound to workspace A only)
+  ok - member can read the automation page
+  ok - member sees no mode-change form
+  ok - member sees no Emergency Stop
+2. Default Semi + transitions
+  ok - no mode row: the page shows Semi Publish (never Auto)
+  ok - Semi state badge says drafts wait for approval
+  ok - viewing the page writes nothing (no mode row, no event)
+  ok - Emergency Stop is offered only in Auto
+  ok - Semi radio is preselected
+  ok - default daily quota is 40
+  ok - Semi -> Auto persisted (auto:3:v1)
+  ok - Auto banner says it applies only to new drafts
+  ok - Emergency Stop appears in Auto
+  ok - exactly one open persistent window
+  ok - Emergency Stop moved Auto -> Semi (semi:3:v2)
+  ok - Emergency Stop closed the persistent window
+  ok - Semi -> Off
+  ok - Off banner says: no RSS, no AI, no delivery
+  ok - Off -> Semi
+  ok - 4 transitions audited (4)
+  ok - audit log is visible in the UI
+  ok - server rejects quota 0 (mode unchanged, generic error)
+  ok - server rejects quota 121 (mode unchanged, generic error)
+  ok - server rejects quota -5 (mode unchanged, generic error)
+  ok - server rejects quota 1.5 (mode unchanged, generic error)
+  ok - boundary quota 1 accepted
+  ok - boundary quota 120 accepted
+  ok - no database error text leaks into the page
+3. Theme
+  ok - light: text on background/surface >= 4.5 (13.6 / 14.9)
+  ok - light: text on accent >= 4.5 (12.8)
+  ok - light: button label on primary >= 4.5 (5.0)
+  ok - light: primary on surface >= 3 for UI components (5.0)
+  ok - dark: text on background/surface >= 4.5 (16.3 / 14.0)
+  ok - dark: text on accent >= 4.5 (10.9)
+  ok - dark: button label on primary >= 4.5 (9.3)
+  ok - dark: primary on surface >= 3 for UI components (8.0)
+  ok - choose dark: html.dark = true
+  ok - dark persists across reload (select shows dark)
+  ok - dark persists on another page
+  ok - choose light: html.dark = false
+  ok - light persists across reload (select shows light)
+  ok - light persists on another page
+  ok - body background differs per theme (rgb(241, 245, 244) vs rgb(16, 24, 32))
+  ok - System + OS dark => dark
+  ok - System + OS light => light (live)
+  ok - System choice persists
+  ok - no theme flash (saved=dark, OS=light): mutation:true,dcl:true,load:true,mutation:true
+  ok - no theme flash (saved=light, OS=dark): dcl:false,load:false,mutation:false
+  ok - no theme flash (saved=null, OS=dark): mutation:true,dcl:true,load:true
+4. Responsive
+  ok - desktop/light /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/light /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/light /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/light /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/light /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/light /studio: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - desktop/dark /studio: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/light /studio: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - tablet/dark /studio: status 200, horizontal overflow 0px, clipped elements 0
+  info - mobile/light: nav links only reachable by horizontal scroll: Tự động hóa, Nội dung, Trợ lý AI
+  ok - mobile/light /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/light /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/light /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/light /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/light /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/light /studio: status 200, horizontal overflow 0px, clipped elements 0
+  info - mobile/dark: nav links only reachable by horizontal scroll: Tự động hóa, Nội dung, Trợ lý AI
+  ok - mobile/dark /: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/dark /news: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/dark /automation: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/dark /approvals: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/dark /settings: status 200, horizontal overflow 0px, clipped elements 0
+  ok - mobile/dark /studio: status 200, horizontal overflow 0px, clipped elements 0
+5. Keyboard
+  ok - theme control is reachable by Tab
+  ok - mode radio group is reachable by Tab
+  ok - quota field and 'Lưu chế độ' are reachable by Tab
+  ok - scoring form is reachable by Tab
+  ok - every focused control has a visible focus indicator
+  ok - arrow keys move the radio selection
+  ok - arrow keys reach Off
+  ok - Enter in the quota field submits the form (off:40:v8)
+  ok - no browser console/page errors or hydration warnings (0)
+
+All FN07 QA checks passed.
+==> All E2E suites passed: fn07-qa
+exit 0
