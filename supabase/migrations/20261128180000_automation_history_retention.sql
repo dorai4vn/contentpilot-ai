@@ -3,6 +3,8 @@
 -- their age. Only contentpilot_private.sports_automation_events is touched: publishing history, delivery logs and
 -- every other audit table are unrelated and unchanged.
 
+begin;
+
 alter table contentpilot_private.sports_automation_events
   add column hidden_at timestamptz,
   add column seq bigint;
@@ -112,3 +114,5 @@ end
 $$;
 revoke all on function public.purge_sports_automation_history(uuid,uuid) from public,anon,authenticated,service_role;
 grant execute on function public.purge_sports_automation_history(uuid,uuid) to authenticated;
+
+commit;
