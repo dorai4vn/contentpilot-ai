@@ -157,7 +157,7 @@ async function ask(page, text) {
     log("tool, kind, status, error_code, post_id", `'update_post', 'update', 'error', 'version_conflict', '${post1}'`);
 
     // --- 1. Entry points and page --------------------------------------------------------------
-    await page.goto(`${BASE_URL}/w/${ws}`);
+    await page.goto(`${BASE_URL}/w/${ws}/studio`);
     check(
       (await page.locator('[data-testid="open-agent"]').getAttribute("href")) === `/w/${ws}/agent`,
       "workspace page links to Trợ lý AI",

@@ -126,7 +126,7 @@ async function requestPublish(user, reason) {
     const workspaceId = (await wsLink.getAttribute("href")).split("/").pop();
     sql(`insert into public.workspace_members (workspace_id, user_id, role) values
          (${q(workspaceId)}, ${q(admin.id)}, 'admin'), (${q(workspaceId)}, ${q(member.id)}, 'member')`);
-    await owner.page.goto(`${BASE_URL}/w/${workspaceId}`);
+    await owner.page.goto(`${BASE_URL}/w/${workspaceId}/studio`);
     await owner.page.fill("#new-project-name", "Blog duyệt bài");
     await owner.page.click('[data-testid="create-project-submit"]');
     await owner.page.locator('[data-testid="project-link"]:has-text("Blog duyệt bài")').click();
@@ -154,7 +154,7 @@ async function requestPublish(user, reason) {
     check(await visible(member.page, "cancel-request-form"), "member (requester) may cancel their own request");
 
     // 3. Navigation and queue ---------------------------------------------------------------------
-    await owner.page.goto(`${BASE_URL}/w/${workspaceId}`);
+    await owner.page.goto(`${BASE_URL}/w/${workspaceId}/studio`);
     check((await owner.page.locator('[data-testid="approvals-pending-count"]').textContent())?.trim() === "1", "workspace nav shows 1 pending approval");
     await owner.page.click('[data-testid="open-approvals"]');
     await owner.page.waitForURL(/\/approvals$/);
