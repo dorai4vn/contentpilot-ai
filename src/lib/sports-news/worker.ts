@@ -20,6 +20,7 @@ import { sportsFeeds } from "./sources";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { requireRssImage } from "./image-gate";
 import { readSportsPhoto } from "./photo-snapshot";
+import { createImageBudget } from "./image-budget";
 import { findSportsPostPhoto } from "./licensed-photo";
 import { findSourceSportsPhoto, validateFallbackPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
@@ -386,9 +387,10 @@ export async function runSportsNews(config: Config, testDate?: string) {
       draft = await writeSportsDraft(item);
       await assertAutomationNotOff(client, config.workspaceId, config.projectId);
     }
-    const photo = draft ? await findSourceSportsPhoto(item)
-      ?? (draft.photoSubject
-        ? await validateFallbackPhoto(await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction), item)
+    const imageBudget = createImageBudget();
+    const photo = draft ? await findSourceSportsPhoto(item, imageBudget)
+      ?? (draft.photoSubject && !imageBudget.exhausted
+        ? await validateFallbackPhoto(await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction), item, { budget: imageBudget })
         : null) : null;
     if (!testDate && !publishedToday(item.publishedAt)) return null;
     const manual = reportOf(entry);

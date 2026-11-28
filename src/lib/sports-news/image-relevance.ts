@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 
+import { compareEntities, topicOf, type Topic } from "./image-entities";
 import { squareSportsPhoto } from "./square-photo";
 
 /**
@@ -25,13 +26,27 @@ import { squareSportsPhoto } from "./square-photo";
 
 export const IMAGE_MODEL_ID = "Xenova/siglip-base-patch16-224"; // ONNX export of google/siglip-base-patch16-224 (Apache-2.0)
 export const IMAGE_MODEL_REVISION = "4649052661e53c7000355844105f8a1792088239";
-export const IMAGE_POLICY_VERSION = "fn11-a2.1";
+export const IMAGE_POLICY_VERSION = "fn11-a3b.1";
 
 export const FOOTBALL_PROMPTS = [
   "a photo of football players playing a soccer match on a pitch",
   "a photo of a footballer in action during a soccer game",
   "a photo of football players celebrating a goal",
 ] as const;
+/** Topic-aware positives: portraits, press conferences, transfers and injuries are legitimate football news images. */
+export const TOPIC_PROMPTS: Record<Exclude<Topic, "match">, readonly string[]> = {
+  portrait: ["a photo of a professional footballer in a football kit", "a photo of a football coach or manager at a match"],
+  press_conference: ["a photo of a football coach or player at a press conference with club backdrop", "a photo of a football manager speaking to the media"],
+  transfer: ["a photo of a footballer holding a club shirt at a signing", "a photo of a professional footballer in a football kit"],
+  injury: ["a photo of an injured footballer on the pitch receiving treatment", "a photo of a professional footballer in a football kit"],
+};
+export function positivePrompts(topic: Topic): readonly string[] {
+  return topic === "match" ? FOOTBALL_PROMPTS : [...TOPIC_PROMPTS[topic], ...FOOTBALL_PROMPTS.slice(0, 1)];
+}
+/** For person-centred topics a close-up person is expected, so that negative class is dropped. */
+export function negativePrompts(topic: Topic): readonly string[] {
+  return topic === "match" ? NEGATIVE_PROMPTS : NEGATIVE_PROMPTS.filter((prompt) => !prompt.startsWith("a portrait of a person"));
+}
 export const NEGATIVE_PROMPTS = [
   "a painting or artwork",
   "a photo of a building exterior",
@@ -45,7 +60,7 @@ export const NEGATIVE_PROMPTS = [
 
 export type RelevanceScores = { football: number; negative: number; topNegative: string };
 /** Pluggable scorer so tests can inject a MOCK. The default one is the real local model. */
-export type ImageScorer = (jpeg: Uint8Array) => Promise<RelevanceScores>;
+export type ImageScorer = (jpeg: Uint8Array, topic?: Topic) => Promise<RelevanceScores>;
 
 export type RelevanceContext = {
   title: string;
@@ -62,7 +77,7 @@ export type RelevanceVerdict =
 
 export type RelevanceRejection =
   | "model_unavailable" | "model_timeout" | "model_error" | "decode_failed" | "crop_failed"
-  | "age_group_conflict" | "not_corroborated" | "low_football_score" | "negative_class" | "ambiguous";
+  | "age_group_conflict" | "entity_conflict" | "not_corroborated" | "invalid_scores" | "model_busy" | "low_football_score" | "negative_class" | "ambiguous";
 
 const ARTICLE_METHODS = ["rss_media", "og_image", "twitter_image", "json_ld", "lead_image"];
 export const DEFAULT_THRESHOLDS = { football: 0.15, margin: 3, timeoutMs: 25_000 } as const;
@@ -87,8 +102,18 @@ export function provenanceRejection(ctx: RelevanceContext): RelevanceRejection |
   if (titleAges.size > 0 && hintAges.size > 0 && ![...hintAges].some((age) => titleAges.has(age))) return "age_group_conflict";
   // Senior-team story vs. an explicit youth image (or vice versa).
   if (titleAges.size === 0 && hintAges.size > 0) return "age_group_conflict";
-  if (!ARTICLE_METHODS.includes(ctx.method) && !hasEntityOverlap(ctx.title, hint)) return "not_corroborated";
+  const entity = compareEntities(ctx.title, hint);
+  if (entity === "conflict") return "entity_conflict"; // wrong team even when the image is article-embedded
+  const topic = topicOf(ctx.title);
+  // Non-article sources need positive typed corroboration; a single shared token is ambiguous and not enough.
+  if (!ARTICLE_METHODS.includes(ctx.method) && entity !== "match") return "not_corroborated";
+  // Transfers/portraits/press conferences on an external source additionally must not be a bare team match only.
+  if (!ARTICLE_METHODS.includes(ctx.method) && topic !== "match" && !hasPersonOrTeamMatch(ctx.title, hint)) return "not_corroborated";
   return null;
+}
+
+function hasPersonOrTeamMatch(title: string, hint: string) {
+  return compareEntities(title, hint) === "match";
 }
 
 function decodeURIComponentSafe(value: string) {
@@ -99,18 +124,10 @@ function decodeURIComponentSafe(value: string) {
   }
 }
 
-const STOP = new Set(["vs", "the", "and", "for", "with", "van", "cua", "tran", "doi", "jpg", "jpeg", "png", "webp", "image", "photo"]);
-function entityTokens(text: string) {
-  return new Set((text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").match(/[a-z0-9]{4,}/g) ?? [])
-    .filter((token) => !STOP.has(token) && !/^\d+$/.test(token)));
-}
-function hasEntityOverlap(title: string, hint: string) {
-  const wanted = entityTokens(title);
-  return [...entityTokens(hint)].some((token) => wanted.has(token));
-}
-
 /** Pure decision rule over model scores. Exported for tests and calibration. */
 export function decideFromScores(scores: RelevanceScores, football: number = DEFAULT_THRESHOLDS.football, margin: number = DEFAULT_THRESHOLDS.margin): RelevanceRejection | null {
+  const valid = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+  if (!scores || !valid(scores.football) || !valid(scores.negative)) return "invalid_scores";
   if (scores.football < football) return scores.negative >= football ? "negative_class" : "low_football_score";
   // Football must beat the strongest negative class by a clear factor; otherwise it is ambiguous.
   return scores.football >= scores.negative * margin ? null : "ambiguous";
@@ -135,17 +152,20 @@ function loadPipeline(): Promise<SigLipPipeline> {
   return pipelinePromise;
 }
 
-export const localSigLipScorer: ImageScorer = async (jpeg) => {
+export const localSigLipScorer: ImageScorer = async (jpeg, topic = "match") => {
   const classify = await loadPipeline();
-  const labels = [...FOOTBALL_PROMPTS, ...NEGATIVE_PROMPTS];
+  const positives = positivePrompts(topic);
+  const negatives = negativePrompts(topic);
+  const labels = [...positives, ...negatives];
   const { RawImage } = await import("@huggingface/transformers");
   const results = await classify(await RawImage.fromBlob(new Blob([Buffer.from(jpeg)], { type: "image/jpeg" })), labels);
   const byLabel = new Map(results.map((result) => [result.label, result.score]));
-  const football = Math.max(...FOOTBALL_PROMPTS.map((label) => byLabel.get(label) ?? 0));
+  const football = Math.max(...positives.map((label) => byLabel.get(label) ?? Number.NaN));
   let negative = 0;
   let topNegative = "";
-  for (const label of NEGATIVE_PROMPTS) {
-    const score = byLabel.get(label) ?? 0;
+  for (const label of negatives) {
+    const score = byLabel.get(label) ?? Number.NaN;
+    if (Number.isNaN(score)) return { football: Number.NaN, negative: Number.NaN, topNegative: "" };
     if (score >= negative) { negative = score; topNegative = label; }
   }
   return { football, negative, topNegative };
@@ -159,6 +179,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     const timer = setTimeout(() => reject(new Error("timeout")), ms);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+}
+
+/**
+ * Isolation: at most ONE inference runs at a time (calls are queued), and if one times out its (uncancellable ONNX)
+ * run keeps the model "busy" until it really settles; later calls fail closed with model_busy instead of launching
+ * overlapping runaway inference.
+ */
+let queueTail: Promise<unknown> = Promise.resolve();
+let stuckInference = false;
+
+async function runIsolated(task: () => Promise<RelevanceScores>, ms: number): Promise<RelevanceScores> {
+  const turn = queueTail.then(async () => {
+    if (stuckInference) throw new Error("busy");
+    const running = task();
+    stuckInference = true;
+    running.then(() => { stuckInference = false; }, () => { stuckInference = false; });
+    return withTimeout(running, ms);
+  });
+  queueTail = turn.catch(() => undefined);
+  return turn;
 }
 
 export type ValidateDeps = { scorer?: ImageScorer; footballThreshold?: number; margin?: number; timeoutMs?: number };
@@ -193,13 +233,14 @@ export async function validateImageRelevance(bytes: Uint8Array, ctx: RelevanceCo
 
   let verdict: RelevanceVerdict;
   try {
-    const scores = await withTimeout((deps.scorer ?? localSigLipScorer)(small), deps.timeoutMs ?? envNumber("SPORTS_IMAGE_QC_TIMEOUT_MS", DEFAULT_THRESHOLDS.timeoutMs));
+    const scorer = deps.scorer ?? localSigLipScorer;
+    const scores = await runIsolated(() => scorer(small, topicOf(ctx.title)), deps.timeoutMs ?? envNumber("SPORTS_IMAGE_QC_TIMEOUT_MS", DEFAULT_THRESHOLDS.timeoutMs));
     const rejection = decideFromScores(scores, football, margin);
     verdict = rejection ? { ok: false, reason: rejection }
       : { ok: true, football: scores.football, negative: scores.negative, cached: false, modelVersion };
   } catch (error) {
     // Do NOT cache infrastructure failures: the model may become available on a later run.
-    return { ok: false, reason: error instanceof Error && error.message === "timeout" ? "model_timeout" : modelMissing(error) ? "model_unavailable" : "model_error" };
+    return { ok: false, reason: error instanceof Error && error.message === "timeout" ? "model_timeout" : error instanceof Error && error.message === "busy" ? "model_busy" : modelMissing(error) ? "model_unavailable" : "model_error" };
   }
   if (verdictCache.size >= CACHE_LIMIT) verdictCache.clear();
   verdictCache.set(key, verdict);
@@ -213,4 +254,6 @@ function modelMissing(error: unknown) {
 export function resetRelevanceStateForTests() {
   verdictCache.clear();
   pipelinePromise = null;
+  queueTail = Promise.resolve();
+  stuckInference = false;
 }

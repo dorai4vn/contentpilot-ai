@@ -6,6 +6,7 @@ import he from "he";
 import sharp from "sharp";
 
 import type { SportsNewsItem } from "./feeds";
+import { createImageBudget, type ImageBudget } from "./image-budget";
 import { validateImageRelevance, type RelevanceVerdict } from "./image-relevance";
 
 /**
@@ -49,6 +50,8 @@ export type AcquisitionDeps = {
   resolveHost?: (hostname: string) => Promise<string[]>;
   allowedHosts?: readonly string[];
   searchProvider?: ImageSearchProvider | null;
+  /** Shared per-article candidate budget (also consumed by the Wikimedia fallback). */
+  budget?: ImageBudget;
   /** Relevance validator. Defaults to the real local model; tests inject a MOCK. */
   validate?: (bytes: Uint8Array, ctx: { title: string; method: string; hint?: string; sourceUrl: string }) => Promise<RelevanceVerdict>;
 };
@@ -316,6 +319,7 @@ export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: str
   const extra = deps.allowedHosts ?? configuredImageHosts();
   const resolved = { fetchImpl: deps.fetchImpl ?? fetch, resolveHost: deps.resolveHost ?? defaultResolve };
   const validate = deps.validate ?? validateImageRelevance;
+  const budget = deps.budget ?? createImageBudget();
   try {
     const articleUrl = new URL(item.url);
     if (articleUrl.protocol !== "https:" || !allowedArticleHost(articleUrl.hostname, extra)) return null;
@@ -328,6 +332,7 @@ export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: str
       candidates = discoverCandidates("", articleUrl, item.imageUrl);
     }
     for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
+      if (!budget.take()) return null;
       try {
         const acquired = await downloadCandidate(candidate, articleUrl, item.title, resolved, extra, validate);
         if (acquired) return acquired;
@@ -339,6 +344,7 @@ export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: str
     if (provider) {
       const found = await provider.search(item.title, AbortSignal.timeout(TIMEOUT_MS));
       for (const candidate of found.slice(0, MAX_CANDIDATES)) {
+        if (!budget.take()) return null;
         try {
           const acquired = await downloadCandidate({ ...candidate, method: "search_provider" }, articleUrl, item.title, resolved, extra, validate);
           if (acquired) return acquired;

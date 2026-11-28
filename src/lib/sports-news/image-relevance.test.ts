@@ -46,3 +46,31 @@ describe("validateImageRelevance (MOCK scorer; not real visual QC)", () => {
     expect(await validateImageRelevance(new Uint8Array(50), ctx, { scorer: vi.fn() })).toEqual({ ok: false, reason: "crop_failed" });
   });
 });
+
+describe("A3b hardening (MOCK scorer; not real visual QC)", () => {
+  it("rejects non-finite / out-of-range / missing scores", () => {
+    for (const bad of [{ football: NaN, negative: 0.1 }, { football: 0.5, negative: Infinity }, { football: 2, negative: 0 }, undefined]) {
+      expect(decideFromScores(bad as never)).toBe("invalid_scores");
+    }
+  });
+  it("wrong team in hint rejects even for article-embedded images; single token is not corroboration", () => {
+    expect(provenanceRejection({ ...ctx, hint: "Chelsea fans" })).toBe("entity_conflict");
+    expect(provenanceRejection({ ...ctx, method: "wikimedia", title: "Tottenham thua Brighton", hint: "stadium match 2020" })).toBe("not_corroborated");
+    expect(provenanceRejection({ ...ctx, method: "wikimedia", title: "Declan Rice ghi bàn", hint: "Declan Rice portrait" })).toBeNull();
+  });
+  it("passes topic to the scorer and serialises inference; a timed-out run keeps the model busy (no overlap)", async () => {
+    const bytes = await jpeg();
+    const seen: unknown[] = [];
+    const scorer = vi.fn(async (_b: Uint8Array, topic?: string) => { seen.push(topic); return { football: 0.7, negative: 0.01, topNegative: "" }; });
+    await validateImageRelevance(bytes, { ...ctx, title: "Arteta họp báo" }, { scorer });
+    expect(seen).toEqual(["press_conference"]);
+    resetRelevanceStateForTests();
+    let running = 0; let maxRunning = 0;
+    const slow = async () => { running++; maxRunning = Math.max(maxRunning, running); await new Promise((r) => setTimeout(r, 80)); running--; return { football: 0.7, negative: 0.01, topNegative: "" }; };
+    const first = validateImageRelevance(bytes, { ...ctx, hint: "a" }, { scorer: slow, timeoutMs: 20 });
+    const second = validateImageRelevance(bytes, { ...ctx, hint: "b" }, { scorer: slow, timeoutMs: 500 });
+    expect(await first).toEqual({ ok: false, reason: "model_timeout" });
+    expect(await second).toEqual({ ok: false, reason: "model_busy" });
+    expect(maxRunning).toBe(1);
+  });
+});
