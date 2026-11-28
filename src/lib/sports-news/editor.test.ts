@@ -21,7 +21,9 @@ it("prompt asks for varied structure, optional emoji and no fixed pattern", asyn
   await writeSportsDraft(item("Hà Nội FC vào chung kết", "Thắng 2–1 nhờ bàn ở phút 88."));
   const system: string = complete.mock.calls[0][0].messages[0].content;
   expect(system).toContain("Chỉ dùng dữ kiện");
-  expect(system).toContain("Emoji là tùy chọn");
+  expect(system).toContain("Emoji (một phần của giọng văn");
+  expect(system).not.toContain("Emoji là tùy chọn");
+  expect(system).not.toContain("có thể không dùng");
   expect(system).toContain("KHÔNG theo khuôn cố định");
   expect(system).toContain("Không bịa cảm xúc");
   expect(system).not.toContain("Mỗi đoạn bắt đầu");

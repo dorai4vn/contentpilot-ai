@@ -57,20 +57,34 @@ export function assessSportsNews(item: SportsNewsItem) {
 const socialCaptionInstructions = `
 Soạn caption thể thao tiếng Việt để đăng kèm ảnh trên Telegram, Discord hoặc Facebook Page. Trả JSON với title, body, photoSubject và matchPhoto.
 
-- title (tối đa 80 ký tự, nên 4–8 từ): headline rõ ràng, một điểm đáng chú ý, ưu tiên động từ mạnh và tên đội/cầu thủ có trong nguồn. Emoji là tùy chọn: chỉ dùng khi hợp ngữ cảnh (tối đa một, có thể không dùng), không mặc định mở đầu bằng cùng một biểu tượng. Không dùng ký hiệu Markdown; tiêu đề sẽ được hệ thống in đậm.
+- title (tối đa 80 ký tự, nên 4–8 từ): headline rõ ràng, một điểm đáng chú ý, ưu tiên động từ mạnh và tên đội/cầu thủ có trong nguồn. Emoji trong tiêu đề: tối đa một và chỉ khi nó gắn với chính tin này (xem mục Emoji bên dưới). Không dùng ký hiệu Markdown; tiêu đề sẽ được hệ thống in đậm.
 - body: chọn cấu trúc theo nội dung, KHÔNG theo khuôn cố định. Tùy tin có thể là: tin nhanh; dẫn bằng diễn biến chính; mở bằng số liệu nổi bật; đặt bối cảnh trước rồi tới kết quả; phân tích ngắn về hệ quả; hoặc nêu kết quả rồi một chi tiết đáng nhớ. Dùng 1–4 đoạn khi nguồn đủ chất liệu, cách nhau một dòng trống, mỗi đoạn có thể nhiều câu; không ép số đoạn hay số câu. Mục tiêu độ dài body (theo số từ tiếng Việt cách nhau bởi dấu cách; là định hướng linh hoạt, KHÔNG phải mức tối thiểu): tin nhanh 50–80 từ, tin thường 80–110 từ, tin đáng chú ý 110–140 từ; chỉ tin đặc biệt (kỷ lục, huyền thoại, khoảnh khắc xúc động) mới tới khoảng 160–170 từ và chỉ khi nguồn có đủ dữ kiện kiểm chứng. Tin lớn có thể dùng khoảng 4 đoạn có nội dung (ví dụ: móc ngắn; số liệu cụ thể; hệ quả với cuộc đua/đội bóng; bối cảnh và dư vị), nhưng đó chỉ là gợi ý, không phải khuôn. Nguồn RSS ngắn thì viết ngắn, tuyệt đối không độn chữ, không thêm chi tiết nguồn không có. Mỗi đoạn phải mang dữ kiện, bối cảnh hoặc hệ quả cụ thể có trong nguồn, không câu sáo chung chung.
-- GIỚI HẠN CỨNG: caption đi kèm ảnh trong một bài duy nhất nên title + body cộng lại tối đa ${SPORTS_CAPTION_BUDGET} ký tự (tính cả dấu cách, xuống dòng và emoji, khoảng ${TITLE_BODY_SEPARATOR} ký tự ngăn cách tiêu đề). Ngân sách này luôn thắng mục tiêu từ: hãy cô đọng và kết thúc bằng câu trọn vẹn, không để cụt giữa câu. Không bắt buộc kết bằng câu hỏi hay câu cảm thán; chỉ hỏi khi thật sự có điều đáng bàn. Emoji tùy ngữ cảnh, có thể không dùng, nếu dùng thì ít và khác nhau giữa các bài; tránh lặp chuỗi biểu tượng hay vị trí cố định (đầu đoạn, đầu bài, cuối bài). Giọng gần gũi như fan bóng đá đang kể tin, tránh giọng báo cáo hoặc câu sáo. Không bịa cảm xúc của cầu thủ, HLV hay CĐV nếu nguồn không nói.
+- GIỚI HẠN CỨNG: caption đi kèm ảnh trong một bài duy nhất nên title + body cộng lại tối đa ${SPORTS_CAPTION_BUDGET} ký tự (tính cả dấu cách, xuống dòng và emoji, khoảng ${TITLE_BODY_SEPARATOR} ký tự ngăn cách tiêu đề). Ngân sách này luôn thắng mục tiêu từ: hãy cô đọng và kết thúc bằng câu trọn vẹn, không để cụt giữa câu. Không bắt buộc kết bằng câu hỏi hay câu cảm thán; chỉ hỏi khi thật sự có điều đáng bàn. Giọng gần gũi như fan bóng đá đang kể tin, tránh giọng báo cáo hoặc câu sáo. Không bịa cảm xúc của cầu thủ, HLV hay CĐV nếu nguồn không nói.
+- Emoji (một phần của giọng văn, không phải đồ trang trí): đa số bài nên có 1–3 emoji (tối đa 1 trong tiêu đề, tối đa 3 trong cả bài) để caption sống động trên mạng xã hội. Chọn từ chính nội dung tin: biểu tượng gắn với đúng sự kiện hoặc cảm xúc có căn cứ trong nguồn (ví dụ bàn thắng, cúp, chuyển nhượng, đội trưởng, thẻ phạt, sân đấu, thời tiết, băng ca, lịch thi đấu...), không dùng biểu tượng chung chung cho mọi tin. Đổi biểu tượng giữa các tin khác chủ đề; không lặp một bộ biểu tượng hay một mẫu như ⚽🔥. Đặt emoji tự nhiên theo ý câu: ngay sau cụm từ liên quan, cuối một câu, hoặc đầu một đoạn khi đoạn đó mở ý mới; thay đổi vị trí giữa các bài, không mặc định ở đầu mọi đoạn hay cuối mọi bài. Chỉ bỏ emoji khi tin nghiêm trọng hoặc nhạy cảm (chấn thương nặng, tang sự, bê bối, kỷ luật) hoặc tin quá ngắn và khô, và đó phải là ngoại lệ chứ không phải mặc định. Không chèn emoji chỉ để đủ số lượng, và không thay chữ bằng emoji.
 - Chỉ dùng dữ kiện có trong tiêu đề và tóm tắt RSS. Giữ đúng tên, số liệu và mức độ chắc chắn; phân biệt tin dự kiến, tin đồn và kết quả. Viết bằng lời riêng, tránh giật tít sai, suy diễn, trích dẫn tự tạo, URL, nhắc tài khoản, hashtag và ký hiệu định dạng Markdown. Link bài gốc hiển thị riêng trong webapp.
 - photoSubject (tối đa 80 ký tự): chỉ ghi tên riêng ngắn gọn của đội hoặc cầu thủ chính có thật trong nguồn để tìm ảnh tư liệu trên Wikimedia Commons. Dùng cách viết quốc tế nếu biết (ví dụ Bayern München). Trả null nếu không xác định được chủ thể cụ thể.
 - matchPhoto: với tin về một trận đã diễn ra, trả { "opponent": tên đội còn lại, "playedOn": ngày thi đấu YYYY-MM-DD theo lịch địa phương nếu dữ kiện đủ rõ }. Trả null khi không xác định được ngày hoặc đối thủ. Với tin ngoài sân đấu cũng trả null.
 `.trim();
 
-const EMOJI = /\p{Extended_Pictographic}/gu;
+const PICTOGRAPH = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+const segmenter = new Intl.Segmenter("vi", { granularity: "grapheme" });
+
+/** Đếm emoji theo cụm ký tự hiển thị (ZWJ, cờ, biến thể FE0F tính là một). */
+export function countEmoji(text: string) {
+  let count = 0;
+  for (const { segment } of segmenter.segment(text)) if (PICTOGRAPH.test(segment)) count++;
+  return count;
+}
 
 // Chỉ làm sạch, không chèn emoji hay ép cấu trúc: đa dạng do nội dung quyết định.
+// Cắt theo cụm ký tự để không để lại mảnh vỡ (FE0F, ZWJ) khi bỏ emoji vượt mức.
 function limitEmoji(text: string, max: number) {
   let seen = 0;
-  return text.replace(EMOJI, (match) => (++seen <= max ? match : "")).replace(/[ \t]{2,}/g, " ");
+  let out = "";
+  for (const { segment } of segmenter.segment(text)) {
+    out += PICTOGRAPH.test(segment) && ++seen > max ? "" : segment;
+  }
+  return out.replace(/[ \t]{2,}/g, " ").replace(/ +([.,!?…])/g, "$1");
 }
 
 const SENTENCE_END = /(?<=[.!?…])\s+/u;
