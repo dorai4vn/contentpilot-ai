@@ -86,7 +86,7 @@ async function pickMode(page, value, quota) {
     check(await shown(page.locator(tid("nav-automation"))), "nav shows 'Auto Post' for the configured workspace");
     await page.click(tid("nav-automation"));
     await page.waitForURL(/\/automation$/);
-    check(await shown(page.locator('section[aria-label="Chế độ tự động hóa"] h2:text-is("Off")')), "default mode shown is Off");
+    check(await shown(page.locator('section[aria-label="Chế độ Auto Post"] h2:text-is("Off")')), "default mode shown is Off");
     check(await page.locator('input[name="mode"][value="off"]').isChecked(), "Off radio preselected");
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "no Emergency Stop while Off");
     check(await page.locator('input[name="dailyQuota"]').inputValue() === "40", "default daily quota 40");
@@ -223,11 +223,11 @@ async function pickMode(page, value, quota) {
         const el = document.activeElement; if (!el || el === document.body) return null;
         const cs = getComputedStyle(el);
         const visible = (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none";
-        return { tag: el.tagName, name: el.getAttribute("name") || el.textContent?.trim().slice(0, 20) || "", visible };
+        return { tag: el.tagName, name: (el.tagName === "BUTTON" && el.closest("form[data-testid]")?.getAttribute("data-testid")) || el.getAttribute("name") || el.textContent?.trim().slice(0, 20) || "", visible };
       });
       if (info) { seen.add(`${info.tag}:${info.name}`); if (!info.visible && info.tag !== "INPUT") focusVisibleOk = false; }
     }
-    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:Lưu", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:Lưu"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
+    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
     check(focusVisibleOk, "focused buttons/links show a visible focus indicator");
     // Keyboard-only mode change: arrow key on radio group then Enter on the button.
     await m.locator('input[name="mode"][value="auto"]').focus();
