@@ -24,8 +24,29 @@
 - NOT covered: no generic-stadium, logo or wrong-team football photos in the set (Commons search was rate-limited), so those negative classes are unmeasured. n=27 is far too small for calibrated rates.
 - Actions-minutes estimate (not a hosting claim): ~0.3 s x <=5 candidates x <=3 posts/run ≈ <=5 s inference per run, plus a one-off ~10-60 s model download per fresh runner/instance. Cost depends on where the worker runs.
 
-### Deployment limitation (open)
-`sports-news.yml` only `curl`s the cron URL; the worker itself runs in the Next.js server (Vercel), not on the Actions runner. Whether Vercel serverless can load a ~200 MB ONNX model + `onnxruntime-node` (bundle size, writable cache, memory, cold start) is **unverified**. If it cannot, the validator fails closed and no RSS image post is produced until the worker runs somewhere that can. Workflow/Vercel settings were not changed in this checkpoint.
+### A3a — runtime feasibility (measured 2026-11-28, GitHub-hosted runner, Node 22, 4 vCPU/16 GB)
+**Evidence**
+- Entrypoint: `POST /api/cron/sports-news` (Node runtime, `maxDuration = 180`, Bearer `CRON_SECRET`). `sports-news.yml` only `curl`s it every 2 h (`--max-time 200`, job timeout 4 min). The QC model therefore runs inside the Next.js (Vercel) function. No `vercel.json`; no Vercel settings were read or changed.
+- **Bug found and fixed:** `next build` file tracing (`route.js.nft.json`, 330 files, ~88 MB, mostly sharp libvips glibc+musl) includes `onnxruntime_binding.node` but NOT `libonnxruntime.so.1` (21 MB, dlopen'd). Copying only the traced files to an empty dir and `require('onnxruntime-node')` => `ERR_DLOPEN_FAILED`. In production this would have meant `model_unavailable` on every candidate => fail closed => no RSS image posts. Fix: `outputFileTracingIncludes` for `/api/cron/sports-news` only, adding `onnxruntime-node/bin/napi-v3/linux/x64/**`. After rebuild the traced-only copy loads (`loaded 8` exports; traced onnxruntime-node 43 MB). Unit test: `runtime-config.test.ts`.
+- Not yet proven: a full traced copy running the real model (only the native lib load was proven in the traced copy; the real-model smoke ran from the full `node_modules`). Total function size is ~88 MB + ~21 MB native, before the model.
+- Model: `scripts/fn11-runtime-smoke.mjs` (synthetic green image, NOT a visual QC): cold load incl. 204 MB download 1.6 s, warm load 0.55 s, inference 75-93 ms, RSS ~620-630 MB on this runner. Download speed from Hugging Face on Vercel is unmeasured.
+- Writable cache: default `os.tmpdir()/contentpilot-siglip` (`SPORTS_IMAGE_MODEL_CACHE` overrides). Vercel functions only have writable `/tmp` (ephemeral, per instance), so each cold instance re-downloads ~204 MB; the in-process verdict cache is not shared across instances.
+- Memory/timeouts: ~0.63 GB RSS fits typical function memory but the plan's actual limit was not verified. Worst case per run is bounded by 5 candidates x 25 s QC timeout (`SPORTS_IMAGE_QC_TIMEOUT_MS`) which can exceed the 180 s `maxDuration`; A3b must add a total candidate budget. Concurrency: workflow `concurrency: sports-news` (cancel-in-progress false) serialises scheduled runs, but the route itself has no lease; overlapping invocations (manual curl, `deliver` mode) would each load the model.
+- **Preview-only smoke on Vercel: NOT DONE / unavailable** (no Vercel access in this task; production cron must not be triggered). Vercel feasibility is therefore NOT a pass; it is "unverified, one blocking bug fixed".
+
+**Vercel vs GitHub Actions for the RSS/QC worker (no extra hosting purchase)**
+| | Vercel function (current) | GitHub Actions job |
+|---|---|---|
+| Native ONNX/sharp | needs tracing fix above; bundle ~110 MB + 204 MB download per cold instance, unverified | `npm ci` + actions/cache for the model; measured OK here |
+| Time limit | `maxDuration` 180 s (plan limit unverified) | job up to 6 h; set ~10 min |
+| Memory | plan-dependent, unverified | 16 GB (public) / 4 vCPU |
+| Auth/secrets | existing `CRON_SECRET` and server env; DB via user-less path as today | would need Supabase + Telegram secrets in Actions = new secret scope; run only on trusted `main`/schedule, `environment` protection, never on PRs/forks |
+| Single scheduler / lease | workflow curl + serial concurrency group | same group, plus DB lease needed so Vercel and Actions never both run |
+| Off / emergency stop / quotas / dedup / FN10 retention | all enforced in `worker.ts`/DB (unchanged) | same code would run, but a second runtime duplicates env config |
+| Retries | next 2 h cron tick | same, plus job-level retry |
+| Minutes | ~0 extra (curl <1 min) | est. install ~10 s with cache + model 10-60 s cold (cached ~0 s) + RSS fetch/QC; ~2-4 min/run x 12 runs/day ≈ 24-48 min/day, ~0.7-1.5 k min/month (count depends on repo visibility/plan; not asserted free) |
+
+**Recommended design (not implemented; needs owner approval, touches workflows/secrets):** keep Vercel as the single orchestrator now with the tracing fix and fail-closed behaviour; before enabling any live RSS image posting, run a preview-only smoke with a synthetic image to prove the traced bundle + `/tmp` download + memory. If that fails or exceeds limits, split QC out: Actions job (trusted `main`, schedule/dispatch only, `actions/cache` for the model, secret scope limited to read candidate + write verdict) or run QC in the Actions job and have the Vercel route only deliver verified rows. Either way the B1 gate keeps "no image => no send".
 
 ## B2 — still to do
 DB claim guard (RPC refuses to claim/send an RSS sports post with no image) and structured auto skip reason (auto path currently returns `false`): new timestamped migration + `tests/db/` assertions; no production migration without approval.
