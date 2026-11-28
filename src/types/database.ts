@@ -450,7 +450,11 @@ export type Database = {
       };
       begin_sports_scan: {
         Args: { p_workspace_id: string; p_project_id: string };
-        Returns: { due: boolean; posts_per_scan: number; scan_interval_hours: number }[];
+        Returns: { due: boolean; posts_per_scan: number; scan_interval_hours: number; is_retry: boolean }[];
+      };
+      finish_sports_scan: {
+        Args: { p_workspace_id: string; p_project_id: string; p_ok: boolean };
+        Returns: undefined;
       };
       claim_sports_auto_publish: {
         Args: { p_workspace_id: string; p_project_id: string; p_destination_id: string; p_post_id: string };

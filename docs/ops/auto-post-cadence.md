@@ -42,3 +42,29 @@ untouched.** An old default 40 and an explicit 40 are *indistinguishable* (the f
 "explicit" marker was ever stored), so no row is rewritten — 40 stays 40; owners can lower it in the UI. Unconfigured
 projects display 20/2h/2. Existing rows receive 2 h/2 posts (previously fixed constants 2 h/3 posts, never customizable);
 open persistent Auto windows are tightened to 2 per slot. Not applied to production — requires separate owner approval.
+
+## Scan identity, cap changes and RSS retry (FN09-QC-B/C)
+
+**Per-scan cap (posts per scan).** Deliveries are accounted to a stable scan identity (`sports_automation_modes.scan_seq`),
+which `begin_sports_scan()` increments once per real scan. It no longer depends on the interval, so changing the
+interval (up or down) mid-slot can never open a second allowance for the same scan. Prospective rules:
+
+- Changing the interval never changes the open scan or `last_scan_at`; the next scan is due `last_scan_at + new interval`
+  (10 min jitter tolerated). No backlog replay.
+- Changing posts per scan applies immediately to the open scan: raising lets it use the extra allowance, lowering blocks
+  further posts (already-sent posts are never rolled back). The next scan starts with the new value.
+- The daily limit (Asia/Dubai day) is independent and unchanged; approvals and in-flight drafts are untouched
+  (same-mode Auto edits update the open window in place).
+
+**RSS retry (bounded).** The worker records the outcome of RSS collection with `finish_sports_scan(ok)` *before* any AI,
+image or delivery work:
+
+- success, including a successful scan with **no** matching articles, and a partial outage (some feeds up) = `done`, never retried;
+- collection throws, or **every** feed is unavailable = `failed`.
+
+`begin_sports_scan()` (row-locked, durable claim) then grants at most **2 retries** of a failed scan, each no sooner than
+one scheduler tick (2h, minus 10 min jitter) after the last claim, so there is no tight loop and the existing 2h cron
+cadence is reused. A retry keeps the same `scan_seq` (per-scan cap not doubled). With a 2h interval the next regular scan is
+itself the retry. Failures after collection (AI/draft stage) are not retried, so AI work and deliveries are never duplicated.
+Off / Emergency Stop clear the failed state and `begin_sports_scan()` is never due while Off.
+No scheduler/workflow change is required.

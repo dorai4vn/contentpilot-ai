@@ -139,3 +139,124 @@ select set_config('request.jwt.claim.sub', :'owner', false);
 select pg_temp.check_mode((select count(*) >= 1 and bool_or(scan_interval_hours = 2 and posts_per_scan = 2) from public.list_sports_automation_events(:'ws', :'project')), 'cadence settings are audited');
 reset role;
 
+
+-- ===== FN09-QC-B: per-scan cap is accounted per stable scan identity, not per interval-derived slot =====
+select count(*) + 40 as quota2 from contentpilot_private.sports_auto_publish_deliveries d
+  where (d.started_at at time zone 'Asia/Dubai')::date = (clock_timestamp() at time zone 'Asia/Dubai')::date \gset
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 2, 2);
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = null, scan_status = 'done', scan_retries = 0 where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select due and not is_retry from public.begin_sports_scan(:'ws', :'project')), 'QC-B: scan N opens');
+reset role;
+select scan_seq as seq_n from contentpilot_private.sports_automation_modes where project_id = :'project' \gset
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.draft('https://fn09.example/b1') as b1 \gset
+select pg_temp.draft('https://fn09.example/b2') as b2 \gset
+select pg_temp.draft('https://fn09.example/b3') as b3 \gset
+select pg_temp.draft('https://fn09.example/b4') as b4 \gset
+select pg_temp.check_mode(pg_temp.claim(:'b1') = 1 and pg_temp.claim(:'b2') = 1, 'QC-B: two posts claimed in scan N (cap 2)');
+-- Interval INCREASED mid-slot (2h -> 6h) then DECREASED (6h -> 2h): neither opens a second allowance.
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 6, 2);
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode(pg_temp.claim(:'b3') = 0, 'QC-B: increasing the interval mid-scan does not allow a 3rd post');
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 4, 2);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 2, 2);
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode(pg_temp.claim(:'b3') = 0, 'QC-B: decreasing the interval mid-scan does not allow a 3rd post');
+reset role;
+select pg_temp.check_mode((select scan_seq = :seq_n from contentpilot_private.sports_automation_modes where project_id = :'project'), 'QC-B: interval changes never change the scan identity');
+select pg_temp.check_mode((select count(*) = 2 from contentpilot_private.sports_auto_publish_deliveries d join contentpilot_private.sports_auto_publish_windows w on w.id = d.window_id where d.slot = :seq_n and w.project_id = :'project'), 'QC-B: exactly 2 deliveries accounted to scan N');
+-- Cap lowered then raised: prospective, applies to the open scan, nothing replays by itself.
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 2, 1);
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode(pg_temp.claim(:'b3') = 0, 'QC-B: lowering the cap below what the scan already sent blocks further posts (no rollback of sent ones)');
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 2, 3);
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode(pg_temp.claim(:'b3') = 1, 'QC-B: raising the cap lets the open scan use the extra allowance');
+-- Next real scan (new identity) gets a fresh allowance; a premature tick does not.
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-B: tick inside the interval opens no new scan');
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '2 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota2, 2, 2);
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select due and not is_retry from public.begin_sports_scan(:'ws', :'project')), 'QC-B: scan N+1 opens at the interval');
+reset role;
+select pg_temp.check_mode((select scan_seq = :seq_n + 1 from contentpilot_private.sports_automation_modes where project_id = :'project'), 'QC-B: scan N+1 has a new identity');
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode(pg_temp.claim(:'b4') = 1, 'QC-B: the new scan has its own allowance (not blocked by scan N)');
+
+-- ===== FN09-QC-C: bounded retry of a failed RSS scan =====
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: scan is claimed, no duplicate tick');
+select public.finish_sports_scan(:'ws', :'project', false);
+reset role;
+select pg_temp.check_mode((select scan_status = 'failed' from contentpilot_private.sports_automation_modes where project_id = :'project'), 'QC-C: failed scan marked failed');
+-- interval 6h so only the retry path can make it due
+update contentpilot_private.sports_automation_modes set scan_interval_hours = 6 where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: no tight loop: a failed scan is not retried before one scheduler tick');
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '2 hours' where project_id = :'project';
+select scan_seq as seq_f from contentpilot_private.sports_automation_modes where project_id = :'project' \gset
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select due and is_retry from public.begin_sports_scan(:'ws', :'project')), 'QC-C: retry allowed one tick later, inside the 6h interval');
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: concurrent/second tick cannot double-retry (claim is durable)');
+reset role;
+select pg_temp.check_mode((select scan_seq = :seq_f and scan_retries = 1 from contentpilot_private.sports_automation_modes where project_id = :'project'), 'QC-C: retry keeps the scan identity (per-scan cap is not doubled)');
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.finish_sports_scan(:'ws', :'project', false);
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '2 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select due and is_retry from public.begin_sports_scan(:'ws', :'project')), 'QC-C: second retry allowed');
+select public.finish_sports_scan(:'ws', :'project', false);
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '2 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: retries are bounded at 2; then wait for the next regular interval');
+-- successful (also empty) scan is never retried
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '7 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select due and not is_retry from public.begin_sports_scan(:'ws', :'project')), 'QC-C: regular scan after the interval is a fresh scan (retries reset)');
+select public.finish_sports_scan(:'ws', :'project', true);
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '2 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: a successful (even empty) scan is not retried');
+-- Off / Emergency Stop: no retry
+reset role;
+update contentpilot_private.sports_automation_modes set last_scan_at = clock_timestamp() - interval '7 hours', scan_status = 'claimed' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select public.finish_sports_scan(:'ws', :'project', false);
+select set_config('request.jwt.claim.sub', :'owner', false);
+select public.set_sports_automation_mode(:'ws', :'project', :'channel', 'off', :quota2, 2, 2);
+reset role;
+select pg_temp.check_mode((select scan_status = 'done' and scan_retries = 0 from contentpilot_private.sports_automation_modes where project_id = :'project'), 'QC-C: Off clears a pending retry');
+update contentpilot_private.sports_automation_modes set scan_status = 'failed', last_scan_at = clock_timestamp() - interval '3 hours' where project_id = :'project';
+set role authenticated;
+select set_config('request.jwt.claim.sub', :'worker', false);
+select pg_temp.check_mode((select not due from public.begin_sports_scan(:'ws', :'project')), 'QC-C: no retry while Off');
+select set_config('request.jwt.claim.sub', :'outsider', false);
+select pg_temp.denied(format('select public.finish_sports_scan(%L,%L,false)', :'ws', :'project'), '42501', 'QC-C: finish_sports_scan is worker-only') ;
+reset role;

@@ -88,5 +88,33 @@ echo "  ok - $N concurrent scheduler ticks start exactly one scan"
 setmode off 40 2 2
 if [[ "$(scan | tail -1)" != "f" ]]; then echo "ASSERTION FAILED: scan due while Off" >&2; exit 1; fi
 echo "  ok - no scan is due while Off"
+# FN09-QC-B: simultaneous claims while the interval is changed up and down never exceed posts-per-scan (stable scan
+# identity), and the daily cap still holds.
+BASE=$(today)
+setmode auto $((BASE + 20)) 2 2
+q -c "update contentpilot_private.sports_automation_modes set last_scan_at = null, scan_status = 'done', scan_retries = 0 where project_id='$PROJECT'"
+if [[ "$(scan | tail -1)" != "t" ]]; then echo "ASSERTION FAILED: scan did not open" >&2; exit 1; fi
+for i in $(seq 51 $((50 + N))); do draft $i; done
+rm -f "$OUT"/*
+for i in $(seq 51 $((50 + N))); do ( claim $i > "$OUT/$i" ) & done
+( for iv in 6 4 24 2 12 2; do setmode auto $((BASE + 20)) $iv 2; done ) &
+wait
+GOT=$(cat "$OUT"/* | grep -c '^1$' || true)
+if [[ "$GOT" != "2" ]]; then echo "ASSERTION FAILED: $N concurrent claims during interval changes claimed $GOT (expected exactly posts-per-scan 2)" >&2; exit 1; fi
+echo "  ok - concurrent claims during interval changes never exceed posts per scan (2)"
+
+# FN09-QC-C: of N concurrent ticks after a failed scan exactly one retry is granted, and a retry is bounded.
+q -c "update contentpilot_private.sports_automation_modes set scan_interval_hours = 6, scan_status = 'failed', scan_retries = 0, last_scan_at = clock_timestamp() - interval '2 hours' where project_id='$PROJECT'"
+rm -f "$OUT"/*
+for i in $(seq 1 $N); do ( q <<SQL | tail -1 > "$OUT/r$i"
+$(as $WORKER)
+select due and is_retry from public.begin_sports_scan('$WS','$PROJECT');
+SQL
+) & done
+wait
+RETRY=$(cat "$OUT"/r* | grep -c '^t$' || true)
+if [[ "$RETRY" != "1" ]]; then echo "ASSERTION FAILED: $N concurrent ticks granted $RETRY retries (expected exactly 1)" >&2; exit 1; fi
+echo "  ok - concurrent ticks after a failed scan grant exactly one retry"
+setmode auto $((BASE + 20)) 2 2
 setmode semi 40 2 2   # leave Semi for the next concurrency test, as before
 rm -rf "$OUT"

@@ -7,6 +7,10 @@
 --  * Existing rows get the new defaults for the two new settings (they were fixed constants before: 2h / 3 posts).
 --  * begin_sports_scan() is the single DB-side scan gate: row-locked, so concurrent ticks never double scan.
 --  * Interval changes never reset last_scan_at: the next scan is due last_scan_at + interval (minus 10 min jitter).
+--  * Per-scan cap is accounted per stable scan identity (scan_seq), NOT per time slot derived from the interval.
+--    Changing the interval never opens a new accounting slot; a changed cap applies prospectively to the open scan.
+--  * Transient RSS failure (every feed unavailable) marks the scan 'failed'; begin_sports_scan then allows at most 2
+--    retries, each no earlier than one scheduler tick (2h, minus jitter) after the last claim. Off / Emergency Stop clear it.
 --  * Off default, emergency stop, approval semantics, Asia/Dubai day, and no backlog replay are unchanged.
 begin;
 
@@ -15,6 +19,11 @@ alter table contentpilot_private.sports_automation_modes
     check (scan_interval_hours between 2 and 24 and scan_interval_hours % 2 = 0),
   add column posts_per_scan integer not null default 2 check (posts_per_scan between 1 and 10),
   add column last_scan_at timestamptz,
+  -- Stable scan identity: scan_seq increments once per real (non-retry) scan and never depends on the interval, so the
+  -- per-scan cap cannot be bypassed by changing the interval mid-slot. A retry of a failed scan keeps the same seq.
+  add column scan_seq integer not null default 0,
+  add column scan_status text not null default 'done' check (scan_status in ('claimed','done','failed')),
+  add column scan_retries integer not null default 0 check (scan_retries between 0 and 2),
   alter column daily_quota set default 20;
 alter table contentpilot_private.sports_automation_events
   add column scan_interval_hours integer, add column posts_per_scan integer;
@@ -108,6 +117,8 @@ begin
   on conflict (workspace_id,project_id) do update
     set destination_id=excluded.destination_id, mode=excluded.mode, daily_quota=excluded.daily_quota,
         scan_interval_hours=excluded.scan_interval_hours, posts_per_scan=excluded.posts_per_scan,
+        scan_status=case when excluded.mode='off' then 'done' else m.scan_status end,
+        scan_retries=case when excluded.mode='off' then 0 else m.scan_retries end,
         version=m.version+1, updated_by=excluded.updated_by, updated_at=excluded.updated_at
   returning m.version into v_version;
   insert into contentpilot_private.sports_automation_events
@@ -120,29 +131,62 @@ revoke all on function public.set_sports_automation_mode(uuid,uuid,uuid,text,int
 grant execute on function public.set_sports_automation_mode(uuid,uuid,uuid,text,integer,integer,integer) to authenticated;
 
 -- Scan gate. Row-locked: of N concurrent ticks exactly one gets due=true. Off/unconfigured is never due.
+-- A scan whose RSS collection failed (scan_status='failed') may be retried at most twice, each no sooner than one
+-- scheduler tick (2h) after the previous claim, and keeps its scan_seq (so the per-scan cap is not doubled).
 create function public.begin_sports_scan(p_workspace_id uuid, p_project_id uuid)
-returns table(due boolean, posts_per_scan integer, scan_interval_hours integer)
+returns table(due boolean, posts_per_scan integer, scan_interval_hours integer, is_retry boolean)
 language plpgsql security definer set search_path = '' as $$
-declare m contentpilot_private.sports_automation_modes; v_now timestamptz := clock_timestamp();
+declare m contentpilot_private.sports_automation_modes; v_now timestamptz := clock_timestamp(); v_regular boolean; v_retry boolean;
 begin
   if not contentpilot_private.can_run_news(p_workspace_id) then
     raise exception 'Worker is not authorized' using errcode = '42501';
   end if;
   select * into m from contentpilot_private.sports_automation_modes x
     where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id) for update;
-  if not found or m.mode not in ('semi','auto') then return query select false, 2, 2; return; end if;
+  if not found or m.mode not in ('semi','auto') then return query select false, 2, 2, false; return; end if;
   -- 10 minutes of scheduler jitter are tolerated so a slightly early tick is not skipped for a whole interval.
-  if m.last_scan_at is not null
-     and v_now < m.last_scan_at + make_interval(hours => m.scan_interval_hours) - interval '10 minutes' then
-    return query select false, m.posts_per_scan, m.scan_interval_hours; return;
+  v_regular := m.last_scan_at is null
+    or v_now >= m.last_scan_at + make_interval(hours => m.scan_interval_hours) - interval '10 minutes';
+  v_retry := not v_regular and m.scan_status = 'failed' and m.scan_retries < 2
+    and v_now >= m.last_scan_at + interval '2 hours' - interval '10 minutes';
+  if not v_regular and not v_retry then
+    return query select false, m.posts_per_scan, m.scan_interval_hours, false; return;
   end if;
-  update contentpilot_private.sports_automation_modes x set last_scan_at = v_now
-    where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id);
-  return query select true, m.posts_per_scan, m.scan_interval_hours;
+  if v_regular then
+    update contentpilot_private.sports_automation_modes x
+       set last_scan_at = v_now, scan_seq = x.scan_seq + 1, scan_status = 'claimed', scan_retries = 0
+     where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id);
+  else
+    update contentpilot_private.sports_automation_modes x
+       set last_scan_at = v_now, scan_status = 'claimed', scan_retries = x.scan_retries + 1
+     where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id);
+  end if;
+  return query select true, m.posts_per_scan, m.scan_interval_hours, v_retry;
 end
 $$;
 revoke all on function public.begin_sports_scan(uuid,uuid) from public,anon,authenticated,service_role;
 grant execute on function public.begin_sports_scan(uuid,uuid) to authenticated;
+
+-- Reports the outcome of RSS collection for the claimed scan. ok=true (including a successful EMPTY scan) closes it;
+-- ok=false (every feed unavailable / collection threw) makes it retryable. Only a 'claimed' scan can transition, and
+-- Off / Emergency Stop always close it, so nothing is retried after the switch.
+create function public.finish_sports_scan(p_workspace_id uuid, p_project_id uuid, p_ok boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+declare m contentpilot_private.sports_automation_modes;
+begin
+  if not contentpilot_private.can_run_news(p_workspace_id) then
+    raise exception 'Worker is not authorized' using errcode = '42501';
+  end if;
+  select * into m from contentpilot_private.sports_automation_modes x
+    where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id) for update;
+  if not found or m.scan_status <> 'claimed' then return; end if;
+  update contentpilot_private.sports_automation_modes x
+     set scan_status = case when p_ok or m.mode not in ('semi','auto') then 'done' else 'failed' end
+   where (x.workspace_id, x.project_id) = (p_workspace_id, p_project_id);
+end
+$$;
+revoke all on function public.finish_sports_scan(uuid,uuid,boolean) from public,anon,authenticated,service_role;
+grant execute on function public.finish_sports_scan(uuid,uuid,boolean) to authenticated;
 
 create or replace function public.claim_sports_auto_publish(p_workspace_id uuid,p_project_id uuid,p_destination_id uuid,p_post_id uuid)
 returns table(id uuid, starts_at timestamptz, ends_at timestamptz, target_ref text, created_at timestamptz, persistent boolean)
@@ -202,12 +246,12 @@ begin
     where p_req.post_id=p_post_id and p_req.destination_id=p_destination_id) then return; end if;
 
   if w.persistent then
-    -- 2h cadence slots are global; the quota is per Dubai day across every persistent window of the destination.
-    -- FN09: slot width, posts per scan and daily cap come from the persisted mode row (hard caps, not labels).
+    -- Slot = scan identity (scan_seq); the quota is per Dubai day across every persistent window of the destination.
+    -- FN09: posts per scan, scan identity and daily cap come from the persisted mode row (hard caps, not labels).
     select * into cfg from contentpilot_private.sports_automation_modes mm
       where (mm.workspace_id,mm.project_id)=(p_workspace_id,p_project_id);
     if not found then return; end if;
-    current_slot := floor(extract(epoch from t) / (cfg.scan_interval_hours * 3600))::integer;
+    current_slot := cfg.scan_seq; -- stable scan identity, independent of the interval
     if (select count(*) from contentpilot_private.sports_auto_publish_deliveries a
           join contentpilot_private.sports_auto_publish_windows aw on aw.id=a.window_id
          where (aw.workspace_id,aw.project_id,aw.destination_id)=(p_workspace_id,p_project_id,p_destination_id)

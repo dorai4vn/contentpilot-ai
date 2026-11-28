@@ -64,6 +64,7 @@ beforeEach(() => {
   db.draft.mockImplementation(async (item: { title: string }) => ({ title: `Bài: ${clean(item.title)}`, body: "Nội dung", photoSubject: null, photoNeedsAction: false }));
   db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
     if (name === "begin_sports_scan") return { data: [db.scan], error: null };
+    if (name === "finish_sports_scan") return { data: null, error: null };
     if (name === "claim_social_deliveries") return { data: [], error: null };
     if (name === "record_sports_news_event_duplicate") return { data: !db.evidenceFails, error: db.evidenceFails ? { message: "x" } : null };
     if (name === "record_sports_news_event_assessment") return { data: args.p_title ? `post-${String(args.p_source_url)}` : null, error: null };
@@ -319,6 +320,30 @@ describe("runSportsNews semantic deduplication", () => {
       expect(rpcNames()).not.toContain("record_sports_news_event_assessment");
     });
 
+    it("FN09-QC-C: every feed unavailable is a failed scan (retryable); an empty or partial scan is a success", async () => {
+      const finished = () => db.rpc.mock.calls.filter(([n]) => n === "finish_sports_scan").map(([, a]) => (a as { p_ok: boolean }).p_ok);
+      const names = Array.from({ length: 100 }, (_, i) => `f${i}`);
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: names });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: true, drafted: 0 });
+      expect(finished()).toEqual([false]);
+      expect(db.assess).not.toHaveBeenCalled();
+      db.rpc.mockClear();
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: [] });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: false });
+      expect(finished()).toEqual([true]);
+      db.rpc.mockClear();
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: names.slice(0, 1) });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: false });
+      expect(finished()).toEqual([true]);
+    });
+
+    it("FN09-QC-C: a throwing collection marks the scan failed and still fails the run", async () => {
+      db.collect.mockRejectedValue(new Error("network"));
+      await expect(runSportsNews(readSportsNewsConfig())).rejects.toThrow("network");
+      expect(db.rpc.mock.calls.filter(([n]) => n === "finish_sports_scan").map(([, a]) => (a as { p_ok: boolean }).p_ok)).toEqual([false]);
+      expect(db.assess).not.toHaveBeenCalled();
+    });
+
     it("FN09: a failing scan gate fails closed (no RSS/AI work)", async () => {
       db.rpc.mockImplementation(async (name: string) => name === "begin_sports_scan" ? { data: null, error: { message: "x" } } : { data: [], error: null });
       feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/gate"));
@@ -450,6 +475,7 @@ describe("runSportsNews semantic deduplication", () => {
       let calls = 0;
       db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
         if (name === "begin_sports_scan") return { data: [db.scan], error: null };
+        if (name === "finish_sports_scan") return { data: null, error: null };
         if (name === "claim_social_deliveries") return { data: [], error: null };
         if (name === "record_sports_news_event_duplicate") return { data: true, error: null };
         calls += 1;

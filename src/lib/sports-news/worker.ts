@@ -16,6 +16,7 @@ import { assessSportsNews, writeSportsDraft } from "./editor";
 import { loadEventHistory } from "./event-history";
 import { buildEventIdentity, buildEventPayload, classifyEvent, manualReviewReason, type EventDecision, type EventIdentity, type KnownEvent, type ManualReviewReason } from "./event-identity";
 import { collectSportsNews } from "./feeds";
+import { sportsFeeds } from "./sources";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
@@ -243,12 +244,19 @@ export async function runSportsNews(config: Config, testDate?: string) {
   const delivery = await sendApproved(client, config, testDate ? {} : approvedTokens);
   const alert = () => sendReviewNotices(client, config.workspaceId, config.projectId, notices);
   const now = Date.now();
-  const feed = await collectSportsNews(now);
+  // FN09 scan outcome: a collection that throws or finds EVERY feed unavailable is a transient failure (the DB gate then
+  // allows a bounded retry on a later scheduler tick); a successful scan with no matching articles is not a failure.
+  // The outcome is recorded before any AI/delivery work, so a retry can never repeat AI calls or deliveries.
+  const reportScan = async (ok: boolean) => { if (!testDate) await client.rpc("finish_sports_scan", { p_workspace_id: config.workspaceId, p_project_id: config.projectId, p_ok: ok }); };
+  let feed: Awaited<ReturnType<typeof collectSportsNews>>;
+  try { feed = await collectSportsNews(now); } catch (error) { await reportScan(false).catch(() => undefined); throw error; }
   const { unavailableSources } = feed;
+  const scanFailed = unavailableSources.length >= sportsFeeds.length;
+  await reportScan(!scanFailed);
   const articles = feed.articles.filter((item) => testDate
     ? item.publishedAt <= now && dubaiDate(item.publishedAt) === testDate
     : publishedToday(item.publishedAt, now));
-  const report = { mode: "on" as "on" | "stopped", skipped: null as "automation_off" | null, ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, persistentAuto: autoWindow?.persistent ?? false, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: unavailableSources, assessed: 0, drafted: 0, itemFailures: 0 };
+  const report = { mode: "on" as "on" | "stopped", skipped: null as "automation_off" | null, ...delivery, autoPublishActive: autoWindow !== null, autoPublishUntil: autoWindow?.ends_at ?? null, persistentAuto: autoWindow?.persistent ?? false, autoPublished: 0, autoPublishFailures: 0, semanticDuplicates: 0, followUps: 0, eventEvidenceFailures: 0, feedsUnavailable: unavailableSources, scanFailed, assessed: 0, drafted: 0, itemFailures: 0 };
   if (!articles.length) return { ...report, ...await alert() };
 
   const seen = await client
