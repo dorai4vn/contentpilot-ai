@@ -7,14 +7,14 @@ import { createClient } from "@/lib/supabase/server";
 import { loadWorkspace } from "../../_lib/load";
 import { emergencyStop, resetScoring, saveScoring, setAutomationMode } from "./actions";
 
-export const metadata: Metadata = { title: "Tự động hóa" };
+export const metadata: Metadata = { title: "Auto Post" };
 
 export default async function AutomationPage({ params, searchParams }: PageProps<"/w/[workspaceId]/automation">) {
   const { workspaceId } = await params;
   const query = await searchParams;
   const { workspace } = await loadWorkspace(workspaceId, `/w/${workspaceId}/automation`);
   const target = sportsControlTarget(workspace.id);
-  if (!target) return <div className="football-page"><h1 className="text-2xl font-bold">Tự động hóa</h1><p className="mt-3">RSS chưa được cấu hình cho không gian này.</p></div>;
+  if (!target) return <div className="football-page"><h1 className="text-2xl font-bold">Auto Post</h1><p className="mt-3">RSS chưa được cấu hình cho không gian này.</p></div>;
 
   const client = await createClient();
   const [windowResult, projectResult, destinationResult, scoringResult, modeResult, eventsResult] = await Promise.all([
@@ -39,12 +39,12 @@ export default async function AutomationPage({ params, searchParams }: PageProps
 
   return (
     <div className="football-page space-y-6">
-      <div className="football-page-header"><div><p className="football-eyebrow">Football News Control Center</p><h1>Tự động hóa</h1><p>Điều khiển xuất bản RSS lên Telegram của {workspace.name}.</p></div></div>
-      {query.status ? <p role="status" className="football-feedback">{query.status === "mode-auto" ? "Đã chuyển sang Auto Publish. Chỉ áp dụng cho bài tạo từ bây giờ." : query.status === "mode-semi" ? "Đã chuyển sang Semi Publish. Bài mới chờ duyệt trước khi gửi." : query.status === "mode-off" ? "Đã tắt tự động hóa. Không quét RSS, không gọi AI và không gửi bài." : query.status === "scoring" ? "Đã lưu barem. Áp dụng từ lượt quét tiếp theo." : "Đã lưu."}</p> : null}
+      <div className="football-page-header"><div><p className="football-eyebrow">Social Automation</p><h1>Auto Post</h1><p>Tự động thu thập RSS, viết lại, tìm ảnh và đăng bài lên các kênh social của brand.</p></div></div>
+      {query.status ? <p role="status" className="football-feedback">{query.status === "mode-auto" ? "Đã chuyển sang Auto Publish. Chỉ áp dụng cho bài tạo từ bây giờ." : query.status === "mode-semi" ? "Đã chuyển sang Semi Publish. Bài mới chờ duyệt trước khi gửi." : query.status === "mode-off" ? "Đã tắt Auto Post. Không quét RSS, không gọi AI và không gửi bài." : query.status === "scoring" ? "Đã lưu tiêu chuẩn xuất bản. Áp dụng từ lượt quét tiếp theo." : "Đã lưu."}</p> : null}
       {query.error ? <p role="alert" className="football-feedback is-error">Không lưu được cấu hình. Kiểm tra quyền và giới hạn rồi thử lại.</p> : null}
-      <section className="football-panel p-6" aria-label="Chế độ tự động hóa">
+      <section className="football-panel p-6" aria-label="Chế độ Auto Post">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div><p className="football-eyebrow">Chế độ hiện tại</p><h2 className="text-xl font-bold">{mode === "auto" ? "Auto Publish" : mode === "semi" ? "Semi Publish" : "Off"}</h2><p className="mt-2 text-sm text-slate-600">{projectResult.data?.name ?? "Dự án RSS"} · {destinationResult.data?.name ?? "Telegram"}</p></div>
+          <div><p className="football-eyebrow">Chế độ hiện tại</p><h2 className="text-xl font-bold">{mode === "auto" ? "Auto Publish" : mode === "semi" ? "Semi Publish" : "Off"}</h2><p className="mt-2 text-sm text-slate-600">ContentPilot AI · Tự động đăng tin mỗi ngày trên các kênh social brand</p></div>
           <span className={`football-state ${mode === "auto" ? "is-on" : ""}`}><Power size={15} aria-hidden="true" />{mode === "auto" ? "Đang tự đăng" : mode === "semi" ? "Chờ duyệt trước khi gửi" : "Đã tắt"}</span>
         </div>
         <div className="football-control-details">
@@ -52,38 +52,38 @@ export default async function AutomationPage({ params, searchParams }: PageProps
           <p>Tối đa 3 bài mỗi lượt quét (2 giờ) · {current.daily_quota} bài mỗi ngày</p>
         </div>
       </section>
-      {canManage ? <section className="football-panel p-6" aria-label="Đổi chế độ">
-        <h2 className="text-lg font-bold">Đổi chế độ</h2>
+      {canManage ? <section className="football-panel p-6" aria-label="Phương thức xuất bản">
+        <h2 className="text-lg font-bold">Phương thức xuất bản</h2>
         <p className="mt-2 text-sm text-slate-600">Đổi chế độ không tự gửi lại bài cũ. Auto chỉ áp dụng cho bài tạo sau thời điểm bật.</p>
-        <form action={setAutomationMode} className="football-mode-form">
+        <form action={setAutomationMode} className="football-mode-form" data-testid="mode-form">
           <input type="hidden" name="workspaceId" value={workspace.id} />
           <fieldset className="football-mode-options">
-            <legend className="sr-only">Chế độ tự động hóa</legend>
+            <legend className="sr-only">Phương thức xuất bản</legend>
             <label><input type="radio" name="mode" value="auto" defaultChecked={mode === "auto"} required /><span><strong>Auto Publish</strong>Tự quét RSS, chấm điểm, loại trùng, viết caption, xử lý ảnh và gửi liên tục cho đến khi đổi chế độ. Trùng đã xác nhận vẫn bị chặn.</span></label>
             <label><input type="radio" name="mode" value="semi" defaultChecked={mode === "semi"} /><span><strong>Semi Publish</strong>Tự quét, chấm điểm, loại trùng, viết caption và xử lý ảnh; người duyệt phải phê duyệt trước khi gửi.</span></label>
             <label><input type="radio" name="mode" value="off" defaultChecked={mode === "off"} /><span><strong>Off</strong>Dừng quét RSS, gọi AI, xử lý ảnh và gửi bài trước mọi cuộc gọi ngoài. Việc đang chạy dừng ở điểm kiểm tra an toàn.</span></label>
           </fieldset>
           <label className="football-quota">Hạn mức mỗi ngày (1–120)<input name="dailyQuota" type="number" min="1" max="120" step="1" defaultValue={current.daily_quota} required /></label>
-          <button type="submit" className="football-action">Lưu chế độ</button>
+          <button type="submit" className="football-action">Lưu</button>
         </form>
       </section> : null}
       {canManage && mode === "auto" ? <section className="football-panel p-6" aria-label="Dừng khẩn cấp"><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle size={18} aria-hidden="true" /> Emergency Stop</h2><p className="mt-2 text-sm text-slate-600">Dừng tự đăng ngay và chuyển về Off: không quét RSS, không gọi AI, không gửi bài.</p><form action={emergencyStop} className="mt-4"><input type="hidden" name="workspaceId" value={workspace.id} /><input type="hidden" name="dailyQuota" value={current.daily_quota} /><button type="submit" className="football-stop">Dừng khẩn cấp (Off)</button></form></section> : null}
       <section className="football-panel p-6" aria-label="Nhật ký chế độ">
-        <h2 className="text-lg font-bold">Nhật ký đổi chế độ</h2>
+        <h2 className="text-lg font-bold">Lịch sử thao tác</h2>
         {events.length ? <ul className="football-mode-log">{events.map((event) => <li key={event.created_at}><time dateTime={event.created_at}>{when(event.created_at)}</time><span>{event.from_mode.toUpperCase()} → {event.to_mode.toUpperCase()} · {event.daily_quota}/ngày</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">Chưa có thay đổi chế độ nào.</p>}
       </section>
       <section className="football-panel p-6" aria-label="Cấu hình chấm điểm">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Barem độ hot</h2><p className="mt-1 text-sm text-slate-600">Áp dụng từ lượt quét tiếp theo. Bài cũ giữ điểm và cấu hình lúc được chấm.</p></div><span className="text-xs text-slate-500">Phiên bản {scoring?.version ?? 0}</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Tiêu chuẩn xuất bản</h2><p className="mt-1 text-sm text-slate-600">Áp dụng từ lượt quét tiếp theo. Bài cũ giữ điểm và cấu hình lúc được chấm.</p></div><span className="text-xs text-slate-500">Phiên bản {scoring?.version ?? 0}</span></div>
         {canManage ? <>
-          <form action={saveScoring} className="football-control-form">
+          <form action={saveScoring} className="football-control-form" data-testid="scoring-form">
             <input type="hidden" name="workspaceId" value={workspace.id} />
-            <label>Ngưỡng đạt (0–10)<input name="threshold" type="number" min="0" max="10" step="0.1" defaultValue={scoring?.threshold ?? 8} required /></label>
-            <label>Độ phổ biến (%)<input name="reach" type="number" min="0" max="100" step="1" defaultValue={scoring?.reach_weight ?? 30} required /></label>
-            <label>Tầm quan trọng (%)<input name="importance" type="number" min="0" max="100" step="1" defaultValue={scoring?.importance_weight ?? 25} required /></label>
-            <label>Độ mới theo giờ đăng nguồn (%)<input name="freshness" type="number" min="0" max="100" step="1" defaultValue={scoring?.freshness_weight ?? 25} required /></label>
-            <label>Tiềm năng thảo luận (%)<input name="engagement" type="number" min="0" max="100" step="1" defaultValue={scoring?.engagement_weight ?? 20} required /></label>
-            <label>Khi không có tin đạt ngưỡng<select name="fallback" defaultValue={scoring?.fallback_mode ?? "highest"}><option value="highest">Lấy tin điểm cao nhất</option><option value="strict">Không chọn tin</option></select></label>
-            <button type="submit" className="football-action">Lưu barem</button>
+            <label>Threshold (0–10)<input name="threshold" type="number" min="0" max="10" step="0.1" defaultValue={scoring?.threshold ?? 8} required /></label>
+            <label>Popularity (%)<input name="reach" type="number" min="0" max="100" step="1" defaultValue={scoring?.reach_weight ?? 30} required /></label>
+            <label>Importance (%)<input name="importance" type="number" min="0" max="100" step="1" defaultValue={scoring?.importance_weight ?? 25} required /></label>
+            <label>Recency (%)<input name="freshness" type="number" min="0" max="100" step="1" defaultValue={scoring?.freshness_weight ?? 25} required /></label>
+            <label>Engagement (%)<input name="engagement" type="number" min="0" max="100" step="1" defaultValue={scoring?.engagement_weight ?? 20} required /></label>
+            <label>Fallback mode<select name="fallback" defaultValue={scoring?.fallback_mode ?? "highest"}><option value="highest">Lấy tin điểm cao nhất</option><option value="strict">Không chọn tin</option></select></label>
+            <button type="submit" className="football-action">Lưu</button>
           </form>
           <form action={resetScoring} className="mt-4"><input type="hidden" name="workspaceId" value={workspace.id} /><button type="submit" className="football-reset">Đặt lại 8 điểm · 30/25/25/20</button></form>
         </> : <p className="mt-4 text-sm text-slate-600">Ngưỡng {scoring?.threshold ?? 8}/10 · Trọng số {scoring?.reach_weight ?? 30}/{scoring?.importance_weight ?? 25}/{scoring?.freshness_weight ?? 25}/{scoring?.engagement_weight ?? 20} · {scoring?.fallback_mode === "strict" ? "Chỉ lấy tin đạt ngưỡng" : "Lấy tin điểm cao nhất nếu chưa đạt ngưỡng"}</p>}

@@ -62,7 +62,7 @@ async function signup(browser, label, opts) {
 async function pickMode(page, value, quota) {
   await page.locator(`input[name="mode"][value="${value}"]`).check();
   if (quota) await page.fill('input[name="dailyQuota"]', String(quota));
-  await Promise.all([page.waitForURL(new RegExp(`status=mode-${value}`), { timeout: 15000 }), page.click('button:has-text("Lưu chế độ")')]);
+  await Promise.all([page.waitForURL(new RegExp(`status=mode-${value}`), { timeout: 15000 }), page.click('[data-testid="mode-form"] button[type="submit"]')]);
 }
 
 (async () => {
@@ -83,10 +83,10 @@ async function pickMode(page, value, quota) {
     console.log("1. Default Off (no mode row) + navigation");
     check(sql(`select count(*) from contentpilot_private.sports_automation_modes where project_id='${PROJECT}'`) === "0", "fresh project has no stored mode row");
     await page.goto(`${BASE_URL}/w/${WS}`);
-    check(await shown(page.locator(tid("nav-automation"))), "nav shows 'Tự động hóa' for the configured workspace");
+    check(await shown(page.locator(tid("nav-automation"))), "nav shows 'Auto Post' for the configured workspace");
     await page.click(tid("nav-automation"));
     await page.waitForURL(/\/automation$/);
-    check(await shown(page.locator('section[aria-label="Chế độ tự động hóa"] h2:text-is("Off")')), "default mode shown is Off");
+    check(await shown(page.locator('section[aria-label="Chế độ Auto Post"] h2:text-is("Off")')), "default mode shown is Off");
     check(await page.locator('input[name="mode"][value="off"]').isChecked(), "Off radio preselected");
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "no Emergency Stop while Off");
     check(await page.locator('input[name="dailyQuota"]').inputValue() === "40", "default daily quota 40");
@@ -99,7 +99,7 @@ async function pickMode(page, value, quota) {
     check(await page.locator('select[name="fallback"]').inputValue() === "highest", "fallback default = highest");
     check(await shown(page.locator('button:has-text("Đặt lại 8 điểm")')), "reset button visible to owner");
     await page.fill('input[name="reach"]', "50");
-    await page.click('button:has-text("Lưu barem")');
+    await page.click('[data-testid="scoring-form"] button[type="submit"]');
     await shown(page.locator('[role="alert"]'));
     check(sql(`select count(*) from public.sports_news_scoring_configs where project_id='${PROJECT}' and reach_weight=50`) === "0", "weights not summing to 100 are rejected (nothing stored)");
     await page.goto(url);
@@ -109,7 +109,7 @@ async function pickMode(page, value, quota) {
     await page.fill('input[name="freshness"]', "20");
     await page.fill('input[name="engagement"]', "10");
     await page.selectOption('select[name="fallback"]', "strict");
-    await Promise.all([page.waitForURL(/status=scoring/), page.click('button:has-text("Lưu barem")')]);
+    await Promise.all([page.waitForURL(/status=scoring/), page.click('[data-testid="scoring-form"] button[type="submit"]')]);
     check(sql(`select threshold||'/'||reach_weight||'/'||importance_weight||'/'||freshness_weight||'/'||engagement_weight||'/'||fallback_mode from public.sports_news_scoring_configs where project_id='${PROJECT}'`) === "7.5/40/30/20/10/strict", "custom scoring saved in DB");
     await page.click('button:has-text("Đặt lại 8 điểm")');
     await page.waitForURL(/status=/);
@@ -137,10 +137,10 @@ async function pickMode(page, value, quota) {
 
     console.log("4. Authorization / cross-workspace isolation");
     await member.page.goto(url);
-    check(await shown(member.page.locator("h1:text-is('Tự động hóa')")), "member can read the page");
-    check((await member.page.locator('button:has-text("Lưu chế độ")').count()) === 0 && (await member.page.locator('button:has-text("Lưu barem")').count()) === 0, "member sees no mode/scoring write controls");
+    check(await shown(member.page.locator("h1:text-is('Auto Post')")), "member can read the page");
+    check((await member.page.locator('[data-testid="mode-form"] button[type="submit"]').count()) === 0 && (await member.page.locator('[data-testid="scoring-form"] button[type="submit"]').count()) === 0, "member sees no mode/scoring write controls");
     const res = await outsider.page.goto(url);
-    check(res.status() === 404 && (await outsider.page.locator('button:has-text("Lưu chế độ")').count()) === 0, "non-member gets 404 and no controls");
+    check(res.status() === 404 && (await outsider.page.locator('[data-testid="mode-form"] button[type="submit"]').count()) === 0, "non-member gets 404 and no controls");
     const resB = await outsider.page.goto(`${BASE_URL}/w/${WS_B}/automation`);
     check((await outsider.page.locator('nav [data-testid="nav-automation"]').count()) === 0, "other workspace (not configured) has no Automation nav entry (HTTP " + resB.status() + ")");
     check(modeNow() === "off", "isolation attempts did not change mode");
@@ -223,18 +223,18 @@ async function pickMode(page, value, quota) {
         const el = document.activeElement; if (!el || el === document.body) return null;
         const cs = getComputedStyle(el);
         const visible = (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none";
-        return { tag: el.tagName, name: el.getAttribute("name") || el.textContent?.trim().slice(0, 20) || "", visible };
+        return { tag: el.tagName, name: (el.tagName === "BUTTON" && el.closest("form[data-testid]")?.getAttribute("data-testid")) || el.getAttribute("name") || el.textContent?.trim().slice(0, 20) || "", visible };
       });
       if (info) { seen.add(`${info.tag}:${info.name}`); if (!info.visible && info.tag !== "INPUT") focusVisibleOk = false; }
     }
-    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:Lưu chế độ", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:Lưu barem"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
+    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
     check(focusVisibleOk, "focused buttons/links show a visible focus indicator");
     // Keyboard-only mode change: arrow key on radio group then Enter on the button.
     await m.locator('input[name="mode"][value="auto"]').focus();
     await m.keyboard.press("ArrowDown");
     await m.keyboard.press("ArrowDown");
     check(await m.locator('input[name="mode"][value="off"]').isChecked(), "radio group operable with arrow keys");
-    await m.locator('button:has-text("Lưu chế độ")').focus();
+    await m.locator('[data-testid="mode-form"] button[type="submit"]').focus();
     await Promise.all([m.waitForURL(/status=mode-off/), m.keyboard.press("Enter")]);
     check(modeNow() === "off", "keyboard-only submit switched to Off");
     await ctxM.close();
@@ -243,7 +243,7 @@ async function pickMode(page, value, quota) {
     await page.goto(url);
     await page.locator('input[name="mode"][value="auto"]').check();
     await page.fill('input[name="dailyQuota"]', "500");
-    await page.click('button:has-text("Lưu chế độ")');
+    await page.click('[data-testid="mode-form"] button[type="submit"]');
     check(!/status=mode-/.test(page.url()) && modeNow() === "off", "quota 500 blocked (mode stays Off)");
 
     check(browserErrors.length === 0, `no console/page errors (${browserErrors.length}${browserErrors.length ? ": " + browserErrors.slice(0, 3).join(" | ") : ""})`);

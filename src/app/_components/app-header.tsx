@@ -11,7 +11,7 @@ export function BrandMark({ className = "" }: { className?: string }) {
       <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm">
         <Trophy className="h-4 w-4" aria-hidden />
       </span>
-      <span className="max-[380px]:sr-only">Football News <span className="hidden text-emerald-700 sm:inline">Control Center</span></span>
+      <span className="max-[380px]:sr-only">Social <span className="hidden text-emerald-700 sm:inline">Automation</span></span>
     </span>
   );
 }
@@ -22,7 +22,7 @@ export function AppHeader({ email }: { email: string | null }) {
   return (
     <header className="football-topbar sticky top-0 z-30 border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-16 max-w-screen-2xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/dashboard" className="rounded-lg" aria-label="Football News Control Center — Bảng điều khiển">
+        <Link href="/dashboard" className="rounded-lg" aria-label="Social Automation — Bảng điều khiển">
           <BrandMark />
         </Link>
         <div className="flex items-center gap-1.5 text-sm sm:gap-2">

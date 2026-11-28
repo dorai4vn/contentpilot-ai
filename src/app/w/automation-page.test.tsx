@@ -34,11 +34,19 @@ it("shows the real mode, quota and audit log and restricts controls to Owner/Adm
   expect(owner).toContain("Emergency Stop");
   expect(owner).toContain("Dừng khẩn cấp (Off)");
   expect(owner).toContain("Tối đa 3 bài mỗi lượt quét");
+  expect(owner).toContain("Auto Post");
+  expect(owner).toContain("Phương thức xuất bản");
+  expect(owner).toContain("Tiêu chuẩn xuất bản");
+  expect(owner).toContain("Lịch sử thao tác");
+  expect(owner).toContain("Threshold (0–10)");
+  expect(owner).toContain("Fallback mode");
+  expect(owner).toMatch(/data-testid="mode-form"[\s\S]*>Lưu<\/button>/);
+  expect(owner).toMatch(/data-testid="scoring-form"[\s\S]*>Lưu<\/button>/);
 
   mocks.loadWorkspace.mockResolvedValue({ workspace: { id: "workspace-1", name: "Sports", role: "member" } });
   const member = renderToStaticMarkup(await AutomationPage(input as never));
   expect(member).not.toContain("Dừng khẩn cấp (Off)");
-  expect(member).not.toContain("Lưu chế độ");
+  expect(member).not.toContain("data-testid=\"mode-form\"");
 });
 
 it("keeps an explicit Semi mode (never Auto) and hides Emergency Stop when not in Auto", async () => {

@@ -23,7 +23,7 @@ export default async function Home() {
           <p className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
             Luồng vận hành tin bóng đá
           </p>
-          <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">Football News Control Center</h1>
+          <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">Social Automation</h1>
           <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600">
             Theo dõi tin bóng đá từ RSS, xem bài chờ duyệt và quản lý nội dung xuất bản trong một không gian làm việc.
           </p>

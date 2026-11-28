@@ -19,7 +19,7 @@ export function WorkspaceNav({ workspaceId, workspaceName, roleLabel, pendingCou
     { href: base, label: "Tổng quan", icon: LayoutDashboard, testId: "nav-overview", match: (path) => path === base },
     { href: `${base}/news`, label: "Luồng tin", icon: Newspaper, testId: "nav-news", match: (path) => path.startsWith(`${base}/news`) },
     { href: `${base}/approvals`, label: "Chờ duyệt", icon: ClipboardCheck, testId: "nav-approvals", match: (path) => path.startsWith(`${base}/approvals`) },
-    ...(automationAvailable ? [{ href: `${base}/automation`, label: "Tự động hóa", icon: Settings2, testId: "nav-automation", match: (path: string) => path.startsWith(`${base}/automation`) }] : []),
+    ...(automationAvailable ? [{ href: `${base}/automation`, label: "Auto Post", icon: Settings2, testId: "nav-automation", match: (path: string) => path.startsWith(`${base}/automation`) }] : []),
   ];
   const studioItems: NavItem[] = [
     { href: `${base}/studio`, label: "Nội dung", icon: PanelsTopLeft, testId: "nav-studio", match: (path) => path.startsWith(`${base}/studio`) || path.startsWith(`${base}/p/`) || path.startsWith(`${base}/posts/`) },
