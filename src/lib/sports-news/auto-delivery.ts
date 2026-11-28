@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { getPublisher } from "@/lib/publishing/registry";
 import { PublisherSecret } from "@/lib/publishing/types";
-import { readSportsPhoto } from "./photo-snapshot";
+import { requireRssImage } from "./image-gate";
 import { publishedToday } from "./publication-day";
 import { assertAutomationNotOff, readAutomationMode } from "./automation-mode";
 import { permitsTemporaryAutoPublish } from "./temporary-auto-publish";
@@ -27,8 +27,9 @@ export async function sendTemporarySportsPost(client: Client, target: Destinatio
 }) {
   // Prepare bytes before reserving the send so a failed crop can still go through human review.
   await assertAutomationNotOff(client, target.workspaceId, target.projectId);
-  const image = await readSportsPhoto(client, post.id, 1);
-  if (!image) return false;
+  const gate = await requireRssImage(client, post.id, 1);
+  if (!gate.ok) return false; // FN11-B: no image / crop failure => no claim, no send, never text-only.
+  const image = gate.image;
   const { data, error } = await client.rpc("claim_sports_auto_publish", {
     ...argsFor(target), p_post_id: post.id,
   });

@@ -18,6 +18,7 @@ import { buildEventIdentity, buildEventPayload, classifyEvent, manualReviewReaso
 import { collectSportsNews } from "./feeds";
 import { sportsFeeds } from "./sources";
 import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication-day";
+import { requireRssImage } from "./image-gate";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
 import { findSourceSportsPhoto } from "./source-photo";
@@ -78,21 +79,25 @@ async function sendApproved(client: Client, config: Config, tokens: Config["toke
       .eq("workspace_id", config.workspaceId).eq("post_id", delivery.post_id).maybeSingle();
     if (article.error) throw new Error("sports_news_assessment_read_failed");
     const adapter = getPublisher(delivery.kind);
-    const image = await readSportsPhoto(client, delivery.post_id, delivery.post_version);
-    const snapshot = {
-      postId: delivery.post_id,
-      postVersion: delivery.post_version,
-      title: delivery.title,
-      body: delivery.body,
-      ...(image ? { image } : {}),
-    };
+    // FN11-B: an RSS sports post (it has a sports_news_items row) is never delivered without a valid image.
+    // Manual non-RSS content (no row) keeps its existing workflow. Applies to approved, retried and legacy queued rows.
+    const isRss = article.data !== null;
+    const gate = isRss ? await requireRssImage(client, delivery.post_id, delivery.post_version) : null;
     const stale = article.data !== null && !sportsArticleIsCurrent(article.data.assessment);
-    const outcome = stale ? { ok: false as const, code: "stale_article" }
-      : await adapter.publish(adapter.render(snapshot), {
-      credentials: new PublisherSecret(tokens[delivery.destination_id]),
-      targetRef: delivery.target_ref,
-      idempotencyKey: delivery.idempotency_key,
-    });
+    let outcome: { ok: true; externalId: string | null } | { ok: false; code: string };
+    if (stale) outcome = { ok: false, code: "stale_article" };
+    else if (gate && !gate.ok) outcome = { ok: false, code: gate.code };
+    else {
+      const image = gate?.ok ? gate.image : await readSportsPhoto(client, delivery.post_id, delivery.post_version).catch(() => null);
+      outcome = await adapter.publish(adapter.render({
+        postId: delivery.post_id, postVersion: delivery.post_version, title: delivery.title, body: delivery.body,
+        ...(image ? { image } : {}),
+      }), {
+        credentials: new PublisherSecret(tokens[delivery.destination_id]),
+        targetRef: delivery.target_ref,
+        idempotencyKey: delivery.idempotency_key,
+      });
+    }
     const completion = await client.rpc("finish_social_delivery", {
       p_workspace_id: config.workspaceId,
       p_id: delivery.id,
