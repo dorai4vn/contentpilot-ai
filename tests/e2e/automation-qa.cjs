@@ -59,9 +59,11 @@ async function signup(browser, label, opts) {
   return { context, page, id: sql(`select id from auth.users where email='${email}'`) };
 }
 
-async function pickMode(page, value, quota) {
+async function pickMode(page, value, quota, interval, posts) {
   await page.locator(`input[name="mode"][value="${value}"]`).check();
-  if (quota) await page.fill('input[name="dailyQuota"]', String(quota));
+  if (quota) await page.fill('[data-testid="mode-form"] input[name="dailyQuota"]', String(quota));
+  if (interval) await page.fill('[data-testid="mode-form"] input[name="scanIntervalHours"]', String(interval));
+  if (posts) await page.fill('[data-testid="mode-form"] input[name="postsPerScan"]', String(posts));
   await Promise.all([page.waitForURL(new RegExp(`status=mode-${value}`), { timeout: 15000 }), page.click('[data-testid="mode-form"] button[type="submit"]')]);
 }
 
@@ -89,7 +91,9 @@ async function pickMode(page, value, quota) {
     check(await shown(page.locator('section[aria-label="Chế độ Auto Post"] h2:text-is("Off")')), "default mode shown is Off");
     check(await page.locator('input[name="mode"][value="off"]').isChecked(), "Off radio preselected");
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "no Emergency Stop while Off");
-    check(await page.locator('input[name="dailyQuota"]').inputValue() === "40", "default daily quota 40");
+    check(await page.locator('[data-testid="mode-form"] input[name="dailyQuota"]').inputValue() === "20", "default daily limit 20");
+    check(await page.locator('[data-testid="mode-form"] input[name="scanIntervalHours"]').inputValue() === "2", "default scan interval 2h");
+    check(await page.locator('[data-testid="mode-form"] input[name="postsPerScan"]').inputValue() === "2", "default 2 posts per scan");
     check(await page.locator('[aria-current="page"][data-testid="nav-automation"]').count() === 1, "nav marks Automation current");
     await shot(page, "01-off-desktop");
 
@@ -125,13 +129,24 @@ async function pickMode(page, value, quota) {
     await pickMode(page, "auto", 30);
     check(await shown(page.locator('button:has-text("Dừng khẩn cấp (Off)")')) && modeNow() === "auto", "Auto saved; Emergency Stop visible");
     check(sql(`select count(*) from contentpilot_private.sports_auto_publish_windows where project_id='${PROJECT}' and ends_at > now() and persistent`) === "1", "exactly one open persistent window in Auto");
+    // FN09: same-mode (Auto -> Auto) save changes cadence in place: persisted, one window, window caps follow.
+    await pickMode(page, "auto", 35, 6, 3);
+    check(sql(`select daily_quota||'/'||scan_interval_hours||'/'||posts_per_scan from contentpilot_private.sports_automation_modes where project_id='${PROJECT}'`) === "35/6/3", "same-mode Auto save persists 35/6h/3");
+    check(sql(`select count(*)||'/'||max(max_per_slot)||'/'||max(max_per_day) from contentpilot_private.sports_auto_publish_windows where project_id='${PROJECT}' and ends_at > now() and persistent`) === "1/3/35", "same-mode save keeps one open window and updates its caps");
+    await page.reload();
+    check((await page.locator('[data-testid="mode-form"] input[name="scanIntervalHours"]').inputValue()) === "6" && (await page.locator('[data-testid="mode-form"] input[name="postsPerScan"]').inputValue()) === "3" && (await page.locator('[data-testid="mode-form"] input[name="dailyQuota"]').inputValue()) === "35", "controls show the persisted 35/6h/3 after reload");
+    await page.fill('[data-testid="mode-form"] input[name="scanIntervalHours"]', "5");
+    await page.click('[data-testid="mode-form"] button[type="submit"]');
+    await page.waitForTimeout(1500);
+    check(sql(`select scan_interval_hours from contentpilot_private.sports_automation_modes where project_id='${PROJECT}'`) === "6", "odd 5h interval is rejected (stored value unchanged)");
+    await page.goto(url);
     await shot(page, "03-auto-desktop");
     await Promise.all([page.waitForURL(/status=mode-off/), page.click('button:has-text("Dừng khẩn cấp (Off)")')]);
     check(modeNow() === "off" && (await shown(page.locator('[role="status"]:has-text("Đã tắt")'))), "Emergency Stop -> Off, status shown");
     check(sql(`select count(*) from contentpilot_private.sports_auto_publish_windows where project_id='${PROJECT}' and ends_at > now()`) === "0", "Emergency Stop closed every open window");
     check((await page.locator('button:has-text("Dừng khẩn cấp")').count()) === 0, "Emergency Stop hidden again after Off");
     const log = await page.locator(".football-mode-log li").allTextContents();
-    check(log.length === 3 && /SEMI → OFF|AUTO → OFF/.test(log[0]) && /OFF → SEMI/.test(log[2]), `mode log lists 3 transitions newest first (${log.map((s) => s.replace(/^.*?\d{2}:\d{2}/, "").trim()).join(" | ")})`);
+    check(log.length === 4 && /SEMI → OFF|AUTO → OFF/.test(log[0]) && /OFF → SEMI/.test(log[3]), `mode log lists 4 transitions newest first (${log.map((s) => s.replace(/^.*?\d{2}:\d{2}/, "").trim()).join(" | ")})`);
     // Off must never schedule a delivery/window as a side effect of the transitions.
     check(sql(`select count(*) from public.publish_deliveries d join public.content_publish_requests r on r.id=d.request_id where r.workspace_id='${WS}'`) === "0", "mode transitions created zero deliveries");
 
@@ -227,7 +242,7 @@ async function pickMode(page, value, quota) {
       });
       if (info) { seen.add(`${info.tag}:${info.name}`); if (!info.visible && info.tag !== "INPUT") focusVisibleOk = false; }
     }
-    check(["INPUT:mode", "INPUT:dailyQuota", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
+    check(["INPUT:mode", "INPUT:dailyQuota", "INPUT:scanIntervalHours", "INPUT:postsPerScan", "BUTTON:mode-form", "INPUT:threshold", "INPUT:engagement", "SELECT:fallback", "BUTTON:scoring-form"].every((k) => seen.has(k)), `keyboard Tab reaches all controls (${[...seen].length} stops)`);
     check(focusVisibleOk, "focused buttons/links show a visible focus indicator");
     // Keyboard-only mode change: arrow key on radio group then Enter on the button.
     await m.locator('input[name="mode"][value="auto"]').focus();
@@ -242,7 +257,7 @@ async function pickMode(page, value, quota) {
     console.log("8. Invalid quota rejected");
     await page.goto(url);
     await page.locator('input[name="mode"][value="auto"]').check();
-    await page.fill('input[name="dailyQuota"]', "500");
+    await page.fill('[data-testid="mode-form"] input[name="dailyQuota"]', "500");
     await page.click('[data-testid="mode-form"] button[type="submit"]');
     check(!/status=mode-/.test(page.url()) && modeNow() === "off", "quota 500 blocked (mode stays Off)");
 

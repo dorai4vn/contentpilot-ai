@@ -119,7 +119,7 @@ async function createPost(user, projectUrl, title) {
     const workspaceId = (await wsLink.getAttribute("href")).split("/").pop();
     sql(`insert into public.workspace_members (workspace_id, user_id, role) values
          (${q(workspaceId)}, ${q(admin.id)}, 'admin'), (${q(workspaceId)}, ${q(member.id)}, 'member')`);
-    await owner.page.goto(`${BASE_URL}/w/${workspaceId}`);
+    await owner.page.goto(`${BASE_URL}/w/${workspaceId}/studio`);
     await owner.page.fill("#new-project-name", "Blog hồ sơ");
     await owner.page.click('[data-testid="create-project-submit"]');
     await owner.page.locator('[data-testid="project-link"]:has-text("Blog hồ sơ")').click();

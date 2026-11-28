@@ -20,13 +20,15 @@ const scoringSchema = z.object({
   fallback: z.enum(["highest", "strict"]),
 }).refine((value) => value.reach + value.importance + value.freshness + value.engagement === 100);
 
-async function update(workspaceId: string, mode: string, dailyQuota: unknown) {
+type Limits = { dailyQuota: unknown; scanIntervalHours: unknown; postsPerScan: unknown };
+
+async function update(workspaceId: string, mode: string, limits: Limits) {
   const path = `/w/${workspaceId}/automation`;
   const { workspace } = await loadWorkspace(workspaceId, path);
   if (workspace.role !== "owner" && workspace.role !== "admin") redirect(`${path}?error=forbidden`);
   const target = sportsControlTarget(workspace.id);
   if (!target) redirect(`${path}?error=unavailable`);
-  const parsed = modeSchema.safeParse({ mode, dailyQuota });
+  const parsed = modeSchema.safeParse({ mode, ...limits });
   if (!parsed.success) redirect(`${path}?error=limits`);
 
   const client = await createClient();
@@ -37,21 +39,29 @@ async function update(workspaceId: string, mode: string, dailyQuota: unknown) {
     p_destination_id: target.destinationId,
     p_mode: parsed.data.mode,
     p_daily_quota: parsed.data.dailyQuota,
+    p_scan_interval_hours: parsed.data.scanIntervalHours,
+    p_posts_per_scan: parsed.data.postsPerScan,
   });
   if (error) redirect(`${path}?error=save`);
   revalidatePath(path);
   redirect(`${path}?status=mode-${parsed.data.mode}`);
 }
 
+const limitsOf = (formData: FormData): Limits => ({
+  dailyQuota: formData.get("dailyQuota"),
+  scanIntervalHours: formData.get("scanIntervalHours"),
+  postsPerScan: formData.get("postsPerScan"),
+});
+
 export async function setAutomationMode(formData: FormData) {
   const workspaceId = z.uuid().parse(formData.get("workspaceId"));
-  await update(workspaceId, String(formData.get("mode")), formData.get("dailyQuota"));
+  await update(workspaceId, String(formData.get("mode")), limitsOf(formData));
 }
 
 /** Emergency stop: switch to Off immediately (no RSS, AI, image work or delivery). */
 export async function emergencyStop(formData: FormData) {
   const workspaceId = z.uuid().parse(formData.get("workspaceId"));
-  await update(workspaceId, "off", formData.get("dailyQuota"));
+  await update(workspaceId, "off", limitsOf(formData));
 }
 
 export async function saveScoring(formData: FormData) {

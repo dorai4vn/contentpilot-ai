@@ -8,6 +8,7 @@ type Row = Record<string, unknown>;
 const db = vi.hoisted(() => ({
   items: [] as Row[], posts: [] as Row[], requests: [] as Row[],
   rpc: vi.fn(), mode: { data: [{ mode: "semi", daily_quota: 40 }], error: null } as { data: unknown; error: unknown }, send: vi.fn(), autoWindow: null as unknown, deliveries: [] as Row[], collect: vi.fn(), assess: vi.fn(), draft: vi.fn(), historyFails: false, evidenceFails: false,
+  scan: { due: true, posts_per_scan: 2, scan_interval_hours: 2 },
 }));
 
 function thenable(rows: () => Row[], fails = false) {
@@ -55,13 +56,15 @@ beforeEach(() => {
     SPORTS_NEWS_WORKSPACE_ID: WS, SPORTS_NEWS_PROJECT_ID: PROJECT, SPORTS_NEWS_WORKER_EMAIL: "w@example.com",
     SPORTS_NEWS_WORKER_PASSWORD: "pw", SPORTS_NEWS_MIN_SCORE: "8",
   });
-  db.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null }; db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false;
+  db.mode = { data: [{ mode: "semi", daily_quota: 40 }], error: null }; db.items = []; db.posts = []; db.requests = []; db.deliveries = []; db.autoWindow = null; db.send.mockResolvedValue(true); db.historyFails = false; db.evidenceFails = false; db.scan = { due: true, posts_per_scan: 2, scan_interval_hours: 2 };
   db.assess.mockImplementation(async (item: { title: string }) => {
     const n = level(item.title);
     return { playerPopularity: n, teamPopularity: n, competitionPopularity: n, eventImportance: n, engagement: n, reason: "r" };
   });
   db.draft.mockImplementation(async (item: { title: string }) => ({ title: `Bài: ${clean(item.title)}`, body: "Nội dung", photoSubject: null, photoNeedsAction: false }));
   db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+    if (name === "begin_sports_scan") return { data: [db.scan], error: null };
+    if (name === "finish_sports_scan") return { data: null, error: null };
     if (name === "claim_social_deliveries") return { data: [], error: null };
     if (name === "record_sports_news_event_duplicate") return { data: !db.evidenceFails, error: db.evidenceFails ? { message: "x" } : null };
     if (name === "record_sports_news_event_assessment") return { data: args.p_title ? `post-${String(args.p_source_url)}` : null, error: null };
@@ -260,8 +263,9 @@ describe("runSportsNews semantic deduplication", () => {
         article("[9] Chelsea thua Arsenal 0-1 tại Premier League", "Arsenal chiến thắng Chelsea.", "https://b.vn/reconsidered"),
         article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/regular"),
       );
+      db.scan = { due: true, posts_per_scan: 3, scan_interval_hours: 2 };
       const report = await runSportsNews(readSportsNewsConfig());
-      expect(report.drafted).toBe(3); // 3-post output cap per scan; the weakest (unresolved) report is not drafted
+      expect(report.drafted).toBe(3); // posts-per-scan cap (3 configured here); the weakest (unresolved) report is not drafted
       expect(sentIds()).toEqual(["post-https://b.vn/regular"]);
       const reasons = Object.fromEntries(recorded().map((r) => [r.p_source_url, (r.p_event as { manualReviewReason?: string }).manualReviewReason]));
       expect(reasons).toMatchObject({
@@ -303,6 +307,61 @@ describe("runSportsNews semantic deduplication", () => {
       expect(db.draft).not.toHaveBeenCalled();
       expect(db.send).not.toHaveBeenCalled();
       expect(db.rpc).not.toHaveBeenCalled();
+    });
+
+    it("FN09: a scan that is not due does no RSS, AI or draft work and only runs delivery-only", async () => {
+      db.scan = { due: false, posts_per_scan: 2, scan_interval_hours: 4 };
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/early"));
+      const report = await runSportsNews(readSportsNewsConfig());
+      expect(report).toMatchObject({ skipped: "scan_not_due", drafted: 0, assessed: 0 });
+      expect(db.collect).not.toHaveBeenCalled();
+      expect(db.assess).not.toHaveBeenCalled();
+      expect(db.draft).not.toHaveBeenCalled();
+      expect(rpcNames()).not.toContain("record_sports_news_event_assessment");
+    });
+
+    it("FN09-QC-C: every feed unavailable is a failed scan (retryable); an empty or partial scan is a success", async () => {
+      const finished = () => db.rpc.mock.calls.filter(([n]) => n === "finish_sports_scan").map(([, a]) => (a as { p_ok: boolean }).p_ok);
+      const names = Array.from({ length: 100 }, (_, i) => `f${i}`);
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: names });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: true, drafted: 0 });
+      expect(finished()).toEqual([false]);
+      expect(db.assess).not.toHaveBeenCalled();
+      db.rpc.mockClear();
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: [] });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: false });
+      expect(finished()).toEqual([true]);
+      db.rpc.mockClear();
+      db.collect.mockResolvedValue({ articles: [], unavailableSources: names.slice(0, 1) });
+      expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ scanFailed: false });
+      expect(finished()).toEqual([true]);
+    });
+
+    it("FN09-QC-C: a throwing collection marks the scan failed and still fails the run", async () => {
+      db.collect.mockRejectedValue(new Error("network"));
+      await expect(runSportsNews(readSportsNewsConfig())).rejects.toThrow("network");
+      expect(db.rpc.mock.calls.filter(([n]) => n === "finish_sports_scan").map(([, a]) => (a as { p_ok: boolean }).p_ok)).toEqual([false]);
+      expect(db.assess).not.toHaveBeenCalled();
+    });
+
+    it("FN09: a failing scan gate fails closed (no RSS/AI work)", async () => {
+      db.rpc.mockImplementation(async (name: string) => name === "begin_sports_scan" ? { data: null, error: { message: "x" } } : { data: [], error: null });
+      feed(article("[10] Bayern thua sốc Lille 0-1 tại C1", "Bayern Munich gục ngã. Champions League.", "https://b.vn/gate"));
+      await expect(runSportsNews(readSportsNewsConfig())).rejects.toThrow("sports_news_scan_gate_failed");
+      expect(db.collect).not.toHaveBeenCalled();
+      expect(db.assess).not.toHaveBeenCalled();
+    });
+
+    it("FN09: posts per scan caps distinct posts across all feeds (default 2, configurable)", async () => {
+      const stories = ["Real Madrid", "Barcelona", "Liverpool", "Arsenal", "Juventus"].map((team, i) =>
+        article(`[10] ${team} thắng ${i}-0 tại giải số ${i}`, `${team} giành chiến thắng thuyết phục lượt ${i}.`, `https://f${i}.vn/${i}`));
+      for (const [limit, expected] of [[2, 2], [1, 1], [4, 4]] as const) {
+        db.rpc.mockClear();
+        db.scan = { due: true, posts_per_scan: limit, scan_interval_hours: 2 };
+        feed(...stories);
+        await runSportsNews(readSportsNewsConfig());
+        expect(recorded().filter((r) => r.p_title)).toHaveLength(expected);
+      }
     });
 
     it("an unreadable mode fails closed to Off", async () => {
@@ -415,6 +474,8 @@ describe("runSportsNews semantic deduplication", () => {
     it("a failed record call also falls back, and a database-rejected duplicate does not", async () => {
       let calls = 0;
       db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+        if (name === "begin_sports_scan") return { data: [db.scan], error: null };
+        if (name === "finish_sports_scan") return { data: null, error: null };
         if (name === "claim_social_deliveries") return { data: [], error: null };
         if (name === "record_sports_news_event_duplicate") return { data: true, error: null };
         calls += 1;
@@ -424,7 +485,7 @@ describe("runSportsNews semantic deduplication", () => {
       feed(strong, weaker);
       expect(await runSportsNews(readSportsNewsConfig())).toMatchObject({ drafted: 1 });
       db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) =>
-        name === "claim_social_deliveries" ? { data: [], error: null } : name === "record_sports_news_event_duplicate" ? { data: true, error: null }
+        name === "begin_sports_scan" ? { data: [db.scan], error: null } : name === "claim_social_deliveries" ? { data: [], error: null } : name === "record_sports_news_event_duplicate" ? { data: true, error: null }
           : { data: args.p_title ? null : null, error: null });
       db.draft.mockClear();
       feed(strong, weaker);

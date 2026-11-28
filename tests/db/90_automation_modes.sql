@@ -65,7 +65,7 @@ select (:baseline + 2) as quota \gset
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'owner', false);
 select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota) = 1, 'Owner enables persistent Auto (version 1)');
-select pg_temp.check_mode((select max_per_slot = 3 and persistent from public.read_sports_auto_publish_control(:'ws', :'project', :'channel')), 'Auto outputs at most 3 posts per 2h slot');
+select pg_temp.check_mode((select max_per_slot = 2 and persistent from public.read_sports_auto_publish_control(:'ws', :'project', :'channel')), 'Auto outputs at most 2 posts per 2h slot by default (FN09)');
 select pg_temp.check_mode((select persistent and ends_at is null and max_per_day = :quota from public.read_sports_auto_publish_control(:'ws', :'project', :'channel')), 'Auto has no expiry and exposes the daily quota');
 
 select set_config('request.jwt.claim.sub', :'worker', false);
@@ -130,7 +130,7 @@ select pg_temp.check_mode((select count(*) = 5 and (array_agg(to_mode order by c
 reset role;
 select pg_temp.check_mode((select count(*) = 1 from contentpilot_private.sports_auto_publish_windows where persistent and ends_at = 'infinity') = false, 'no open persistent window remains after Semi');
 select pg_temp.check_mode(not has_table_privilege('authenticated', 'contentpilot_private.sports_automation_modes', 'select'), 'mode table is not directly readable');
-select pg_temp.check_mode(not has_function_privilege('anon', 'public.set_sports_automation_mode(uuid,uuid,uuid,text,integer)', 'EXECUTE'), 'anon cannot set modes');
+select pg_temp.check_mode(not has_function_privilege('anon', 'public.set_sports_automation_mode(uuid,uuid,uuid,text,integer,integer,integer)', 'EXECUTE'), 'anon cannot set modes');
 
 -- Slot cap (3 per 2h slot) and Emergency Stop => Off, with quota not silently altered.
 update contentpilot_private.sports_auto_publish_deliveries set slot = slot + 1000000;
@@ -138,7 +138,7 @@ select (count(*) + 50) as quota3 from contentpilot_private.sports_auto_publish_d
   where (d.started_at at time zone 'Asia/Dubai')::date = (clock_timestamp() at time zone 'Asia/Dubai')::date \gset
 set role authenticated;
 select set_config('request.jwt.claim.sub', :'owner', false);
-select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota3) = 6, 'Owner enables Auto for the slot cap test');
+select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'auto', :quota3, 2, 3) = 6, 'Owner enables Auto with 3 posts per scan for the slot cap test');
 select set_config('request.jwt.claim.sub', :'worker', false);
 select pg_temp.draft('https://tuoitre.vn/s-1.htm', repeat('a', 64)) as s_1 \gset
 select pg_temp.draft('https://tuoitre.vn/s-2.htm', repeat('b', 64)) as s_2 \gset
@@ -147,7 +147,7 @@ select pg_temp.draft('https://tuoitre.vn/s-4.htm', repeat('d', 64)) as s_4 \gset
 select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_1')), 'slot post 1 is claimed');
 select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_2')), 'slot post 2 is claimed');
 select pg_temp.check_mode((select count(*) = 1 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_3')), 'slot post 3 is claimed');
-select pg_temp.check_mode((select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_4')), 'the 4th post of one slot is blocked (max 3 per slot)');
+select pg_temp.check_mode((select count(*) = 0 from public.claim_sports_auto_publish(:'ws', :'project', :'channel', :'s_4')), 'the 4th post of one slot is blocked (posts per scan = 3)');
 select set_config('request.jwt.claim.sub', :'owner', false);
 select pg_temp.check_mode(public.set_sports_automation_mode(:'ws', :'project', :'channel', 'off', :quota3) = 7, 'Emergency Stop switches to Off');
 select pg_temp.check_mode((select mode = 'off' and daily_quota = :quota3 from public.get_sports_automation_mode(:'ws', :'project')), 'Emergency Stop keeps the daily quota unchanged');

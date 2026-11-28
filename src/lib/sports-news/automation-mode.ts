@@ -3,11 +3,23 @@ import { z } from "zod";
 export const AUTOMATION_MODES = ["off", "semi", "auto"] as const;
 export type AutomationMode = (typeof AUTOMATION_MODES)[number];
 export const AUTOMATION_DAILY_QUOTA_MAX = 120;
-export const AUTOMATION_DAILY_QUOTA_DEFAULT = 40;
+/** FN09 owner-approved defaults. Daily Limit is a hard publishing cap, not a target. */
+export const AUTOMATION_DAILY_QUOTA_DEFAULT = 20;
+export const AUTOMATION_SCAN_INTERVAL_DEFAULT_HOURS = 2;
+/** The scheduler ticks every 2h, so intervals are whole multiples of 2h (2..24). */
+export const AUTOMATION_SCAN_INTERVAL_MIN_HOURS = 2;
+export const AUTOMATION_SCAN_INTERVAL_MAX_HOURS = 24;
+export const AUTOMATION_SCAN_INTERVAL_STEP_HOURS = 2;
+/** Total distinct posts per scan across ALL feeds; bounded by the separate AI draft budget (10). */
+export const AUTOMATION_POSTS_PER_SCAN_DEFAULT = 2;
+export const AUTOMATION_POSTS_PER_SCAN_MAX = 10;
 
 export const automationModeSchema = z.object({
   mode: z.enum(AUTOMATION_MODES),
   dailyQuota: z.coerce.number().int().min(1).max(AUTOMATION_DAILY_QUOTA_MAX),
+  scanIntervalHours: z.coerce.number().int().min(AUTOMATION_SCAN_INTERVAL_MIN_HOURS).max(AUTOMATION_SCAN_INTERVAL_MAX_HOURS)
+    .refine((hours) => hours % AUTOMATION_SCAN_INTERVAL_STEP_HOURS === 0),
+  postsPerScan: z.coerce.number().int().min(1).max(AUTOMATION_POSTS_PER_SCAN_MAX),
 });
 
 /** Thrown at a safe checkpoint when the owner switched automation Off while a run was in flight. */

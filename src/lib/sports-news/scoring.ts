@@ -17,8 +17,8 @@ export const SPORTS_SCORING_RUBRIC = {
   hoursPerFreshnessPoint: 4.8,
 } as const;
 
-/** Owner-approved FN08: at most 3 distinct eligible news posts per RSS scan / delivery slot. */
-export const SPORTS_NEWS_OUTPUT_PER_SCAN = 3;
+/** FN09 default: 2 distinct eligible news posts per scan across all feeds (configurable 1-10 in Auto Post). */
+export const SPORTS_NEWS_OUTPUT_PER_SCAN = 2;
 /** Separate AI budget (draft attempts incl. same-run fallbacks); it is NOT the output cap. */
 export const SPORTS_NEWS_DRAFT_CALL_BUDGET = 10;
 
@@ -62,13 +62,13 @@ function normalize(value: string) {
 }
 
 export function selectSportsNews<T extends { score: number; priority: number; item: { publishedAt: number } }>(
-  entries: T[], threshold: number, fallbackMode: "highest" | "strict" = "highest",
+  entries: T[], threshold: number, fallbackMode: "highest" | "strict" = "highest", outputLimit: number = SPORTS_NEWS_OUTPUT_PER_SCAN,
 ) {
   const ranked = [...entries].sort((a, b) => b.score - a.score
     || a.priority - b.priority || b.item.publishedAt - a.item.publishedAt);
   const qualified = ranked.filter((entry) => entry.score >= threshold);
   return qualified.length
-    ? { selected: qualified.slice(0, SPORTS_NEWS_OUTPUT_PER_SCAN), fallback: false }
+    ? { selected: qualified.slice(0, Math.max(1, outputLimit)), fallback: false }
     : fallbackMode === "highest"
       ? { selected: ranked.slice(0, 1), fallback: ranked.length > 0 }
       : { selected: [], fallback: false };

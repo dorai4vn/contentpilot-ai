@@ -23,11 +23,21 @@ it("chooses only the highest-scoring fallback, using competition priority to bre
   expect(selectSportsNews([], 8)).toEqual({ selected: [], fallback: false });
 });
 
-it("selects at most three qualified stories per scan, ranked descending", () => {
+it("selects at most the default two qualified stories per scan, ranked descending", () => {
   const item = { publishedAt: Date.now() };
   const stories = Array.from({ length: 12 }, (_, index) => ({ score: 10 - index / 10, priority: 1, item }));
   const selected = selectSportsNews(stories, 8).selected;
-  expect(selected.map((entry) => entry.score)).toEqual([10, 9.9, 9.8]);
+  expect(selected.map((entry) => entry.score)).toEqual([10, 9.9]);
+});
+
+it("honours a configured posts-per-scan limit across all stories (1..10)", () => {
+  const item = { publishedAt: Date.now() };
+  const stories = Array.from({ length: 12 }, (_, index) => ({ score: 10 - index / 10, priority: 1, item }));
+  expect(selectSportsNews(stories, 8, "highest", 1).selected).toHaveLength(1);
+  expect(selectSportsNews(stories, 8, "highest", 5).selected.map((entry) => entry.score)).toEqual([10, 9.9, 9.8, 9.7, 9.6]);
+  expect(selectSportsNews(stories, 8, "highest", 10).selected).toHaveLength(10);
+  // threshold and highest fallback are unchanged by the limit
+  expect(selectSportsNews([{ score: 6, priority: 1, item }, { score: 7, priority: 1, item }], 8, "highest", 5).selected).toHaveLength(1);
 });
 
 it("falls back to the single highest story when none reaches the default 8 threshold", () => {

@@ -54,7 +54,7 @@ select pg_temp.chk(not exists (select 1 from pg_proc where proname = 'set_sports
 select pg_temp.chk(contentpilot_private.automation_mode(:'wsa', :'p_legacy') = 'off', 'unconfigured project reads Off after migration (was Semi before)');
 select pg_temp.chk((select unconfigured_mode from fn07_snapshot.pre_mode) = 'semi', 'fixture really was Semi before the migration (pre/post transition proven)');
 select pg_temp.act_as(:'ownera');
-select pg_temp.chk((select (mode, daily_quota, version) = ('off', 40, 0) from public.get_sports_automation_mode(:'wsa', :'p_legacy')), 'owner RPC: unconfigured => off / quota 40 / version 0');
+select pg_temp.chk((select (mode, daily_quota, version) = ('off', 20, 0) from public.get_sports_automation_mode(:'wsa', :'p_legacy')), 'owner RPC: unconfigured => off / quota 20 (FN09 default) / version 0');
 select pg_temp.chk((select (mode, daily_quota) = ('semi', 25) from public.get_sports_automation_mode(:'wsa', :'p_custom')), 'explicit Semi row and its quota survive the migration');
 select pg_temp.reset_actor();
 
@@ -115,3 +115,8 @@ select pg_temp.reset_actor();
 select pg_temp.chk((select count(*) = 0 from contentpilot_private.sports_auto_publish_windows where project_id = :'p_custom' and persistent and ends_at > now()),
   'Semi/Off never leaves an open persistent Auto window');
 select pg_temp.chk((select count(*) >= 1 from contentpilot_private.sports_automation_events where project_id = :'p_custom' and to_mode = 'off'), 'mode transitions are audited');
+
+-- FN09 migration behaviour for rows that pre-date it (seeded by hooks/before_20261128150000_*; 90_ later wipes mode rows).
+select pg_temp.chk((select daily_quota = 25 and scan_interval_hours = 2 and posts_per_scan = 2 and last_scan_at is null
+  from contentpilot_private.sports_automation_modes where project_id = '9f100000-0000-0000-0000-000000000001'), 'existing custom quota 25 is preserved; new settings get defaults');
+select pg_temp.chk((select daily_quota = 40 and version = 1 from contentpilot_private.sports_automation_modes where project_id = '9f100000-0000-0000-0000-000000000002'), 'existing quota 40 is NOT rewritten to 20 (default 40 and explicit 40 are indistinguishable)');

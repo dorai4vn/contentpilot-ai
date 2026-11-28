@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AutomationOffError, assertAutomationNotOff, automationModeSchema, readAutomationMode } from "./automation-mode";
+import { AutomationOffError, assertAutomationNotOff, automationModeSchema, readAutomationMode,
+  AUTOMATION_DAILY_QUOTA_DEFAULT, AUTOMATION_POSTS_PER_SCAN_DEFAULT, AUTOMATION_SCAN_INTERVAL_DEFAULT_HOURS } from "./automation-mode";
 
 const client = (result: { data: { mode: string; daily_quota: number }[] | null; error: unknown }) => ({ rpc: async () => result });
 
@@ -18,10 +19,20 @@ describe("automation mode", () => {
     await expect(assertAutomationNotOff(client({ data: [{ mode: "off", daily_quota: 1 }], error: null }), "w", "p")).rejects.toBeInstanceOf(AutomationOffError);
     await expect(assertAutomationNotOff(client({ data: [{ mode: "auto", daily_quota: 1 }], error: null }), "w", "p")).resolves.toBeUndefined();
   });
-  it("validates mode and daily quota bounds", () => {
-    expect(automationModeSchema.safeParse({ mode: "auto", dailyQuota: "40" }).success).toBe(true);
-    for (const bad of [{ mode: "x", dailyQuota: 5 }, { mode: "auto", dailyQuota: 0 }, { mode: "auto", dailyQuota: 121 }, { mode: "auto", dailyQuota: 1.5 }]) {
-      expect(automationModeSchema.safeParse(bad).success).toBe(false);
+  it("validates mode, daily quota, scan interval and posts-per-scan bounds", () => {
+    const ok = { mode: "auto", dailyQuota: "20", scanIntervalHours: "2", postsPerScan: "2" };
+    expect(automationModeSchema.safeParse(ok).success).toBe(true);
+    expect(automationModeSchema.safeParse({ ...ok, dailyQuota: 120, scanIntervalHours: 24, postsPerScan: 10 }).success).toBe(true);
+    expect(automationModeSchema.safeParse({ ...ok, dailyQuota: 1, scanIntervalHours: 12, postsPerScan: 1 }).success).toBe(true);
+    for (const bad of [
+      { mode: "x" }, { dailyQuota: 0 }, { dailyQuota: 121 }, { dailyQuota: 1.5 },
+      { scanIntervalHours: 1 }, { scanIntervalHours: 3 }, { scanIntervalHours: 26 }, { scanIntervalHours: 0 }, { scanIntervalHours: 2.5 },
+      { postsPerScan: 0 }, { postsPerScan: 11 }, { postsPerScan: 1.5 }, { postsPerScan: "" },
+    ]) {
+      expect(automationModeSchema.safeParse({ ...ok, ...bad }).success, JSON.stringify(bad)).toBe(false);
     }
+  });
+  it("exposes the owner-approved defaults 20/day, 2h, 2 posts per scan", () => {
+    expect([AUTOMATION_DAILY_QUOTA_DEFAULT, AUTOMATION_SCAN_INTERVAL_DEFAULT_HOURS, AUTOMATION_POSTS_PER_SCAN_DEFAULT]).toEqual([20, 2, 2]);
   });
 });
