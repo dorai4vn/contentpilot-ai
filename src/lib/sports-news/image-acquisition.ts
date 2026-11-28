@@ -6,11 +6,14 @@ import he from "he";
 import sharp from "sharp";
 
 import type { SportsNewsItem } from "./feeds";
+import { validateImageRelevance, type RelevanceVerdict } from "./image-relevance";
 
 /**
- * FN11-A1 image ACQUISITION. This module only finds and safely downloads candidate images and records provenance.
- * It does NOT verify that a photo is visually relevant: every result is `visualQc: "pending_a2"` and must never be
- * treated as a final QC pass (that is the job of the separate A2 visual relevance validator, not implemented here).
+ * FN11-A1 image ACQUISITION + A2 validation hook. Candidates are found and safely downloaded here, then EACH one is
+ * passed through the local relevance validator (image-relevance.ts) before it can be returned. The first validated
+ * candidate wins (max 5 tried). If the validator is unavailable/uncertain the candidate is dropped: fail closed.
+ * `visualQc: "local_pass"` means the local hybrid check passed (model class scores + provenance), NOT a human or
+ * frontier-model verification and NOT identification of players/event from pixels.
  */
 
 export type ImageMethod = "rss_media" | "og_image" | "twitter_image" | "json_ld" | "lead_image" | "search_provider";
@@ -29,9 +32,9 @@ export type AcquiredImage = {
     bytes: number;
     format: "jpeg" | "png" | "webp";
     exactMatch: false;
-    /** Metadata/URL heuristics only. NOT a visual verification. */
-    verification: "metadata_only";
-    visualQc: "pending_a2";
+    verification: "local_hybrid";
+    visualQc: "local_pass";
+    qc: { football: number; negative: number; model: string; cached: boolean };
   };
 };
 
@@ -46,6 +49,8 @@ export type AcquisitionDeps = {
   resolveHost?: (hostname: string) => Promise<string[]>;
   allowedHosts?: readonly string[];
   searchProvider?: ImageSearchProvider | null;
+  /** Relevance validator. Defaults to the real local model; tests inject a MOCK. */
+  validate?: (bytes: Uint8Array, ctx: { title: string; method: string; hint?: string; sourceUrl: string }) => Promise<RelevanceVerdict>;
 };
 
 const MAX_BYTES = 5_000_000;
@@ -277,6 +282,7 @@ export function discoverCandidates(html: string, articleUrl: URL, rssMedia?: str
 async function downloadCandidate(
   candidate: ImageCandidate, articleUrl: URL, title: string,
   deps: Required<Pick<AcquisitionDeps, "fetchImpl" | "resolveHost">>, extra: readonly string[],
+  validate: NonNullable<AcquisitionDeps["validate"]>,
 ): Promise<AcquiredImage | null> {
   if (rejectCandidateReason(candidate)) return null;
   const url = new URL(candidate.url);
@@ -290,22 +296,26 @@ async function downloadCandidate(
   const info = await sharp(bytes, { limitInputPixels: MAX_SIDE * MAX_SIDE }).metadata().catch(() => null);
   if (!info?.width || !info.height || info.format !== format) return null;
   if (info.width < MIN_SIDE || info.height < MIN_SIDE || info.width > MAX_SIDE || info.height > MAX_SIDE) return null;
+  const verdict = await validate(bytes, { title, method: candidate.method, hint: candidate.hint, sourceUrl: url.href });
+  if (!verdict.ok) return null;
   return {
     image: Buffer.from(bytes).toString("base64"),
     metadata: {
       source: url.href, articleUrl: articleUrl.href, method: candidate.method, title, width: info.width, height: info.height,
-      bytes: bytes.length, format, exactMatch: false, verification: "metadata_only", visualQc: "pending_a2",
+      bytes: bytes.length, format, exactMatch: false, verification: "local_hybrid", visualQc: "local_pass",
+      qc: { football: verdict.football, negative: verdict.negative, model: verdict.modelVersion, cached: verdict.cached },
     },
   };
 }
 
 /**
  * Finds the first acceptable candidate image for an RSS article: RSS media -> OG -> Twitter -> JSON-LD -> lead image.
- * Fail-closed: any problem yields null. A non-null result is an UNVERIFIED candidate (visualQc: "pending_a2").
+ * Fail-closed: any problem yields null. A non-null result has passed the local hybrid relevance validation.
  */
 export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: string }, deps: AcquisitionDeps = {}) {
   const extra = deps.allowedHosts ?? configuredImageHosts();
   const resolved = { fetchImpl: deps.fetchImpl ?? fetch, resolveHost: deps.resolveHost ?? defaultResolve };
+  const validate = deps.validate ?? validateImageRelevance;
   try {
     const articleUrl = new URL(item.url);
     if (articleUrl.protocol !== "https:" || !allowedArticleHost(articleUrl.hostname, extra)) return null;
@@ -319,7 +329,7 @@ export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: str
     }
     for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
       try {
-        const acquired = await downloadCandidate(candidate, articleUrl, item.title, resolved, extra);
+        const acquired = await downloadCandidate(candidate, articleUrl, item.title, resolved, extra, validate);
         if (acquired) return acquired;
       } catch {
         // Bounded substitution: try the next candidate.
@@ -330,7 +340,7 @@ export async function acquireSourceImage(item: SportsNewsItem & { imageUrl?: str
       const found = await provider.search(item.title, AbortSignal.timeout(TIMEOUT_MS));
       for (const candidate of found.slice(0, MAX_CANDIDATES)) {
         try {
-          const acquired = await downloadCandidate({ ...candidate, method: "search_provider" }, articleUrl, item.title, resolved, extra);
+          const acquired = await downloadCandidate({ ...candidate, method: "search_provider" }, articleUrl, item.title, resolved, extra, validate);
           if (acquired) return acquired;
         } catch {
           // next

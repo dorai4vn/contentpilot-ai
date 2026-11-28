@@ -23,6 +23,7 @@
     "test:integration": "bash scripts/test-integration.sh"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.2",
     "fast-xml-parser": "5.12.1",

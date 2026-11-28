@@ -21,7 +21,7 @@ import { dubaiDate, publishedToday, sportsArticleIsCurrent } from "./publication
 import { requireRssImage } from "./image-gate";
 import { readSportsPhoto } from "./photo-snapshot";
 import { findSportsPostPhoto } from "./licensed-photo";
-import { findSourceSportsPhoto } from "./source-photo";
+import { findSourceSportsPhoto, validateFallbackPhoto } from "./source-photo";
 import { readReviewNoticeConfig, sendReviewNotices } from "./review-notices";
 import { inspectTelegramSetup } from "./telegram-setup";
 import { footballPriority, scoreSportsNews, selectSportsNews, SPORTS_NEWS_DRAFT_CALL_BUDGET, SPORTS_NEWS_OUTPUT_PER_SCAN, SPORTS_SCORING_RUBRIC } from "./scoring";
@@ -387,7 +387,9 @@ export async function runSportsNews(config: Config, testDate?: string) {
       await assertAutomationNotOff(client, config.workspaceId, config.projectId);
     }
     const photo = draft ? await findSourceSportsPhoto(item)
-      ?? (draft.photoSubject ? await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction) : null) : null;
+      ?? (draft.photoSubject
+        ? await validateFallbackPhoto(await findSportsPostPhoto(draft.photoSubject, draft.matchPhoto ?? undefined, draft.photoNeedsAction), item)
+        : null) : null;
     if (!testDate && !publishedToday(item.publishedAt)) return null;
     const manual = reportOf(entry);
     const result = await client.rpc("record_sports_news_event_assessment", {
