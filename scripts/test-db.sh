@@ -71,4 +71,9 @@ for f in "$TESTS"/[1-9]*.sql; do
   "${PSQL[@]}" -o /dev/null -f "$f" 2>&1 | sed -E 's/^psql:[^ ]+ NOTICE:  /  /' 
 done
 
+for f in "$TESTS"/concurrency/*.sh; do
+  echo "==> Running concurrency test $(basename "$f")"
+  TEST_DATABASE_URL="$TEST_DATABASE_URL" bash "$f"
+done
+
 echo "==> Database tests passed"

@@ -74,3 +74,40 @@ Giữ biến URL của GitHub Actions trống nếu Supabase đang lên lịch c
 Một cửa sổ do quản trị production bật có thời hạn tối đa tám giờ, gắn với một workspace, một dự án và một đích Telegram. Worker vẫn là Member. Trong cửa sổ, tối đa hai tin trong mỗi khoảng hai giờ và tám tin toàn kỳ được phép gửi tự động, kể cả khi chạy lại. Chỉ bản nháp RSS mới tạo trong cửa sổ đủ điều kiện. Barem, bộ lọc tin cùng ngày, chống trùng và ảnh vuông được dùng như luồng thường.
 
 Kết quả gửi tự động được ghi riêng trong `contentpilot_private.sports_auto_publish_deliveries`. Nếu Telegram xác nhận đã gửi hoặc kết quả chưa xác định, hệ thống chặn gửi lại cùng bài đến cùng kênh. Lỗi xác định chưa gửi giữ yêu cầu duyệt để xử lý thủ công. Khi quá hạn, worker tự trở về Human Approval.
+
+## Khử trùng sự kiện theo ngữ nghĩa (FN05)
+
+Ngoài khử trùng theo URL và tiêu đề chuẩn hoá (vẫn được xử lý trước, giữ nguyên), worker tính **danh tính sự kiện** (`event-v2`) bằng bộ trích xuất tất định (`src/lib/sports-news/event-identity.ts`, không gọi LLM/API trả phí). Danh tính chỉ "cụ thể" (`specific`) khi nêu được MỘT sự kiện:
+
+- **Trận đấu**: đúng 2 đội trong từ điển (không phân biệt thứ tự), ngày, loại (nhận định/kết quả), tỷ số (không phân biệt hướng).
+- **Cá nhân** (chuyển nhượng, chấn thương, HLV, kỷ luật): 1–2 tên người cụ thể + loại tin + ngày; chuyển nhượng/HLV còn cần cùng tập CLB. Cầu thủ khác nhau của cùng CLB, cùng ngày, cùng loại **không bao giờ** gộp. Họ đơn lẻ ("Rashford") chỉ khớp tên đầy đủ khi cùng CLB và họ đó là duy nhất trong lịch sử gần đây.
+- **Không cụ thể** (thiếu đội/tên, tiêu đề trộn nhiều loại tin, tổng hợp nhiều trận, loại "other"): `identity_not_specific` → **fail open**: chấm điểm và duyệt thủ công như bình thường, không bỏ qua, không chặn, không lưu `event_key/cluster_key`.
+
+Quyết định: `duplicate` (cùng sự kiện, không có gì mới → bỏ qua, ghi bằng chứng + lý do có cấu trúc vào `sports_news_event_matches`, hiển thị ở trang Luồng tin → "Nhật ký trùng sự kiện"); `follow_up` (nhận định → kết quả, tin đồn → chính thức, đổi tỷ số → vẫn qua chấm điểm/duyệt, liên kết sự kiện gốc); `new`.
+
+**Chỉ bài đã thành post mới chặn được.** Chỉ mục có `post_id`, post chưa lưu trữ và chưa bị từ chối toàn bộ yêu cầu duyệt mới chặn báo cáo sau (TS: `blocksLaterReports`; DB: `contentpilot_private.sports_item_blocks_event`, cùng quy tắc). Bài điểm thấp, không được chọn, lỗi hoặc chỉ mới phát hiện không bao giờ chặn bài mạnh hơn (cùng lượt quét, lượt sau, hay lúc DB kiểm tra lại). Cùng lượt quét: sau khi chấm điểm, chỉ giữ bản điểm cao nhất của mỗi sự kiện; bản yếu hơn không chiếm chỗ nhưng cũng không chặn bản mạnh. Post đã lưu trữ hoặc bị từ chối hoàn toàn không còn chặn (có thể được đề xuất lại qua duyệt thủ công); post đang chờ/đã duyệt/đã hủy do hết hạn vẫn chặn để tránh gửi trùng.
+
+**Chạy đồng thời**: `record_sports_news_event_assessment` lấy advisory lock theo dự án rồi kiểm tra lại `event_key`/`cluster_key` — chỉ khi lệnh này sắp tạo post (`p_title` khác null) và danh tính cụ thể. Phê duyệt thủ công, quota, Auto Publish có thời hạn, dừng khẩn cấp không đổi. TS và DB cùng quy tắc, DB là chốt cuối.
+
+**Dữ liệu lịch sử**: không backfill, không ghi dữ liệu cũ. Với mục gần đây (cửa sổ 2 ngày, tối đa 150 post) chưa có `event_identity`, worker dựng danh tính bảo thủ tại bộ nhớ từ tiêu đề đã ghi (`assessment.title`) và nội dung post; kết quả không cụ thể thì bị bỏ qua. Bằng chứng ghi `matchedOrigin: "derived"`. Danh tính dẫn xuất không có khóa DB nên không được DB kiểm tra lại (chỉ lớp TS).
+
+**Cách ly/ACL**: bảng bằng chứng bật RLS (thành viên chỉ đọc); hai RPC `SECURITY DEFINER` chỉ cấp cho `authenticated`, kiểm tra worker đã đăng ký; hàm chặn nằm ở schema private, không client nào gọi được. Lỗi ghi bằng chứng được đếm vào `eventEvidenceFailures`/`itemFailures`.
+
+**Giới hạn đã biết**: từ điển đội/giải nhỏ (đội ngoài từ điển → không cụ thể → không gộp); tên người dựa vào chữ hoa trong tiêu đề; tỷ số không phân biệt chủ/khách; khóa cụm theo ngày Dubai chính xác (±1 ngày chỉ ở lớp TS); hai trận giống hệt cặp đội trong cùng ngày bị coi là một; tiêu đề trộn nhiều loại tin không bị gộp (an toàn nhưng có thể bỏ sót trùng). Áp dụng migration trước khi triển khai worker mới.
+
+## FN05 acceptance remediation (blocking, manual-only, facts, fallback)
+
+- **Blocking**: a post blocks later reports if it is published, has a queued/sending/succeeded delivery, or has a
+  sending/succeeded/uncertain temporary auto-publish delivery, **even when archived**. Otherwise it blocks only while
+  not archived and not fully rejected. An archived/rejected, never-sent post may be reconsidered. The auto-publish
+  ledger is private, so the TS pre-filter cannot see it: the database recheck (`sports_item_blocks_event`) is
+  authoritative and rejects the duplicate with `database_recheck` evidence.
+- **Manual review only**: `sports_news_items.manual_review_reason` (`unresolved_identity`, `follow_up`,
+  `reconsidered`, `uncertain_facts`) is set by the worker and re-derived by the database.
+  `claim_sports_auto_publish` refuses such items, and the worker only sends regular eligible drafts to the window.
+- **Material facts** (`facts`, part of `eventKey`): injury duration/diagnosis, transfer fee, contract, standings
+  implication, from fixed patterns only (no AI). New fact → follow-up; changed value → `fact_changed`.
+  Limitation: facts outside these patterns are not detected, so such a rewording is a duplicate.
+- **Same-run fallback**: weaker reports of one event are alternates; skip evidence is stored only after the event
+  became a post. If the lead fails, alternates are tried in rank order while total draft calls stay
+  ≤ `SPORTS_NEWS_MAX_PER_RUN`.
